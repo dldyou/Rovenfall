@@ -8,7 +8,9 @@ import net.minecraft.gametest.framework.TestEnvironmentDefinition;
 import net.minecraft.resources.Identifier;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
+import org.dldyou.rovenfall.administration.RovenfallCommands;
 
 @Mod(Rovenfall.MOD_ID)
 public final class Rovenfall {
@@ -16,6 +18,7 @@ public final class Rovenfall {
 
     public Rovenfall(IEventBus modBus) {
         modBus.addListener(this::registerGameTests);
+        NeoForge.EVENT_BUS.addListener(RovenfallCommands::register);
     }
 
     private void registerGameTests(RegisterGameTestsEvent event) {

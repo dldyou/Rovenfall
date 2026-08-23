@@ -6,8 +6,8 @@ import com.mojang.serialization.Codec;
 import net.minecraft.nbt.NbtOps;
 import org.junit.jupiter.api.Test;
 
-final class PersistenceTestHarness {
-    static <T> T roundTrip(Codec<T> codec, T value) {
+public final class PersistenceTestHarness {
+    public static <T> T roundTrip(Codec<T> codec, T value) {
         var encoded = codec.encodeStart(NbtOps.INSTANCE, value).getOrThrow();
         return codec.parse(NbtOps.INSTANCE, encoded).getOrThrow();
     }

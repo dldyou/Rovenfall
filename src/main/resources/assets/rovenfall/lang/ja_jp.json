@@ -1,1 +1,16 @@
-{}
+{
+  "admin_role.rovenfall.viewer": "閲覧者",
+  "admin_role.rovenfall.moderator": "モデレーター",
+  "admin_role.rovenfall.economy_manager": "経済管理者",
+  "admin_role.rovenfall.content_manager": "コンテンツ管理者",
+  "admin_role.rovenfall.owner": "所有者",
+  "command.rovenfall.admin.role.set.success": "%1$sの管理者ロールを%2$sに変更しました。取引ID: %3$s",
+  "command.rovenfall.admin.role.set.no_change": "%sはすでにその管理者ロールを持っています。",
+  "command.rovenfall.admin.error.unauthorized": "管理者ロールを変更する権限がありません。",
+  "command.rovenfall.admin.error.invalid_role": "不明な管理者ロールです: %s",
+  "command.rovenfall.admin.error.invalid_reason": "変更理由は1文字以上%s文字以下で入力してください。",
+  "command.rovenfall.admin.error.read_only_schema": "管理データのスキーマバージョン%sは未対応のため、読み取り専用です。",
+  "command.rovenfall.admin.audit.empty": "%sページに監査記録はありません。",
+  "command.rovenfall.admin.audit.header": "監査ログ — %1$s/%2$sページ、全%3$s件",
+  "command.rovenfall.admin.audit.entry": "[%1$s] %2$s | 対象: %3$s | %4$s → %5$s | 実行者: %6$s | 取引ID: %7$s | 理由: %8$s"
+}
