@@ -12,6 +12,13 @@ public final class AdministrationService {
     private static final Identifier ROLE_SET = action("admin_role_set");
     private static final Identifier ROLE_SET_DENIED = action("admin_role_set_denied");
     private static final Identifier ROLE_SET_NO_CHANGE = action("admin_role_set_no_change");
+    private static final Identifier SNAPSHOT_CREATE = action("platform_snapshot_create");
+    private static final Identifier SNAPSHOT_CREATE_DENIED = action("platform_snapshot_create_denied");
+    private static final Identifier SNAPSHOT_CREATE_FAILED = action("platform_snapshot_create_failed");
+    private static final Identifier SNAPSHOT_RESTORE = action("platform_snapshot_restore");
+    private static final Identifier SNAPSHOT_RESTORE_DENIED = action("platform_snapshot_restore_denied");
+    private static final Identifier SNAPSHOT_RESTORE_FAILED = action("platform_snapshot_restore_failed");
+    private static final String PLATFORM_TARGET = "platform";
 
     private AdministrationService() {
     }
@@ -29,7 +36,7 @@ public final class AdministrationService {
             return new RoleChangeResult(RoleChangeStatus.READ_ONLY_SCHEMA, transactionId, false);
         }
 
-        if (!authorizationOverride && state.roleOf(actorId).orElse(null) != AdminRole.OWNER) {
+        if (!isOwner(state, actorId, authorizationOverride)) {
             return denied(state, actorId, targetId, safeRoleId(requestedRole), "unauthorized", timestampEpochMillis, transactionId,
                     RoleChangeStatus.UNAUTHORIZED);
         }
@@ -40,11 +47,12 @@ public final class AdministrationService {
                     RoleChangeStatus.INVALID_ROLE);
         }
 
-        String normalizedReason = reason == null ? "" : reason.strip();
-        if (normalizedReason.isEmpty() || normalizedReason.length() > MAX_REASON_LENGTH) {
+        Optional<String> validReason = validReason(reason);
+        if (validReason.isEmpty()) {
             return denied(state, actorId, targetId, parsedRole.get().getSerializedName(), "invalid_reason", timestampEpochMillis, transactionId,
                     RoleChangeStatus.INVALID_REASON);
         }
+        String normalizedReason = validReason.get();
 
         AdminRole role = parsedRole.get();
         Optional<AdminRole> previousRole = state.roleOf(targetId);
@@ -53,7 +61,7 @@ public final class AdministrationService {
                     timestampEpochMillis,
                     actorId,
                     ROLE_SET_NO_CHANGE,
-                    targetId,
+                    targetId.toString(),
                     roleId(previousRole),
                     role.getSerializedName(),
                     normalizedReason,
@@ -67,7 +75,7 @@ public final class AdministrationService {
                 timestampEpochMillis,
                 actorId,
                 ROLE_SET,
-                targetId,
+                targetId.toString(),
                 roleId(previousRole),
                 role.getSerializedName(),
                 normalizedReason,
@@ -75,6 +83,107 @@ public final class AdministrationService {
         );
         state.commitRoleChange(targetId, role, auditEntry);
         return new RoleChangeResult(RoleChangeStatus.SUCCESS, transactionId, true);
+    }
+
+    static SnapshotCreateResult createSnapshot(
+            PlatformSavedData state,
+            PlatformSnapshotStore store,
+            UUID actorId,
+            boolean authorizationOverride,
+            String reason,
+            long timestampEpochMillis,
+            UUID transactionId,
+            UUID snapshotId) {
+        if (!state.isWritable()) {
+            return new SnapshotCreateResult(SnapshotCreateStatus.READ_ONLY_SCHEMA, snapshotId, transactionId, false);
+        }
+        if (!isOwner(state, actorId, authorizationOverride)) {
+            boolean audited = state.appendDeniedAudit(auditEntry(
+                    timestampEpochMillis, actorId, SNAPSHOT_CREATE_DENIED, PLATFORM_TARGET,
+                    "none", snapshotValue(snapshotId), "unauthorized", transactionId), DENIED_AUDIT_INTERVAL_MILLIS);
+            return new SnapshotCreateResult(SnapshotCreateStatus.UNAUTHORIZED, snapshotId, transactionId, audited);
+        }
+
+        Optional<String> validReason = validReason(reason);
+        if (validReason.isEmpty()) {
+            boolean audited = state.appendDeniedAudit(auditEntry(
+                    timestampEpochMillis, actorId, SNAPSHOT_CREATE_DENIED, PLATFORM_TARGET,
+                    "none", snapshotValue(snapshotId), "invalid_reason", transactionId), DENIED_AUDIT_INTERVAL_MILLIS);
+            return new SnapshotCreateResult(SnapshotCreateStatus.INVALID_REASON, snapshotId, transactionId, audited);
+        }
+
+        try {
+            store.write(snapshotId, state);
+        } catch (PlatformSnapshotStore.SnapshotException exception) {
+            boolean audited = state.appendDeniedAudit(auditEntry(
+                    timestampEpochMillis, actorId, SNAPSHOT_CREATE_FAILED, PLATFORM_TARGET,
+                    "none", "write_failed", validReason.get(), transactionId), DENIED_AUDIT_INTERVAL_MILLIS);
+            return new SnapshotCreateResult(SnapshotCreateStatus.STORAGE_ERROR, snapshotId, transactionId, audited);
+        }
+
+        state.commitAudit(auditEntry(
+                timestampEpochMillis, actorId, SNAPSHOT_CREATE, PLATFORM_TARGET,
+                "none", snapshotValue(snapshotId), validReason.get(), transactionId));
+        return new SnapshotCreateResult(SnapshotCreateStatus.SUCCESS, snapshotId, transactionId, true);
+    }
+
+    static SnapshotRestoreResult restoreSnapshot(
+            PlatformSavedData state,
+            PlatformSnapshotStore store,
+            UUID actorId,
+            boolean authorizationOverride,
+            UUID snapshotId,
+            String reason,
+            long timestampEpochMillis,
+            UUID transactionId,
+            UUID safetySnapshotId) {
+        if (!state.isWritable()) {
+            return new SnapshotRestoreResult(
+                    SnapshotRestoreStatus.READ_ONLY_SCHEMA, snapshotId, safetySnapshotId, transactionId, false);
+        }
+        if (!isOwner(state, actorId, authorizationOverride)) {
+            boolean audited = state.appendDeniedAudit(auditEntry(
+                    timestampEpochMillis, actorId, SNAPSHOT_RESTORE_DENIED, PLATFORM_TARGET,
+                    "unchanged", snapshotValue(snapshotId), "unauthorized", transactionId), DENIED_AUDIT_INTERVAL_MILLIS);
+            return new SnapshotRestoreResult(
+                    SnapshotRestoreStatus.UNAUTHORIZED, snapshotId, safetySnapshotId, transactionId, audited);
+        }
+
+        Optional<String> validReason = validReason(reason);
+        if (validReason.isEmpty()) {
+            boolean audited = state.appendDeniedAudit(auditEntry(
+                    timestampEpochMillis, actorId, SNAPSHOT_RESTORE_DENIED, PLATFORM_TARGET,
+                    "unchanged", snapshotValue(snapshotId), "invalid_reason", transactionId), DENIED_AUDIT_INTERVAL_MILLIS);
+            return new SnapshotRestoreResult(
+                    SnapshotRestoreStatus.INVALID_REASON, snapshotId, safetySnapshotId, transactionId, audited);
+        }
+
+        PlatformSavedData snapshot;
+        try {
+            snapshot = store.read(snapshotId);
+        } catch (PlatformSnapshotStore.SnapshotException exception) {
+            boolean audited = state.appendDeniedAudit(auditEntry(
+                    timestampEpochMillis, actorId, SNAPSHOT_RESTORE_FAILED, PLATFORM_TARGET,
+                    "unchanged", "snapshot_unavailable", validReason.get(), transactionId), DENIED_AUDIT_INTERVAL_MILLIS);
+            return new SnapshotRestoreResult(
+                    SnapshotRestoreStatus.SNAPSHOT_UNAVAILABLE, snapshotId, safetySnapshotId, transactionId, audited);
+        }
+
+        try {
+            store.write(safetySnapshotId, state);
+        } catch (PlatformSnapshotStore.SnapshotException exception) {
+            boolean audited = state.appendDeniedAudit(auditEntry(
+                    timestampEpochMillis, actorId, SNAPSHOT_RESTORE_FAILED, PLATFORM_TARGET,
+                    "unchanged", "safety_snapshot_failed", validReason.get(), transactionId), DENIED_AUDIT_INTERVAL_MILLIS);
+            return new SnapshotRestoreResult(
+                    SnapshotRestoreStatus.SAFETY_SNAPSHOT_FAILED, snapshotId, safetySnapshotId, transactionId, audited);
+        }
+
+        state.commitRestore(snapshot, auditEntry(
+                timestampEpochMillis, actorId, SNAPSHOT_RESTORE, PLATFORM_TARGET,
+                snapshotValue(safetySnapshotId), snapshotValue(snapshotId), validReason.get(), transactionId));
+        return new SnapshotRestoreResult(
+                SnapshotRestoreStatus.SUCCESS, snapshotId, safetySnapshotId, transactionId, true);
     }
 
     private static RoleChangeResult denied(
@@ -90,7 +199,7 @@ public final class AdministrationService {
                 timestampEpochMillis,
                 actorId,
                 ROLE_SET_DENIED,
-                targetId,
+                targetId.toString(),
                 roleId(state.roleOf(targetId)),
                 requestedRole,
                 denialReason,
@@ -104,7 +213,7 @@ public final class AdministrationService {
             long timestampEpochMillis,
             UUID actorId,
             Identifier action,
-            UUID targetId,
+            String target,
             String beforeValue,
             String afterValue,
             String reason,
@@ -113,7 +222,7 @@ public final class AdministrationService {
                 timestampEpochMillis,
                 actorId,
                 action,
-                targetId.toString(),
+                target,
                 Optional.empty(),
                 Optional.empty(),
                 beforeValue,
@@ -134,6 +243,21 @@ public final class AdministrationService {
         return requestedRole;
     }
 
+    private static boolean isOwner(PlatformSavedData state, UUID actorId, boolean authorizationOverride) {
+        return authorizationOverride || state.roleOf(actorId).orElse(null) == AdminRole.OWNER;
+    }
+
+    private static Optional<String> validReason(String reason) {
+        String normalized = reason == null ? "" : reason.strip();
+        return normalized.isEmpty() || normalized.length() > MAX_REASON_LENGTH
+                ? Optional.empty()
+                : Optional.of(normalized);
+    }
+
+    private static String snapshotValue(UUID snapshotId) {
+        return "snapshot:" + snapshotId;
+    }
+
     private static Identifier action(String path) {
         return Identifier.fromNamespaceAndPath(Rovenfall.MOD_ID, path);
     }
@@ -148,5 +272,37 @@ public final class AdministrationService {
     }
 
     public record RoleChangeResult(RoleChangeStatus status, UUID transactionId, boolean auditRecorded) {
+    }
+
+    public enum SnapshotCreateStatus {
+        SUCCESS,
+        UNAUTHORIZED,
+        INVALID_REASON,
+        READ_ONLY_SCHEMA,
+        STORAGE_ERROR
+    }
+
+    public record SnapshotCreateResult(
+            SnapshotCreateStatus status,
+            UUID snapshotId,
+            UUID transactionId,
+            boolean auditRecorded) {
+    }
+
+    public enum SnapshotRestoreStatus {
+        SUCCESS,
+        UNAUTHORIZED,
+        INVALID_REASON,
+        READ_ONLY_SCHEMA,
+        SNAPSHOT_UNAVAILABLE,
+        SAFETY_SNAPSHOT_FAILED
+    }
+
+    public record SnapshotRestoreResult(
+            SnapshotRestoreStatus status,
+            UUID snapshotId,
+            UUID safetySnapshotId,
+            UUID transactionId,
+            boolean auditRecorded) {
     }
 }

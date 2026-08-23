@@ -118,7 +118,13 @@ public final class PlatformSavedData extends SavedData {
 
     void commitRoleChange(UUID targetId, AdminRole role, AuditEntry auditEntry) {
         adminRoles.put(targetId, role);
-        appendAudit(auditEntry);
+        commitAudit(auditEntry);
+    }
+
+    void commitRestore(PlatformSavedData snapshot, AuditEntry auditEntry) {
+        adminRoles.clear();
+        adminRoles.putAll(snapshot.adminRoles);
+        commitAudit(auditEntry);
     }
 
     boolean appendDeniedAudit(AuditEntry auditEntry, long minimumIntervalMillis) {
@@ -127,11 +133,11 @@ public final class PlatformSavedData extends SavedData {
             return false;
         }
         lastDeniedAuditByActor.put(auditEntry.actorId(), auditEntry.timestampEpochMillis());
-        appendAudit(auditEntry);
+        commitAudit(auditEntry);
         return true;
     }
 
-    private void appendAudit(AuditEntry auditEntry) {
+    void commitAudit(AuditEntry auditEntry) {
         auditEntries.add(auditEntry);
         long cutoff = auditEntry.timestampEpochMillis() - AUDIT_RETENTION.toMillis();
         auditEntries.removeIf(entry -> entry.timestampEpochMillis() < cutoff);
