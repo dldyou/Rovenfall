@@ -67,6 +67,31 @@ final class ShopTradeServiceTest {
     }
 
     @Test
+    void retainedReceiptPreventsExpiredTradeIdReuseWithoutMutatingTradeState() {
+        PlatformSavedData state = stateWith(
+                offer(exactBread(4), 12, 6, ShopInstance.Stock.finite(10, 10)), Optional.empty(), 100);
+        NonNullList<ItemStack> inventory = emptyInventory();
+        UUID transactionId = uuid(150);
+        assertEquals(ShopTradeService.Status.SUCCESS,
+                trade(state, inventory, request(ShopTradeService.Direction.BUY, 1, transactionId), 0, 2_000)
+                        .status());
+        EconomyTransactionReceipt retained = state.economyReceipt(transactionId).orElseThrow();
+        long expiredAt = 2_001 + PlatformSavedData.ECONOMY_TRANSACTION_RETENTION_MILLIS;
+
+        assertEquals(ShopTradeService.Status.TRANSACTION_ID_CONFLICT,
+                trade(state, inventory, request(ShopTradeService.Direction.BUY, 2, transactionId), 0, expiredAt)
+                        .status());
+
+        assertEquals(88, state.economyBalance(PLAYER).orElseThrow());
+        assertEquals(9, stock(state).current());
+        assertEquals(4, exactCount(inventory, exactBread(4)));
+        assertEquals(1, state.economyReceipt(transactionId).orElseThrow().quantity());
+        assertEquals(retained.timestampEpochMillis(),
+                state.economyReceipt(transactionId).orElseThrow().timestampEpochMillis());
+        assertEquals("transaction_id_conflict", state.auditPage(0, 1).entries().getFirst().reason());
+    }
+
+    @Test
     void saleConsumesOnlyExactComponentsAndFiniteStockWhileUnlimitedStockNeverChanges() {
         PlatformSavedData state = stateWith(
                 offer(exactBread(4), 12, 6, ShopInstance.Stock.finite(3, 10)), Optional.empty(), 10);

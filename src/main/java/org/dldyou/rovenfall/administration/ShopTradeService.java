@@ -70,10 +70,16 @@ public final class ShopTradeService {
         if (!validTransactionId(request.transactionId())) {
             return denied(state, playerId, request, Status.INVALID_TRANSACTION, timestampEpochMillis);
         }
-        if (state.hasTransaction(request.transactionId(), timestampEpochMillis)) {
-            return result(Status.DUPLICATE_TRANSACTION, request, false);
+        Optional<EconomyTransactionReceipt> retainedReceipt = state.economyReceipt(request.transactionId());
+        if (retainedReceipt.isPresent()) {
+            return matchingTradeRetry(retainedReceipt.orElseThrow(), playerId, request)
+                    ? result(Status.DUPLICATE_TRANSACTION, request, false)
+                    : denied(state, playerId, request, Status.TRANSACTION_ID_CONFLICT, timestampEpochMillis);
         }
-        if (!state.canCommitTransaction(request.transactionId(), timestampEpochMillis)) {
+        if (state.hasTransaction(request.transactionId(), timestampEpochMillis)) {
+            return denied(state, playerId, request, Status.TRANSACTION_ID_CONFLICT, timestampEpochMillis);
+        }
+        if (!state.canCommitReceiptTransaction(request.transactionId(), timestampEpochMillis)) {
             return denied(state, playerId, request, Status.TRANSACTION_LEDGER_FULL, timestampEpochMillis);
         }
         Optional<ShopInstance> existing = state.shopInstance(request.shopId());
@@ -168,8 +174,29 @@ public final class ShopTradeService {
             if (!replaceInventory(inventory, beforeInventory, afterInventory)) {
                 return denied(state, playerId, request, Status.INVENTORY_UPDATE_FAILED, timestampEpochMillis);
             }
+            List<EconomyAlert> alerts;
             try {
                 Optional<ShopInstance.Binding> binding = shop.binding();
+                EconomyTransactionReceipt receipt = new EconomyTransactionReceipt(
+                        timestampEpochMillis,
+                        playerId,
+                        playerId,
+                        request.direction() == Direction.BUY
+                                ? EconomyTransactionReceipt.Kind.PURCHASE
+                                : EconomyTransactionReceipt.Kind.SALE,
+                        total,
+                        Optional.of(request.shopId()),
+                        Optional.of(request.offerId()),
+                        Optional.of(offer.item()),
+                        request.quantity(),
+                        Optional.of(availableStock),
+                        Optional.of(changedStock.orElseThrow()),
+                        Optional.empty(),
+                        Optional.empty(),
+                        Optional.empty(),
+                        EconomyTransactionReceipt.CompensationDecision.NONE);
+                alerts = EconomyMonitoringService.evaluate(
+                        state, request.transactionId(), receipt, EconomyConfig.alertThresholds());
                 state.commitShopTrade(
                         playerId,
                         afterBalance,
@@ -177,6 +204,8 @@ public final class ShopTradeService {
                         changedShop,
                         request.transactionId(),
                         timestampEpochMillis,
+                        receipt,
+                        alerts,
                         new AuditEntry(
                                 timestampEpochMillis,
                                 playerId,
@@ -192,6 +221,7 @@ public final class ShopTradeService {
                 restoreInventory(inventory, beforeInventory);
                 throw exception;
             }
+            EconomyMonitoringService.publish(alerts);
             return result(Status.SUCCESS, request, true);
         }
     }
@@ -222,6 +252,27 @@ public final class ShopTradeService {
 
     private static boolean validTransactionId(UUID transactionId) {
         return transactionId != null && !ZERO_UUID.equals(transactionId);
+    }
+
+    private static boolean matchingTradeRetry(
+            EconomyTransactionReceipt receipt, UUID playerId, TradeRequest request) {
+        long total;
+        try {
+            total = Math.multiplyExact(request.expectedUnitPrice(), request.quantity());
+        } catch (ArithmeticException exception) {
+            return false;
+        }
+        EconomyTransactionReceipt.Kind kind = request.direction() == Direction.BUY
+                ? EconomyTransactionReceipt.Kind.PURCHASE
+                : EconomyTransactionReceipt.Kind.SALE;
+        return receipt.actorId().equals(playerId)
+                && receipt.playerId().equals(playerId)
+                && receipt.kind() == kind
+                && receipt.amount() == total
+                && receipt.shopId().equals(Optional.of(request.shopId()))
+                && receipt.offerId().equals(Optional.of(request.offerId()))
+                && receipt.item().filter(item -> ItemStack.matches(item, request.expectedItem())).isPresent()
+                && receipt.quantity() == request.quantity();
     }
 
     private static boolean canAccess(
@@ -284,11 +335,11 @@ public final class ShopTradeService {
         }
     }
 
-    private static List<ItemStack> copyInventory(List<ItemStack> inventory) {
+    static List<ItemStack> copyInventory(List<ItemStack> inventory) {
         return inventory.stream().map(ItemStack::copy).collect(java.util.stream.Collectors.toCollection(ArrayList::new));
     }
 
-    private static boolean addExact(List<ItemStack> inventory, ItemStack exact, int amount) {
+    static boolean addExact(List<ItemStack> inventory, ItemStack exact, int amount) {
         int remaining = amount;
         for (ItemStack slot : inventory) {
             if (ItemStack.isSameItemSameComponents(slot, exact) && slot.getCount() < slot.getMaxStackSize()) {
@@ -310,7 +361,7 @@ public final class ShopTradeService {
         return remaining == 0;
     }
 
-    private static boolean removeExact(List<ItemStack> inventory, ItemStack exact, int amount) {
+    static boolean removeExact(List<ItemStack> inventory, ItemStack exact, int amount) {
         if (countExact(inventory, exact) < amount) {
             return false;
         }
@@ -329,14 +380,14 @@ public final class ShopTradeService {
         return true;
     }
 
-    private static long countExact(List<ItemStack> inventory, ItemStack exact) {
+    static long countExact(List<ItemStack> inventory, ItemStack exact) {
         return inventory.stream()
                 .filter(stack -> ItemStack.isSameItemSameComponents(stack, exact))
                 .mapToLong(ItemStack::getCount)
                 .sum();
     }
 
-    private static boolean replaceInventory(
+    static boolean replaceInventory(
             List<ItemStack> inventory, List<ItemStack> before, List<ItemStack> after) {
         try {
             for (int index = 0; index < inventory.size(); index++) {
@@ -351,7 +402,7 @@ public final class ShopTradeService {
         }
     }
 
-    private static void restoreInventory(List<ItemStack> inventory, List<ItemStack> before) {
+    static void restoreInventory(List<ItemStack> inventory, List<ItemStack> before) {
         for (int index = 0; index < inventory.size(); index++) {
             inventory.set(index, before.get(index).copy());
         }
@@ -422,6 +473,7 @@ public final class ShopTradeService {
     public enum Status {
         SUCCESS,
         DUPLICATE_TRANSACTION,
+        TRANSACTION_ID_CONFLICT,
         INVALID_REQUEST,
         INVALID_TRANSACTION,
         READ_ONLY_SCHEMA,

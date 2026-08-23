@@ -51,7 +51,7 @@ final class ShopInstanceServiceTest {
     Path temporaryDirectory;
 
     @Test
-    void economyManagerCreatesIndependentExactCatalogWithSharedRetryId() {
+    void economyManagerCreatesIndependentExactCatalogAndEconomyCollisionIsRejected() {
         PlatformSavedData state = new PlatformSavedData();
         UUID actor = id(1);
         bootstrap(state, actor, AdminRole.ECONOMY_MANAGER);
@@ -75,10 +75,12 @@ final class ShopInstanceServiceTest {
         assertEquals(4, state.shopInstance(shopId).orElseThrow().offers().get(identifier("bread")).item().getCount());
 
         assertTrue(state.hasTransaction(transactionId, 3_000));
-        assertEquals(EconomyService.TransactionStatus.DUPLICATE_TRANSACTION,
+        assertEquals(EconomyService.TransactionStatus.TRANSACTION_ID_CONFLICT,
                 EconomyService.award(state, id(2), 1, "shared retry", 3_000, transactionId, 0, 100).status());
+        assertTrue(state.economyBalance(id(2)).isEmpty());
+        assertEquals("transaction_id_conflict", state.auditPage(0, 1).entries().getFirst().reason());
 
-        AuditEntry audit = state.auditPage(0, 1).entries().getFirst();
+        AuditEntry audit = state.auditPage(0, 2).entries().get(1);
         assertEquals("rovenfall:shop_instance_create", audit.actionType().toString());
         assertEquals(shopId.toString(), audit.target());
         assertEquals("none", audit.beforeValue());

@@ -12,7 +12,8 @@ final class PlatformDataMigrations {
             0, state -> state.atVersion(1),
             1, state -> state.atVersion(2),
             2, state -> state.atVersion(3),
-            3, state -> state.atVersion(4)
+            3, state -> state.atVersion(4),
+            4, state -> state.atVersion(5)
     );
 
     private PlatformDataMigrations() {
@@ -26,10 +27,12 @@ final class PlatformDataMigrations {
             Map<UUID, Long> economyBalances,
             Map<UUID, Long> economyTransactions,
             Map<Identifier, ShopInstance> shopInstances,
+            Map<UUID, EconomyTransactionReceipt> economyReceipts,
+            List<EconomyAlert> economyAlerts,
             int targetVersion) {
         PersistedState original = new PersistedState(
                 schemaVersion, adminRoles, auditEntries, playerRecords, economyBalances, economyTransactions,
-                shopInstances);
+                shopInstances, economyReceipts, economyAlerts);
         if (schemaVersion < 0 || schemaVersion > targetVersion) {
             return MigrationResult.readOnly(original);
         }
@@ -57,7 +60,9 @@ final class PlatformDataMigrations {
             Map<UUID, PlayerRecord> playerRecords,
             Map<UUID, Long> economyBalances,
             Map<UUID, Long> economyTransactions,
-            Map<Identifier, ShopInstance> shopInstances) {
+            Map<Identifier, ShopInstance> shopInstances,
+            Map<UUID, EconomyTransactionReceipt> economyReceipts,
+            List<EconomyAlert> economyAlerts) {
         PersistedState {
             adminRoles = Map.copyOf(adminRoles);
             auditEntries = List.copyOf(auditEntries);
@@ -65,12 +70,14 @@ final class PlatformDataMigrations {
             economyBalances = Map.copyOf(economyBalances);
             economyTransactions = Map.copyOf(economyTransactions);
             shopInstances = Map.copyOf(shopInstances);
+            economyReceipts = Map.copyOf(economyReceipts);
+            economyAlerts = List.copyOf(economyAlerts);
         }
 
         PersistedState atVersion(int version) {
             return new PersistedState(
                     version, adminRoles, auditEntries, playerRecords, economyBalances, economyTransactions,
-                    shopInstances);
+                    shopInstances, economyReceipts, economyAlerts);
         }
     }
 

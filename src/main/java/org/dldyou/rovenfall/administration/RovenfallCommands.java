@@ -96,7 +96,27 @@ public final class RovenfallCommands {
                                                                 LongArgumentType.getLong(context, "amount"),
                                                                 UuidArgument.getUuid(context, "transaction_id"),
                                                                 StringArgumentType.getString(context, "reason"),
-                                                                false)))))));
+                                                                false)))))))
+                .then(Commands.literal("view")
+                        .then(economyViewCommand("balances", EconomyView.BALANCES))
+                        .then(economyViewCommand("transactions", EconomyView.TRANSACTIONS))
+                        .then(economyViewCommand("shops", EconomyView.SHOPS))
+                        .then(economyViewCommand("alerts", EconomyView.ALERTS)))
+                .then(Commands.literal("reverse")
+                        .then(Commands.argument("player", EntityArgument.player())
+                                .then(Commands.argument("original_transaction_id", UuidArgument.uuid())
+                                        .then(Commands.argument("reversal_transaction_id", UuidArgument.uuid())
+                                                .then(Commands.argument("decision", StringArgumentType.word())
+                                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(
+                                                                new String[]{"strict", "refund_without_items_or_stock"}, builder))
+                                                        .then(Commands.argument("reason", StringArgumentType.greedyString())
+                                                                .executes(context -> reverseTransaction(
+                                                                        context.getSource(),
+                                                                        EntityArgument.getPlayer(context, "player"),
+                                                                        UuidArgument.getUuid(context, "original_transaction_id"),
+                                                                        UuidArgument.getUuid(context, "reversal_transaction_id"),
+                                                                        StringArgumentType.getString(context, "decision"),
+                                                                        StringArgumentType.getString(context, "reason")))))))));
 
         var setOfferReason = Commands.argument("reason", StringArgumentType.greedyString())
                 .executes(context -> setShopOffer(
@@ -267,6 +287,15 @@ public final class RovenfallCommands {
         var offer = Commands.argument("offer_id", IdentifierArgument.id()).then(quantity);
         var shop = Commands.argument("shop_id", IdentifierArgument.id()).then(offer);
         return Commands.literal(literal).then(shop);
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> economyViewCommand(
+            String literal, EconomyView view) {
+        return Commands.literal(literal)
+                .executes(context -> openEconomyGui(context.getSource(), view, 0))
+                .then(Commands.argument("page", IntegerArgumentType.integer(1))
+                        .executes(context -> openEconomyGui(
+                                context.getSource(), view, IntegerArgumentType.getInteger(context, "page") - 1)));
     }
 
     private static int setRole(CommandSourceStack source, net.minecraft.server.level.ServerPlayer target, String roleId, String reason) {
@@ -503,6 +532,8 @@ public final class RovenfallCommands {
                         "command.rovenfall.shop.duplicate", transactionId.toString()), false);
                 yield 1;
             }
+            case TRANSACTION_ID_CONFLICT -> failure(
+                    source, "command.rovenfall.shop.error.transaction_id_conflict");
             case INVALID_REQUEST, INVALID_TRANSACTION -> failure(source, "command.rovenfall.shop.error.invalid_request");
             case READ_ONLY_SCHEMA -> failure(source, "command.rovenfall.shop.error.read_only");
             case TRANSACTION_LEDGER_FULL -> failure(source, "command.rovenfall.shop.error.ledger_full");
@@ -582,6 +613,8 @@ public final class RovenfallCommands {
                         result.transactionId().toString(), target.getDisplayName(), result.balance()), false);
                 yield 1;
             }
+            case TRANSACTION_ID_CONFLICT -> failure(
+                    source, "command.rovenfall.admin.economy.error.transaction_id_conflict");
             case UNAUTHORIZED -> failure(source, "command.rovenfall.admin.economy.error.unauthorized");
             case INVALID_TRANSACTION -> failure(source, "command.rovenfall.admin.economy.error.invalid_transaction");
             case INVALID_AMOUNT -> failure(source, "command.rovenfall.admin.economy.error.invalid_amount");
@@ -605,6 +638,85 @@ public final class RovenfallCommands {
         PlatformSavedData.AuditPage result = PlatformSavedData.get(source.getServer()).auditPage(page, AuditBookView.PAGE_SIZE);
         AuditBookView.open(player, result);
         return 1;
+    }
+
+    private static int openEconomyGui(
+            CommandSourceStack source, EconomyView view, int page) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        UUID actorId = player.getUUID();
+        boolean override = authorizationOverride(source, state);
+        switch (view) {
+            case BALANCES -> EconomyBookView.open(player, EconomyBookView.balances(
+                    EconomyObservabilityService.balances(state, actorId, override, page, EconomyBookView.PAGE_SIZE)));
+            case TRANSACTIONS -> EconomyBookView.open(player, EconomyBookView.transactions(
+                    EconomyObservabilityService.transactions(state, actorId, override, page, EconomyBookView.PAGE_SIZE)));
+            case SHOPS -> EconomyBookView.open(player, EconomyBookView.shops(
+                    EconomyObservabilityService.shops(state, actorId, override, page, EconomyBookView.PAGE_SIZE)));
+            case ALERTS -> EconomyBookView.open(player, EconomyBookView.alerts(
+                    EconomyObservabilityService.alerts(state, actorId, override, page, EconomyBookView.PAGE_SIZE)));
+        }
+        return 1;
+    }
+
+    private static int reverseTransaction(
+            CommandSourceStack source,
+            ServerPlayer target,
+            UUID originalTransactionId,
+            UUID reversalTransactionId,
+            String requestedDecision,
+            String reason) {
+        EconomyTransactionReceipt.CompensationDecision decision = switch (requestedDecision) {
+            case "strict" -> EconomyTransactionReceipt.CompensationDecision.NONE;
+            case "refund_without_items_or_stock" ->
+                    EconomyTransactionReceipt.CompensationDecision.REFUND_WITHOUT_ITEMS_OR_STOCK;
+            default -> null;
+        };
+        if (decision == null) {
+            return failure(source, "command.rovenfall.admin.economy.reversal.error.invalid_decision");
+        }
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = EconomyReversalService.reverse(
+                state, target, actorId(source), authorizationOverride(source, state), originalTransactionId,
+                decision, reason, Instant.now().toEpochMilli(), reversalTransactionId);
+        return switch (result.status()) {
+            case SUCCESS -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.admin.economy.reversal.success",
+                        originalTransactionId, reversalTransactionId), true);
+                yield 1;
+            }
+            case DUPLICATE_TRANSACTION -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.admin.economy.duplicate", reversalTransactionId,
+                        target.getDisplayName(), state.economyBalance(target.getUUID()).orElse(0L)), false);
+                yield 1;
+            }
+            case TRANSACTION_ID_CONFLICT -> failure(
+                    source, "command.rovenfall.admin.economy.reversal.error.transaction_id_conflict");
+            case COMPENSATION_REQUIRED -> failure(
+                    source, "command.rovenfall.admin.economy.reversal.error.compensation_required");
+            case ALREADY_REVERSED -> failure(source, "command.rovenfall.admin.economy.reversal.error.already_reversed");
+            case UNAUTHORIZED -> failure(source, "command.rovenfall.admin.economy.error.unauthorized");
+            case INVALID_REASON -> failure(
+                    source, "command.rovenfall.admin.error.invalid_reason", AdministrationService.MAX_REASON_LENGTH);
+            case READ_ONLY_SCHEMA -> failure(
+                    source, "command.rovenfall.admin.error.read_only_schema", state.schemaVersion());
+            case TRANSACTION_LEDGER_FULL -> failure(
+                    source, "command.rovenfall.admin.economy.error.transaction_ledger_full");
+            case DEPENDENCY_LOCKED -> failure(source, "command.rovenfall.admin.shop.error.dependency_locked");
+            case INSUFFICIENT_FUNDS -> failure(
+                    source, "command.rovenfall.admin.economy.reversal.error.insufficient_funds");
+            case MAXIMUM_BALANCE_EXCEEDED -> failure(
+                    source, "command.rovenfall.admin.economy.error.maximum_exceeded", EconomyConfig.maximumBalance());
+            case INSUFFICIENT_SPACE -> failure(
+                    source, "command.rovenfall.admin.economy.reversal.error.insufficient_space");
+            case INVALID_REQUEST, INVALID_TRANSACTION, ORIGINAL_NOT_REVERSIBLE, TARGET_MISMATCH,
+                    ACCOUNT_NOT_FOUND, OVERFLOW, SHOP_MISMATCH, EXACT_ITEMS_UNAVAILABLE,
+                    STOCK_INVERSE_UNAVAILABLE, INVENTORY_UPDATE_FAILED -> failure(
+                    source, "command.rovenfall.admin.economy.reversal.error.failed",
+                    result.status().name().toLowerCase(java.util.Locale.ROOT));
+        };
     }
 
     private static int createSnapshot(CommandSourceStack source, String reason) {
@@ -672,6 +784,8 @@ public final class RovenfallCommands {
             case SNAPSHOT_UNAVAILABLE -> failure(source, "command.rovenfall.admin.snapshot.error.unavailable", snapshotId.toString());
             case TRANSACTION_LEDGER_FULL -> failure(
                     source, "command.rovenfall.admin.snapshot.error.transaction_ledger_full");
+            case TRANSACTION_EVIDENCE_CONFLICT -> failure(
+                    source, "command.rovenfall.admin.snapshot.error.transaction_evidence_conflict");
             case DEPENDENCY_LOCKED -> failure(
                     source, "command.rovenfall.admin.snapshot.error.dependency_locked");
             case SAFETY_SNAPSHOT_FAILED -> failure(source, "command.rovenfall.admin.snapshot.error.safety_failed");
@@ -710,5 +824,12 @@ public final class RovenfallCommands {
     private static int failure(CommandSourceStack source, String translationKey, Object... arguments) {
         source.sendFailure(Component.translatable(translationKey, arguments));
         return 0;
+    }
+
+    private enum EconomyView {
+        BALANCES,
+        TRANSACTIONS,
+        SHOPS,
+        ALERTS
     }
 }

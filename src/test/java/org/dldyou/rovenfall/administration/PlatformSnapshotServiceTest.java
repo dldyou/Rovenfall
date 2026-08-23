@@ -6,13 +6,96 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Optional;
 import java.util.UUID;
+import net.minecraft.core.NonNullList;
+import net.minecraft.world.item.ItemStack;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 final class PlatformSnapshotServiceTest {
     @TempDir
     Path temporaryDirectory;
+
+    @Test
+    void restoreRetainsPostSnapshotReceiptsAsInvalidatedEvidence() throws Exception {
+        PlatformSavedData state = new PlatformSavedData();
+        UUID owner = id(900);
+        bootstrap(state, owner, AdminRole.OWNER);
+        EconomyService.award(state, owner, 100, "seed", 1_100, id(901), 0, Long.MAX_VALUE);
+        PlatformSnapshotStore store = store("receipt-restore");
+        UUID snapshotId = id(902);
+        AdministrationService.createSnapshot(
+                state, store, owner, false, "before adjustment", 1_200, id(903), snapshotId);
+
+        UUID grantId = id(904);
+        EconomyService.adminGrant(
+                state, owner, false, owner, 25, "temporary grant", 1_300, grantId, 0, Long.MAX_VALUE);
+        UUID reversalId = id(905);
+        assertEquals(EconomyReversalService.Status.SUCCESS, EconomyReversalService.reverse(
+                state, owner, NonNullList.withSize(36, ItemStack.EMPTY), owner, false, grantId,
+                EconomyTransactionReceipt.CompensationDecision.NONE, "undo temporary grant", 1_400,
+                reversalId, Long.MAX_VALUE).status());
+
+        UUID restoreId = id(906);
+        assertEquals(AdministrationService.SnapshotRestoreStatus.SUCCESS, AdministrationService.restoreSnapshot(
+                state, store, owner, false, snapshotId, "restore authoritative state", 2_000,
+                restoreId, id(907)).status());
+
+        assertEquals(100, state.economyBalance(owner).orElseThrow());
+        assertEquals(Optional.of(restoreId), state.economyReceipt(grantId).orElseThrow().invalidatedByRestore());
+        assertEquals(Optional.of(restoreId), state.economyReceipt(reversalId).orElseThrow().invalidatedByRestore());
+        assertEquals(EconomyReversalService.Status.ORIGINAL_NOT_REVERSIBLE, EconomyReversalService.reverse(
+                state, owner, NonNullList.withSize(36, ItemStack.EMPTY), owner, false, grantId,
+                EconomyTransactionReceipt.CompensationDecision.NONE, "must remain invalid", 3_000,
+                id(908), Long.MAX_VALUE).status());
+    }
+
+    @Test
+    void restoreKeepsPostSnapshotReversalAsNonAuthoritativeEvidence() throws Exception {
+        PlatformSavedData state = new PlatformSavedData();
+        UUID owner = id(920);
+        bootstrap(state, owner, AdminRole.OWNER);
+        UUID originalId = id(921);
+        assertEquals(EconomyService.TransactionStatus.SUCCESS,
+                EconomyService.award(state, owner, 100, "snapshot original", 1_100, originalId, 0, Long.MAX_VALUE)
+                        .status());
+        PlatformSnapshotStore store = store("post-snapshot-reversal");
+        UUID snapshotId = id(922);
+        AdministrationService.createSnapshot(
+                state, store, owner, false, "before reversal", 1_200, id(923), snapshotId);
+
+        UUID oldReversalId = id(924);
+        assertEquals(EconomyReversalService.Status.SUCCESS, EconomyReversalService.reverse(
+                state, owner, NonNullList.withSize(36, ItemStack.EMPTY), owner, false, originalId,
+                EconomyTransactionReceipt.CompensationDecision.NONE, "temporary reversal", 1_300,
+                oldReversalId, Long.MAX_VALUE).status());
+        UUID restoreId = id(925);
+        assertEquals(AdministrationService.SnapshotRestoreStatus.SUCCESS, AdministrationService.restoreSnapshot(
+                state, store, owner, false, snapshotId, "restore original authority", 2_000,
+                restoreId, id(926)).status());
+
+        assertEquals(100, state.economyBalance(owner).orElseThrow());
+        assertTrue(state.economyReceipt(originalId).orElseThrow().reversedBy().isEmpty());
+        assertEquals(Optional.of(restoreId),
+                state.economyReceipt(oldReversalId).orElseThrow().invalidatedByRestore());
+        PlatformSavedData persisted = PlatformSavedData.CODEC.parse(
+                net.minecraft.nbt.NbtOps.INSTANCE,
+                PlatformSavedData.CODEC.encodeStart(net.minecraft.nbt.NbtOps.INSTANCE, state).getOrThrow())
+                .getOrThrow();
+
+        UUID authoritativeReversalId = id(927);
+        assertEquals(EconomyReversalService.Status.SUCCESS, EconomyReversalService.reverse(
+                persisted, owner, NonNullList.withSize(36, ItemStack.EMPTY), owner, false, originalId,
+                EconomyTransactionReceipt.CompensationDecision.NONE, "authoritative reversal", 3_000,
+                authoritativeReversalId, Long.MAX_VALUE).status());
+        assertEquals(Optional.of(authoritativeReversalId),
+                persisted.economyReceipt(originalId).orElseThrow().reversedBy());
+        PlatformSavedData.CODEC.parse(
+                net.minecraft.nbt.NbtOps.INSTANCE,
+                PlatformSavedData.CODEC.encodeStart(net.minecraft.nbt.NbtOps.INSTANCE, persisted).getOrThrow())
+                .getOrThrow();
+    }
 
     @Test
     void ownerCreatesSnapshotThatRoundTripsThroughCompressedNbt() throws Exception {
