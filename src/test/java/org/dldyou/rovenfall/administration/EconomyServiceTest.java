@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.electronwill.nightconfig.core.CommentedConfig;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -13,6 +15,22 @@ import net.minecraft.nbt.NbtOps;
 import org.junit.jupiter.api.Test;
 
 final class EconomyServiceTest {
+    @Test
+    void configSpecCorrectsAnInitialBalanceAboveTheMaximumDuringLoading() {
+        CommentedConfig config = CommentedConfig.inMemory();
+        EconomyConfig.SPEC.correct(config);
+        config.set("economy.initial_balance", 100L);
+        config.set("economy.maximum_balance", 10L);
+
+        assertFalse(EconomyConfig.SPEC.isCorrect(config));
+        EconomyConfig.SPEC.correct(config);
+
+        assertTrue(EconomyConfig.SPEC.isCorrect(config));
+        assertEquals(EconomyConfig.DEFAULT_INITIAL_BALANCE, config.getLong("economy.initial_balance"));
+        assertEquals(10L, config.getLong("economy.maximum_balance"));
+        assertFalse(EconomyConfig.isValid(100, 10));
+    }
+
     @Test
     void configurableInitialBalanceCreatesOnePersistentIdempotentAccount() {
         assertEquals(0, EconomyConfig.DEFAULT_INITIAL_BALANCE);
@@ -315,6 +333,23 @@ final class EconomyServiceTest {
         assertFalse(secondEvidence.equals(new UUID(0, 0)));
         assertFalse(firstEvidence.equals(secondEvidence));
         assertTrue(state.economyBalance(playerId).isEmpty());
+    }
+
+    @Test
+    void loginReportsEachNonBenignFailureTypeOnlyOnce() {
+        var reported = EnumSet.noneOf(EconomyService.TransactionStatus.class);
+
+        assertFalse(EconomyService.shouldReportLoginFailure(EconomyService.TransactionStatus.SUCCESS, reported));
+        assertFalse(EconomyService.shouldReportLoginFailure(
+                EconomyService.TransactionStatus.ACCOUNT_EXISTS, reported));
+        assertFalse(EconomyService.shouldReportLoginFailure(
+                EconomyService.TransactionStatus.DUPLICATE_TRANSACTION, reported));
+        assertTrue(EconomyService.shouldReportLoginFailure(
+                EconomyService.TransactionStatus.INVALID_CONFIGURATION, reported));
+        assertFalse(EconomyService.shouldReportLoginFailure(
+                EconomyService.TransactionStatus.INVALID_CONFIGURATION, reported));
+        assertTrue(EconomyService.shouldReportLoginFailure(
+                EconomyService.TransactionStatus.READ_ONLY_SCHEMA, reported));
     }
 
     private static void bootstrap(PlatformSavedData state, UUID actor, AdminRole role) {

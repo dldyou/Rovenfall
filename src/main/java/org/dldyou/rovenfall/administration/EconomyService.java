@@ -1,15 +1,21 @@
 package org.dldyou.rovenfall.administration;
 
+import com.mojang.logging.LogUtils;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import org.dldyou.rovenfall.Rovenfall;
+import org.slf4j.Logger;
 
 public final class EconomyService {
+    private static final Logger LOGGER = LogUtils.getLogger();
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
+    private static final Set<TransactionStatus> REPORTED_LOGIN_FAILURES = ConcurrentHashMap.newKeySet();
     private static final long DENIED_AUDIT_INTERVAL_MILLIS = 1_000L;
     private static final Identifier ACCOUNT_CREATE = action("economy_account_create");
 
@@ -43,7 +49,7 @@ public final class EconomyService {
         if (existing.isPresent()) {
             return result(TransactionStatus.ACCOUNT_EXISTS, existing.get(), existing.get(), transactionId, false);
         }
-        if (!validLimits(initialBalance, maximumBalance)) {
+        if (!EconomyConfig.isValid(initialBalance, maximumBalance)) {
             return result(TransactionStatus.INVALID_CONFIGURATION, 0, 0, transactionId, false);
         }
         if (!state.canCommitEconomyTransaction(transactionId, timestampEpochMillis)) {
@@ -160,7 +166,7 @@ public final class EconomyService {
             return denied(state, actorId, playerId, operation, TransactionStatus.INVALID_REASON,
                     "invalid_reason", timestampEpochMillis, transactionId, beforeBalance);
         }
-        if (!validLimits(initialBalance, maximumBalance)) {
+        if (!EconomyConfig.isValid(initialBalance, maximumBalance)) {
             return denied(state, actorId, playerId, operation, TransactionStatus.INVALID_CONFIGURATION,
                     "invalid_configuration", timestampEpochMillis, transactionId, beforeBalance);
         }
@@ -234,10 +240,6 @@ public final class EconomyService {
         return authorizationOverride || role == AdminRole.ECONOMY_MANAGER || role == AdminRole.OWNER;
     }
 
-    private static boolean validLimits(long initialBalance, long maximumBalance) {
-        return initialBalance >= 0 && maximumBalance >= initialBalance;
-    }
-
     private static boolean validTransactionId(UUID transactionId) {
         return transactionId != null && !ZERO_UUID.equals(transactionId);
     }
@@ -289,18 +291,31 @@ public final class EconomyService {
         UUID playerId = player.getUUID();
         long timestampEpochMillis = System.currentTimeMillis();
         UUID transactionId = UUID.randomUUID();
-        Runnable update = () -> createAccount(
-                PlatformSavedData.get(server),
-                playerId,
-                EconomyConfig.initialBalance(),
-                EconomyConfig.maximumBalance(),
-                timestampEpochMillis,
-                transactionId);
+        Runnable update = () -> {
+            TransactionResult result = createAccount(
+                    PlatformSavedData.get(server),
+                    playerId,
+                    EconomyConfig.initialBalance(),
+                    EconomyConfig.maximumBalance(),
+                    timestampEpochMillis,
+                    transactionId);
+            if (shouldReportLoginFailure(result.status(), REPORTED_LOGIN_FAILURES)) {
+                LOGGER.error("Could not create a player economy account during login ({}). "
+                        + "Further login failures of this type will be suppressed.", result.status());
+            }
+        };
         if (server.isSameThread()) {
             update.run();
         } else {
             server.execute(update);
         }
+    }
+
+    static boolean shouldReportLoginFailure(TransactionStatus status, Set<TransactionStatus> reportedFailures) {
+        return switch (status) {
+            case SUCCESS, ACCOUNT_EXISTS, DUPLICATE_TRANSACTION -> false;
+            default -> reportedFailures.add(status);
+        };
     }
 
     private enum Operation {
