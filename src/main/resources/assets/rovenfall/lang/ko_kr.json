@@ -108,6 +108,7 @@
   "economy_transaction_kind.rovenfall.reversal": "역거래",
   "command.rovenfall.admin.economy.reversal.success": "거래 %1$s을(를) 새 거래 %2$s(으)로 되돌렸습니다.",
   "command.rovenfall.admin.economy.reversal.error.invalid_decision": "역거래 결정은 strict 또는 refund_without_items_or_stock이어야 합니다.",
+  "command.rovenfall.admin.economy.reversal.error.transaction_id_conflict": "해당 역거래 ID는 다른 작업에 사용되었습니다. 새 거래 ID를 사용하세요.",
   "command.rovenfall.admin.economy.reversal.error.compensation_required": "정확한 아이템 및 재고 역연산이 불가능합니다. refund_without_items_or_stock을 명시적으로 선택한 경우에만 다시 시도하세요.",
   "command.rovenfall.admin.economy.reversal.error.already_reversed": "해당 거래는 이미 되돌렸습니다.",
   "command.rovenfall.admin.economy.reversal.error.insufficient_funds": "안전한 역연산에 필요한 플레이어 재화가 부족합니다.",

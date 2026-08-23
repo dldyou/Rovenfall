@@ -688,6 +688,8 @@ public final class RovenfallCommands {
                         target.getDisplayName(), state.economyBalance(target.getUUID()).orElse(0L)), false);
                 yield 1;
             }
+            case TRANSACTION_ID_CONFLICT -> failure(
+                    source, "command.rovenfall.admin.economy.reversal.error.transaction_id_conflict");
             case COMPENSATION_REQUIRED -> failure(
                     source, "command.rovenfall.admin.economy.reversal.error.compensation_required");
             case ALREADY_REVERSED -> failure(source, "command.rovenfall.admin.economy.reversal.error.already_reversed");

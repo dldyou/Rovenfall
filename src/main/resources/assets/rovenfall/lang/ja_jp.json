@@ -108,6 +108,7 @@
   "economy_transaction_kind.rovenfall.reversal": "逆取引",
   "command.rovenfall.admin.economy.reversal.success": "取引 %1$s を新しい取引 %2$s で取り消しました。",
   "command.rovenfall.admin.economy.reversal.error.invalid_decision": "逆取引の決定は strict または refund_without_items_or_stock にしてください。",
+  "command.rovenfall.admin.economy.reversal.error.transaction_id_conflict": "その逆取引IDは別の操作で使用されています。新しい取引IDを使用してください。",
   "command.rovenfall.admin.economy.reversal.error.compensation_required": "正確なアイテムと在庫の逆操作は利用できません。refund_without_items_or_stock を明示的に選択した場合のみ再試行してください。",
   "command.rovenfall.admin.economy.reversal.error.already_reversed": "その取引はすでに取り消されています。",
   "command.rovenfall.admin.economy.reversal.error.insufficient_funds": "安全な逆操作に必要なプレイヤー通貨が不足しています。",

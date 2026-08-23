@@ -74,7 +74,14 @@ public final class EconomyReversalService {
                     Status.INVALID_TRANSACTION, "invalid_transaction", timestampEpochMillis);
         }
         if (state.hasTransaction(reversalTransactionId, timestampEpochMillis)) {
-            return result(Status.DUPLICATE_TRANSACTION, reversalTransactionId, false);
+            EconomyTransactionReceipt existing = state.economyReceipt(reversalTransactionId).orElse(null);
+            if (existing != null && existing.kind() == EconomyTransactionReceipt.Kind.REVERSAL
+                    && existing.playerId().equals(playerId)
+                    && existing.originalTransactionId().equals(Optional.of(originalTransactionId))) {
+                return result(Status.DUPLICATE_TRANSACTION, reversalTransactionId, false);
+            }
+            return denied(state, actorId, originalTransactionId, reversalTransactionId,
+                    Status.TRANSACTION_ID_CONFLICT, "transaction_id_conflict", timestampEpochMillis);
         }
         Optional<String> validReason = validReason(reason);
         if (validReason.isEmpty()) {
@@ -304,6 +311,7 @@ public final class EconomyReversalService {
     public enum Status {
         SUCCESS,
         DUPLICATE_TRANSACTION,
+        TRANSACTION_ID_CONFLICT,
         ALREADY_REVERSED,
         COMPENSATION_REQUIRED,
         UNAUTHORIZED,

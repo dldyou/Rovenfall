@@ -161,6 +161,30 @@ final class EconomyReversalServiceTest {
     }
 
     @Test
+    void unrelatedExistingTransactionIdIsConflictAndDoesNotReverseOriginal() {
+        PlatformSavedData state = state();
+        NonNullList<ItemStack> inventory = emptyInventory();
+        UUID purchaseId = purchase(state, inventory, uuid(360));
+        UUID unrelatedAwardId = uuid(9_002);
+        int audits = state.auditCount();
+
+        assertEquals(EconomyReversalService.Status.TRANSACTION_ID_CONFLICT,
+                reverse(state, inventory, purchaseId, unrelatedAwardId,
+                        EconomyTransactionReceipt.CompensationDecision.NONE, 3_000).status());
+
+        assertEquals(88, state.economyBalance(PLAYER).orElseThrow());
+        assertEquals(9, stock(state).current());
+        assertEquals(4, ShopTradeService.countExact(inventory, exactBread(4)));
+        assertTrue(state.economyReceipt(purchaseId).orElseThrow().reversedBy().isEmpty());
+        assertEquals(EconomyTransactionReceipt.Kind.AWARD,
+                state.economyReceipt(unrelatedAwardId).orElseThrow().kind());
+        assertEquals(audits + 1, state.auditCount());
+        AuditEntry denied = state.auditPage(0, 1).entries().getFirst();
+        assertEquals(id("economy_transaction_reversal_denied"), denied.actionType());
+        assertEquals("transaction_id_conflict", denied.reason());
+    }
+
+    @Test
     void reversalReceiptAndStatusSurvivePersistence() {
         PlatformSavedData state = economyOnlyState();
         NonNullList<ItemStack> inventory = emptyInventory();
