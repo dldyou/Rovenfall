@@ -311,6 +311,47 @@ public final class PlatformSavedData extends SavedData {
         commitAudit(auditEntry);
     }
 
+    void commitShopTrade(
+            UUID playerId,
+            long balance,
+            Identifier shopId,
+            ShopInstance shop,
+            UUID transactionId,
+            long timestampEpochMillis,
+            AuditEntry auditEntry) {
+        Long previousBalance = economyBalances.get(playerId);
+        ShopInstance previousShop = shopInstances.get(shopId);
+        Long previousTransaction = economyTransactions.get(transactionId);
+        int previousAuditSize = auditEntries.size();
+        try {
+            economyBalances.put(playerId, balance);
+            shopInstances.put(shopId, shop);
+            economyTransactions.put(transactionId, timestampEpochMillis);
+            commitAudit(auditEntry);
+            if (economyTransactions.size() > MAX_ECONOMY_TRANSACTIONS) {
+                trimExpiredEconomyTransactions(
+                        economyTransactions, timestampEpochMillis, ECONOMY_TRANSACTION_RETENTION_MILLIS);
+            }
+        } catch (RuntimeException exception) {
+            restoreEntry(economyBalances, playerId, previousBalance);
+            restoreEntry(shopInstances, shopId, previousShop);
+            restoreEntry(economyTransactions, transactionId, previousTransaction);
+            if (auditEntries.size() > previousAuditSize) {
+                auditEntries.subList(previousAuditSize, auditEntries.size()).clear();
+            }
+            setDirty();
+            throw exception;
+        }
+    }
+
+    private static <K, V> void restoreEntry(Map<K, V> values, K key, V previousValue) {
+        if (previousValue == null) {
+            values.remove(key);
+        } else {
+            values.put(key, previousValue);
+        }
+    }
+
     synchronized boolean tryLockShop(Identifier shopId) {
         return shopDependencyLocks.add(shopId);
     }

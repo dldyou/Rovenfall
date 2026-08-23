@@ -175,7 +175,7 @@ public final class RovenfallCommands {
         var restockClearCommand = Commands.literal("clear").then(restockClearShop);
         var restockCommand = Commands.literal("restock").then(restockSetCommand).then(restockClearCommand);
 
-        var shopCommand = Commands.literal("shop")
+        var adminShopCommand = Commands.literal("shop")
                 .then(Commands.literal("create")
                         .then(Commands.argument("shop_id", IdentifierArgument.id())
                                 .then(Commands.argument("template_id", IdentifierArgument.id())
@@ -236,14 +236,37 @@ public final class RovenfallCommands {
                         .then(removeOfferCommand)
                         .then(restockCommand));
 
+        var playerShopCommand = Commands.literal("shop")
+                .then(tradeCommand("buy", ShopTradeService.Direction.BUY))
+                .then(tradeCommand("sell", ShopTradeService.Direction.SELL));
+
         event.getDispatcher().register(Commands.literal("rovenfall")
+                .then(playerShopCommand)
                 .then(Commands.literal("admin")
                         .requires(RovenfallCommands::canUseAdministration)
                         .then(roleCommand)
                         .then(economyCommand)
-                        .then(shopCommand)
+                        .then(adminShopCommand)
                         .then(auditCommand)
                         .then(snapshotCommand)));
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> tradeCommand(
+            String literal,
+            ShopTradeService.Direction direction) {
+        var transaction = Commands.argument("transaction_id", UuidArgument.uuid())
+                .executes(context -> trade(
+                        context.getSource(),
+                        IdentifierArgument.getId(context, "shop_id"),
+                        IdentifierArgument.getId(context, "offer_id"),
+                        direction,
+                        IntegerArgumentType.getInteger(context, "quantity"),
+                        UuidArgument.getUuid(context, "transaction_id")));
+        var quantity = Commands.argument(
+                "quantity", IntegerArgumentType.integer(1, ShopTradeService.MAX_TRADE_QUANTITY)).then(transaction);
+        var offer = Commands.argument("offer_id", IdentifierArgument.id()).then(quantity);
+        var shop = Commands.argument("shop_id", IdentifierArgument.id()).then(offer);
+        return Commands.literal(literal).then(shop);
     }
 
     private static int setRole(CommandSourceStack source, net.minecraft.server.level.ServerPlayer target, String roleId, String reason) {
@@ -435,6 +458,67 @@ public final class RovenfallCommands {
             case OFFER_LIMIT_REACHED -> failure(source, "command.rovenfall.admin.shop.error.offer_limit");
             case OFFER_NOT_FOUND -> failure(source, "command.rovenfall.admin.shop.error.offer_not_found");
             case INVALID_REQUEST -> failure(source, "command.rovenfall.admin.shop.error.invalid_request");
+        };
+    }
+
+    private static int trade(
+            CommandSourceStack source,
+            Identifier shopId,
+            Identifier offerId,
+            ShopTradeService.Direction direction,
+            int quantity,
+            UUID transactionId) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        Optional<ShopInstance.Offer> offer = state.shopInstance(shopId)
+                .map(ShopInstance::offers)
+                .map(offers -> offers.get(offerId));
+        net.minecraft.world.item.ItemStack expectedItem = offer
+                .map(ShopInstance.Offer::item)
+                .orElse(net.minecraft.world.item.ItemStack.EMPTY);
+        long expectedPrice = offer.flatMap(value -> direction == ShopTradeService.Direction.BUY
+                        ? value.buyPrice()
+                        : value.sellPrice())
+                .orElse(-1L);
+        var result = ShopTradeService.trade(
+                state,
+                player,
+                new ShopTradeService.TradeRequest(
+                        shopId, offerId, direction, quantity, expectedItem, expectedPrice, transactionId),
+                source.getLevel().getGameTime(),
+                Instant.now().toEpochMilli());
+        return switch (result.status()) {
+            case SUCCESS -> {
+                source.sendSuccess(() -> Component.translatable(
+                        direction == ShopTradeService.Direction.BUY
+                                ? "command.rovenfall.shop.buy.success"
+                                : "command.rovenfall.shop.sell.success",
+                        quantity,
+                        offerId.toString(),
+                        transactionId.toString()), false);
+                yield 1;
+            }
+            case DUPLICATE_TRANSACTION -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.shop.duplicate", transactionId.toString()), false);
+                yield 1;
+            }
+            case INVALID_REQUEST, INVALID_TRANSACTION -> failure(source, "command.rovenfall.shop.error.invalid_request");
+            case READ_ONLY_SCHEMA -> failure(source, "command.rovenfall.shop.error.read_only");
+            case TRANSACTION_LEDGER_FULL -> failure(source, "command.rovenfall.shop.error.ledger_full");
+            case SHOP_NOT_FOUND, OFFER_NOT_FOUND -> failure(source, "command.rovenfall.shop.error.not_found");
+            case OFFER_UNAVAILABLE -> failure(source, "command.rovenfall.shop.error.offer_unavailable");
+            case DEPENDENCY_LOCKED -> failure(source, "command.rovenfall.shop.error.busy");
+            case ACCESS_DENIED -> failure(source, "command.rovenfall.shop.error.access_denied");
+            case STALE_OFFER -> failure(source, "command.rovenfall.shop.error.stale_offer");
+            case ACCOUNT_NOT_FOUND -> failure(source, "command.rovenfall.shop.error.account_missing");
+            case OVERFLOW, MAXIMUM_BALANCE_EXCEEDED -> failure(source, "command.rovenfall.shop.error.overflow");
+            case INSUFFICIENT_FUNDS -> failure(source, "command.rovenfall.shop.error.insufficient_funds");
+            case INSUFFICIENT_STOCK -> failure(source, "command.rovenfall.shop.error.insufficient_stock");
+            case STOCK_CAPACITY_EXCEEDED -> failure(source, "command.rovenfall.shop.error.stock_capacity");
+            case INSUFFICIENT_ITEMS -> failure(source, "command.rovenfall.shop.error.insufficient_items");
+            case INSUFFICIENT_SPACE -> failure(source, "command.rovenfall.shop.error.insufficient_space");
+            case INVENTORY_UPDATE_FAILED -> failure(source, "command.rovenfall.shop.error.inventory_update");
         };
     }
 

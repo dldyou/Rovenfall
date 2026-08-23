@@ -26,6 +26,7 @@ import org.dldyou.rovenfall.administration.PlatformSavedData;
 import org.dldyou.rovenfall.administration.PlayerRecordService;
 import org.dldyou.rovenfall.administration.RovenfallCommands;
 import org.dldyou.rovenfall.administration.ShopInstanceService;
+import org.dldyou.rovenfall.administration.ShopTradeService;
 import org.dldyou.rovenfall.definition.TestDefinitionReloadListener;
 import org.dldyou.rovenfall.economy.ShopTemplateReloadListener;
 import org.dldyou.rovenfall.economy.ShopInstance;
@@ -147,6 +148,117 @@ public final class Rovenfall {
                         UUID.randomUUID());
                 helper.assertTrue(deleted.status() == ShopInstanceService.Status.SUCCESS,
                         "Shop instance cleanup failed");
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("shop_trade_atomicity"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var state = PlatformSavedData.get(server);
+                var player = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                Identifier shopId = id("trade_" + UUID.randomUUID());
+                Identifier offerId = id("foundation_bread");
+                long timestamp = System.currentTimeMillis();
+                var created = ShopInstanceService.create(
+                        state,
+                        ShopTemplateReloadListener.snapshot(server),
+                        AdministrationService.SYSTEM_ACTOR,
+                        true,
+                        shopId,
+                        id("foundation"),
+                        Optional.of(new ShopInstance.Binding(
+                                player.level().dimension(), net.minecraft.core.BlockPos.containing(player.position()))),
+                        key -> server.getLevel(key) != null,
+                        ShopInstance.AccessPolicy.publicAccess(),
+                        server.overworld().getGameTime(),
+                        "gametest trade create",
+                        timestamp,
+                        UUID.randomUUID());
+                helper.assertTrue(created.status() == ShopInstanceService.Status.SUCCESS,
+                        "Trade GameTest shop setup failed");
+                var account = EconomyService.award(
+                        state, player.getUUID(), 100, "gametest trade seed", timestamp + 1,
+                        UUID.randomUUID(), 0, Long.MAX_VALUE);
+                helper.assertTrue(account.status() == EconomyService.TransactionStatus.SUCCESS,
+                        "Trade GameTest account setup failed");
+                var offer = state.shopInstance(shopId).orElseThrow().offers().get(offerId);
+                UUID purchaseId = UUID.randomUUID();
+                var purchase = ShopTradeService.trade(
+                        state,
+                        player,
+                        new ShopTradeService.TradeRequest(
+                                shopId, offerId, ShopTradeService.Direction.BUY, 1,
+                                offer.item(), offer.buyPrice().orElseThrow(), purchaseId),
+                        server.overworld().getGameTime(),
+                        timestamp + 2);
+                helper.assertTrue(purchase.status() == ShopTradeService.Status.SUCCESS,
+                        "Server-player purchase did not commit");
+                helper.assertTrue(state.economyBalance(player.getUUID()).orElseThrow() == 88,
+                        "Purchase did not use the server price");
+                helper.assertTrue(player.getInventory().getNonEquipmentItems().stream()
+                                .filter(stack -> net.minecraft.world.item.ItemStack.isSameItemSameComponents(stack, offer.item()))
+                                .mapToInt(net.minecraft.world.item.ItemStack::getCount).sum() == 4,
+                        "Purchase did not grant the exact offer stack");
+
+                var sale = ShopTradeService.trade(
+                        state,
+                        player,
+                        new ShopTradeService.TradeRequest(
+                                shopId, offerId, ShopTradeService.Direction.SELL, 1,
+                                offer.item(), offer.sellPrice().orElseThrow(), UUID.randomUUID()),
+                        server.overworld().getGameTime(),
+                        timestamp + 3);
+                helper.assertTrue(sale.status() == ShopTradeService.Status.SUCCESS,
+                        "Server-player sale did not commit");
+                helper.assertTrue(state.economyBalance(player.getUUID()).orElseThrow() == 94,
+                        "Sale did not use the server price");
+                var encodedTrade = PlatformSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow();
+                var decodedTrade = PlatformSavedData.CODEC.parse(NbtOps.INSTANCE, encodedTrade).getOrThrow();
+                helper.assertTrue(decodedTrade.economyBalance(player.getUUID()).orElseThrow() == 94,
+                        "Committed trade balance did not survive persistence");
+                helper.assertTrue(decodedTrade.shopInstance(shopId).orElseThrow().offers().get(offerId)
+                                .stock().current() == 10,
+                        "Committed trade stock did not survive persistence");
+                helper.assertTrue(EconomyService.award(
+                                decodedTrade, player.getUUID(), 1, "gametest persisted retry",
+                                timestamp + 3, purchaseId, 0, Long.MAX_VALUE).status()
+                                == EconomyService.TransactionStatus.DUPLICATE_TRANSACTION,
+                        "Committed trade retry ID did not survive persistence");
+
+                var replay = ShopTradeService.trade(
+                        state,
+                        player,
+                        new ShopTradeService.TradeRequest(
+                                shopId, offerId, ShopTradeService.Direction.BUY, 1,
+                                offer.item(), offer.buyPrice().orElseThrow(), purchaseId),
+                        server.overworld().getGameTime(),
+                        timestamp + 4);
+                helper.assertTrue(replay.status() == ShopTradeService.Status.DUPLICATE_TRANSACTION,
+                        "Purchase retry was not idempotent");
+                helper.assertTrue(state.economyBalance(player.getUUID()).orElseThrow() == 94,
+                        "Purchase retry changed the balance");
+
+                player.setPos(player.getX() + 100, player.getY(), player.getZ());
+                var denied = ShopTradeService.trade(
+                        state,
+                        player,
+                        new ShopTradeService.TradeRequest(
+                                shopId, offerId, ShopTradeService.Direction.BUY, 1,
+                                offer.item(), offer.buyPrice().orElseThrow(), UUID.randomUUID()),
+                        server.overworld().getGameTime(),
+                        timestamp + 1_500);
+                helper.assertTrue(denied.status() == ShopTradeService.Status.ACCESS_DENIED,
+                        "Bound shop accepted a distant player");
+                ShopInstanceService.delete(
+                        state,
+                        AdministrationService.SYSTEM_ACTOR,
+                        true,
+                        shopId,
+                        "gametest trade cleanup",
+                        timestamp + 3_000,
+                        UUID.randomUUID());
                 helper.succeed();
             }
         });
