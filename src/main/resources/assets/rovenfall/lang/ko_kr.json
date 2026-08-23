@@ -29,5 +29,20 @@
   "command.rovenfall.admin.snapshot.error.unauthorized": "플랫폼 스냅샷을 생성하거나 복원할 권한이 없습니다.",
   "command.rovenfall.admin.snapshot.error.write_failed": "플랫폼 스냅샷을 저장하지 못했습니다. 감사 기록과 스냅샷 디렉터리 권한을 확인하세요.",
   "command.rovenfall.admin.snapshot.error.unavailable": "스냅샷 %s을(를) 찾을 수 없거나 안전하게 읽을 수 없습니다.",
-  "command.rovenfall.admin.snapshot.error.safety_failed": "현재 상태의 안전 스냅샷을 만들지 못해 복원을 취소했습니다."
+  "command.rovenfall.admin.snapshot.error.safety_failed": "현재 상태의 안전 스냅샷을 만들지 못해 복원을 취소했습니다.",
+  "command.rovenfall.admin.snapshot.error.transaction_ledger_full": "최근 거래 ID가 안전 원장 한도를 초과하여 복원을 취소했습니다.",
+  "config.rovenfall.economy.initial_balance": "계정 초기 잔액",
+  "config.rovenfall.economy.maximum_balance": "계정 최대 잔액",
+  "command.rovenfall.admin.economy.grant.success": "%1$s님에게 %2$s을(를) 지급했습니다. 잔액: %3$s | 거래 ID: %4$s",
+  "command.rovenfall.admin.economy.debit.success": "%1$s님에게서 %2$s을(를) 차감했습니다. 잔액: %3$s | 거래 ID: %4$s",
+  "command.rovenfall.admin.economy.duplicate": "거래 %1$s은(는) %2$s님에게 이미 처리되었습니다. 현재 잔액: %3$s",
+  "command.rovenfall.admin.economy.error.unauthorized": "화폐 잔액을 변경할 권한이 없습니다.",
+  "command.rovenfall.admin.economy.error.invalid_transaction": "거래 ID가 올바르지 않습니다.",
+  "command.rovenfall.admin.economy.error.invalid_amount": "화폐 수량은 양수여야 합니다.",
+  "command.rovenfall.admin.economy.error.invalid_configuration": "경제 잔액 설정이 올바르지 않습니다.",
+  "command.rovenfall.admin.economy.error.transaction_ledger_full": "최근 거래 원장이 가득 찼습니다. 잔액은 변경되지 않았습니다.",
+  "command.rovenfall.admin.economy.error.overflow": "이 작업은 화폐 잔액 오버플로를 발생시킵니다.",
+  "command.rovenfall.admin.economy.error.maximum_exceeded": "이 작업은 설정된 최대 잔액 %s을(를) 초과합니다.",
+  "command.rovenfall.admin.economy.error.insufficient_funds": "잔액이 부족합니다. 현재 잔액: %1$s | 요청 차감액: %2$s",
+  "command.rovenfall.admin.economy.error.invalid_request": "경제 작업 요청이 올바르지 않습니다."
 }

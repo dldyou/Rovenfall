@@ -20,6 +20,8 @@ final class PlatformSnapshotServiceTest {
         UUID owner = id(1);
         bootstrap(state, owner, AdminRole.OWNER);
         PlayerRecordService.observeLogin(state, owner, 1_500);
+        UUID economyTransaction = id(100);
+        EconomyService.award(state, owner, 50, "snapshot balance", 1_750, economyTransaction, 0, 100);
         PlatformSnapshotStore store = store("create");
         UUID snapshotId = id(101);
 
@@ -31,8 +33,10 @@ final class PlatformSnapshotServiceTest {
         PlatformSavedData loaded = store.read(snapshotId);
         assertEquals(AdminRole.OWNER, loaded.roleOf(owner).orElseThrow());
         assertEquals(new PlayerRecord(1_500, 1_500), loaded.playerRecord(owner).orElseThrow());
-        assertEquals(1, loaded.auditCount());
-        assertEquals(2, state.auditCount());
+        assertEquals(50, loaded.economyBalance(owner).orElseThrow());
+        assertTrue(loaded.hasEconomyTransaction(economyTransaction, 2_000));
+        assertEquals(2, loaded.auditCount());
+        assertEquals(3, state.auditCount());
         assertAudit(state, "rovenfall:platform_snapshot_create", "none", "snapshot:" + snapshotId, id(201));
 
         var duplicate = AdministrationService.createSnapshot(
@@ -97,12 +101,16 @@ final class PlatformSnapshotServiceTest {
         bootstrap(state, owner, AdminRole.OWNER);
         change(state, owner, target, AdminRole.VIEWER, 2_000, 301);
         PlayerRecordService.observeLogin(state, target, 2_500);
+        UUID sourceEconomyTransaction = id(300);
+        EconomyService.award(state, target, 10, "source balance", 2_750, sourceEconomyTransaction, 0, 100);
         PlatformSnapshotStore store = store("restore");
         UUID sourceSnapshotId = id(120);
         store.write(sourceSnapshotId, state);
 
         change(state, owner, target, AdminRole.MODERATOR, 3_000, 302);
         PlayerRecordService.observeLogin(state, target, 3_500);
+        UUID liveEconomyTransaction = id(304);
+        EconomyService.award(state, target, 10, "live balance", 3_750, liveEconomyTransaction, 0, 100);
         int auditCount = state.auditCount();
         UUID safetySnapshotId = id(121);
         UUID transactionId = id(303);
@@ -114,10 +122,16 @@ final class PlatformSnapshotServiceTest {
         assertEquals(AdministrationService.SnapshotRestoreStatus.SUCCESS, result.status());
         assertEquals(AdminRole.VIEWER, state.roleOf(target).orElseThrow());
         assertEquals(new PlayerRecord(2_500, 2_500), state.playerRecord(target).orElseThrow());
+        assertEquals(10, state.economyBalance(target).orElseThrow());
+        assertTrue(state.hasEconomyTransaction(sourceEconomyTransaction, 4_000));
+        assertTrue(state.hasEconomyTransaction(liveEconomyTransaction, 4_000));
         assertEquals(auditCount + 1, state.auditCount());
-        assertEquals(AdminRole.MODERATOR, store.read(safetySnapshotId).roleOf(target).orElseThrow());
+        PlatformSavedData safetySnapshot = store.read(safetySnapshotId);
+        assertEquals(AdminRole.MODERATOR, safetySnapshot.roleOf(target).orElseThrow());
         assertEquals(new PlayerRecord(2_500, 3_500),
-                store.read(safetySnapshotId).playerRecord(target).orElseThrow());
+                safetySnapshot.playerRecord(target).orElseThrow());
+        assertEquals(20, safetySnapshot.economyBalance(target).orElseThrow());
+        assertTrue(safetySnapshot.hasEconomyTransaction(liveEconomyTransaction, 4_000));
         assertAudit(state, "rovenfall:platform_snapshot_restore",
                 "snapshot:" + safetySnapshotId, "snapshot:" + sourceSnapshotId, transactionId);
     }

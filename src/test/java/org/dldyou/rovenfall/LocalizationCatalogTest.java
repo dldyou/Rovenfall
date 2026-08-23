@@ -19,6 +19,9 @@ final class LocalizationCatalogTest {
             "admin_role.rovenfall.owner",
             "shop_template.rovenfall.foundation",
             "command.rovenfall.admin.role.set.success",
+            "command.rovenfall.admin.economy.grant.success",
+            "command.rovenfall.admin.economy.error.insufficient_funds",
+            "config.rovenfall.economy.initial_balance",
             "command.rovenfall.admin.audit.header",
             "gui.rovenfall.admin.audit.summary",
             "gui.rovenfall.admin.audit.reason"

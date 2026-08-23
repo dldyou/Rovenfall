@@ -29,5 +29,20 @@
   "command.rovenfall.admin.snapshot.error.unauthorized": "You do not have permission to create or restore platform snapshots.",
   "command.rovenfall.admin.snapshot.error.write_failed": "The platform snapshot could not be saved. Check audit records and snapshot directory permissions.",
   "command.rovenfall.admin.snapshot.error.unavailable": "Snapshot %s is missing or cannot be read safely.",
-  "command.rovenfall.admin.snapshot.error.safety_failed": "Restore was cancelled because the current state could not be saved as a safety snapshot."
+  "command.rovenfall.admin.snapshot.error.safety_failed": "Restore was cancelled because the current state could not be saved as a safety snapshot.",
+  "command.rovenfall.admin.snapshot.error.transaction_ledger_full": "Restore was cancelled because its recent transaction IDs would exceed the safe ledger limit.",
+  "config.rovenfall.economy.initial_balance": "Initial account balance",
+  "config.rovenfall.economy.maximum_balance": "Maximum account balance",
+  "command.rovenfall.admin.economy.grant.success": "Granted %2$s to %1$s. Balance: %3$s | Transaction: %4$s",
+  "command.rovenfall.admin.economy.debit.success": "Debited %2$s from %1$s. Balance: %3$s | Transaction: %4$s",
+  "command.rovenfall.admin.economy.duplicate": "Transaction %1$s was already processed for %2$s. Balance remains %3$s.",
+  "command.rovenfall.admin.economy.error.unauthorized": "You do not have permission to change currency balances.",
+  "command.rovenfall.admin.economy.error.invalid_transaction": "The transaction ID is invalid.",
+  "command.rovenfall.admin.economy.error.invalid_amount": "The currency amount must be positive.",
+  "command.rovenfall.admin.economy.error.invalid_configuration": "The economy balance configuration is invalid.",
+  "command.rovenfall.admin.economy.error.transaction_ledger_full": "The recent transaction ledger is full. No balance was changed.",
+  "command.rovenfall.admin.economy.error.overflow": "The operation would overflow the currency balance.",
+  "command.rovenfall.admin.economy.error.maximum_exceeded": "The operation would exceed the configured maximum balance of %s.",
+  "command.rovenfall.admin.economy.error.insufficient_funds": "Insufficient funds. Balance: %1$s | Requested debit: %2$s",
+  "command.rovenfall.admin.economy.error.invalid_request": "The economy request is invalid."
 }

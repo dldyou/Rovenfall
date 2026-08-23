@@ -1,6 +1,7 @@
 package org.dldyou.rovenfall.administration;
 
 import com.mojang.serialization.Codec;
+import com.mojang.serialization.DataResult;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -17,18 +18,34 @@ import net.minecraft.world.level.saveddata.SavedDataType;
 import org.dldyou.rovenfall.Rovenfall;
 
 public final class PlatformSavedData extends SavedData {
-    public static final int CURRENT_SCHEMA_VERSION = 2;
+    private static final UUID ZERO_UUID = new UUID(0L, 0L);
+    public static final int CURRENT_SCHEMA_VERSION = 3;
     public static final int MAX_AUDIT_PAGE_SIZE = 50;
+    static final int MAX_ECONOMY_TRANSACTIONS = 250_000;
+    static final long ECONOMY_TRANSACTION_RETENTION_MILLIS = Duration.ofDays(30).toMillis();
     private static final Duration AUDIT_RETENTION = Duration.ofDays(30);
     private static final Codec<Map<UUID, AdminRole>> ADMIN_ROLES_CODEC = Codec.unboundedMap(UUIDUtil.STRING_CODEC, AdminRole.CODEC);
     private static final Codec<Map<UUID, PlayerRecord>> PLAYER_RECORDS_CODEC =
             Codec.unboundedMap(UUIDUtil.STRING_CODEC, PlayerRecord.CODEC);
+    private static final Codec<Long> BALANCE_CODEC = Codec.LONG.validate(balance -> balance < 0
+            ? DataResult.error(() -> "Balance must be non-negative")
+            : DataResult.success(balance));
+    private static final Codec<Map<UUID, Long>> ECONOMY_BALANCES_CODEC =
+            Codec.unboundedMap(UUIDUtil.STRING_CODEC, BALANCE_CODEC);
+    private static final Codec<Long> TRANSACTION_TIMESTAMP_CODEC = Codec.LONG.validate(timestamp -> timestamp < 0
+            ? DataResult.error(() -> "Economy transaction timestamp must be non-negative")
+            : DataResult.success(timestamp));
+    private static final Codec<Map<UUID, Long>> ECONOMY_TRANSACTIONS_CODEC =
+            boundedTransactionLedgerCodec(MAX_ECONOMY_TRANSACTIONS);
 
     public static final Codec<PlatformSavedData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.optionalFieldOf("schema_version", 0).forGetter(data -> data.schemaVersion),
             ADMIN_ROLES_CODEC.optionalFieldOf("admin_roles", Map.of()).forGetter(data -> data.adminRoles),
             AuditEntry.CODEC.listOf().optionalFieldOf("audit_entries", List.of()).forGetter(data -> data.auditEntries),
-            PLAYER_RECORDS_CODEC.optionalFieldOf("player_records", Map.of()).forGetter(data -> data.playerRecords)
+            PLAYER_RECORDS_CODEC.optionalFieldOf("player_records", Map.of()).forGetter(data -> data.playerRecords),
+            ECONOMY_BALANCES_CODEC.optionalFieldOf("economy_balances", Map.of()).forGetter(data -> data.economyBalances),
+            ECONOMY_TRANSACTIONS_CODEC.optionalFieldOf("economy_transactions", Map.of())
+                    .forGetter(data -> data.economyTransactions)
     ).apply(instance, PlatformSavedData::decode));
 
     public static final SavedDataType<PlatformSavedData> TYPE = new SavedDataType<>(
@@ -42,10 +59,12 @@ public final class PlatformSavedData extends SavedData {
     private final Map<UUID, AdminRole> adminRoles;
     private final List<AuditEntry> auditEntries;
     private final Map<UUID, PlayerRecord> playerRecords;
+    private final Map<UUID, Long> economyBalances;
+    private final Map<UUID, Long> economyTransactions;
     private final Map<UUID, Long> lastDeniedAuditByActor = new HashMap<>();
 
     public PlatformSavedData() {
-        this(CURRENT_SCHEMA_VERSION, Map.of(), List.of(), Map.of(), true);
+        this(CURRENT_SCHEMA_VERSION, Map.of(), List.of(), Map.of(), Map.of(), Map.of(), true);
     }
 
     private PlatformSavedData(
@@ -53,24 +72,32 @@ public final class PlatformSavedData extends SavedData {
             Map<UUID, AdminRole> adminRoles,
             List<AuditEntry> auditEntries,
             Map<UUID, PlayerRecord> playerRecords,
+            Map<UUID, Long> economyBalances,
+            Map<UUID, Long> economyTransactions,
             boolean writable) {
         this.schemaVersion = schemaVersion;
         this.writable = writable;
         this.adminRoles = new HashMap<>(adminRoles);
         this.auditEntries = new ArrayList<>(auditEntries);
         this.playerRecords = new HashMap<>(playerRecords);
+        this.economyBalances = new HashMap<>(economyBalances);
+        this.economyTransactions = new HashMap<>(economyTransactions);
     }
 
     private static PlatformSavedData decode(
             int schemaVersion,
             Map<UUID, AdminRole> adminRoles,
             List<AuditEntry> auditEntries,
-            Map<UUID, PlayerRecord> playerRecords) {
+            Map<UUID, PlayerRecord> playerRecords,
+            Map<UUID, Long> economyBalances,
+            Map<UUID, Long> economyTransactions) {
         var migration = PlatformDataMigrations.migrate(
                 schemaVersion,
                 adminRoles,
                 auditEntries,
                 playerRecords,
+                economyBalances,
+                economyTransactions,
                 CURRENT_SCHEMA_VERSION
         );
         var state = migration.state();
@@ -79,6 +106,8 @@ public final class PlatformSavedData extends SavedData {
                 state.adminRoles(),
                 state.auditEntries(),
                 state.playerRecords(),
+                state.economyBalances(),
+                state.economyTransactions(),
                 migration.writable()
         );
     }
@@ -115,6 +144,14 @@ public final class PlatformSavedData extends SavedData {
         return playerRecords.size();
     }
 
+    public Optional<Long> economyBalance(UUID playerId) {
+        return Optional.ofNullable(economyBalances.get(playerId));
+    }
+
+    public int economyAccountCount() {
+        return economyBalances.size();
+    }
+
     public int auditCount() {
         return auditEntries.size();
     }
@@ -145,12 +182,115 @@ public final class PlatformSavedData extends SavedData {
         commitAudit(auditEntry);
     }
 
-    void commitRestore(PlatformSavedData snapshot, AuditEntry auditEntry) {
+    Optional<Map<UUID, Long>> prepareEconomyTransactionRestore(
+            PlatformSavedData snapshot, long timestampEpochMillis) {
+        return mergeEconomyTransactions(
+                economyTransactions,
+                snapshot.economyTransactions,
+                timestampEpochMillis,
+                ECONOMY_TRANSACTION_RETENTION_MILLIS,
+                MAX_ECONOMY_TRANSACTIONS);
+    }
+
+    void commitRestore(
+            PlatformSavedData snapshot,
+            Map<UUID, Long> restoredEconomyTransactions,
+            AuditEntry auditEntry) {
         adminRoles.clear();
         adminRoles.putAll(snapshot.adminRoles);
         playerRecords.clear();
         playerRecords.putAll(snapshot.playerRecords);
+        economyBalances.clear();
+        economyBalances.putAll(snapshot.economyBalances);
+        economyTransactions.clear();
+        economyTransactions.putAll(restoredEconomyTransactions);
         commitAudit(auditEntry);
+    }
+
+    boolean hasEconomyTransaction(UUID transactionId, long timestampEpochMillis) {
+        return ledgerContains(
+                economyTransactions, transactionId, timestampEpochMillis, ECONOMY_TRANSACTION_RETENTION_MILLIS);
+    }
+
+    boolean canCommitEconomyTransaction(UUID transactionId, long timestampEpochMillis) {
+        return ledgerHasCapacity(
+                economyTransactions,
+                transactionId,
+                timestampEpochMillis,
+                ECONOMY_TRANSACTION_RETENTION_MILLIS,
+                MAX_ECONOMY_TRANSACTIONS);
+    }
+
+    void commitEconomyTransaction(
+            UUID playerId,
+            long balance,
+            UUID transactionId,
+            long timestampEpochMillis,
+            AuditEntry auditEntry) {
+        if (economyTransactions.size() >= MAX_ECONOMY_TRANSACTIONS) {
+            trimExpiredEconomyTransactions(
+                    economyTransactions, timestampEpochMillis, ECONOMY_TRANSACTION_RETENTION_MILLIS);
+        }
+        economyBalances.put(playerId, balance);
+        economyTransactions.put(transactionId, timestampEpochMillis);
+        commitAudit(auditEntry);
+    }
+
+    static Codec<Map<UUID, Long>> boundedTransactionLedgerCodec(int maximumEntries) {
+        return Codec.unboundedMap(UUIDUtil.STRING_CODEC, TRANSACTION_TIMESTAMP_CODEC).validate(transactions ->
+                transactions.containsKey(ZERO_UUID)
+                        ? DataResult.error(() -> "Economy transaction ledger contains the zero UUID")
+                        : transactions.size() > maximumEntries
+                                ? DataResult.error(() ->
+                                        "Economy transaction ledger exceeds " + maximumEntries + " entries")
+                                : DataResult.success(Map.copyOf(transactions)));
+    }
+
+    static boolean ledgerContains(
+            Map<UUID, Long> transactions,
+            UUID transactionId,
+            long timestampEpochMillis,
+            long retentionMillis) {
+        Long committedAt = transactions.get(transactionId);
+        return committedAt != null && committedAt >= cutoff(timestampEpochMillis, retentionMillis);
+    }
+
+    static boolean ledgerHasCapacity(
+            Map<UUID, Long> transactions,
+            UUID transactionId,
+            long timestampEpochMillis,
+            long retentionMillis,
+            int maximumEntries) {
+        if (transactions.containsKey(transactionId) || transactions.size() < maximumEntries) {
+            return true;
+        }
+        long cutoff = cutoff(timestampEpochMillis, retentionMillis);
+        return transactions.values().stream().anyMatch(timestamp -> timestamp < cutoff);
+    }
+
+    static Optional<Map<UUID, Long>> mergeEconomyTransactions(
+            Map<UUID, Long> currentTransactions,
+            Map<UUID, Long> snapshotTransactions,
+            long timestampEpochMillis,
+            long retentionMillis,
+            int maximumEntries) {
+        Map<UUID, Long> merged = new HashMap<>(currentTransactions);
+        snapshotTransactions.forEach((transactionId, timestamp) ->
+                merged.merge(transactionId, timestamp, Math::max));
+        trimExpiredEconomyTransactions(merged, timestampEpochMillis, retentionMillis);
+        return merged.size() <= maximumEntries ? Optional.of(Map.copyOf(merged)) : Optional.empty();
+    }
+
+    static void trimExpiredEconomyTransactions(
+            Map<UUID, Long> transactions,
+            long timestampEpochMillis,
+            long retentionMillis) {
+        long cutoff = cutoff(timestampEpochMillis, retentionMillis);
+        transactions.entrySet().removeIf(entry -> entry.getValue() < cutoff);
+    }
+
+    private static long cutoff(long timestampEpochMillis, long retentionMillis) {
+        return timestampEpochMillis <= retentionMillis ? 0 : timestampEpochMillis - retentionMillis;
     }
 
     boolean commitPlayerLogin(UUID playerId, long timestampEpochMillis) {
