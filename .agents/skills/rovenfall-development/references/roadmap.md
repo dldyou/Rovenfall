@@ -17,6 +17,8 @@ Exit: a clean build produces the Rovenfall JAR, reloads in the IDE, and runs the
 
 ## Milestone 1: platform state and administration
 
+Status: complete on 2026-08-23. Reopen this milestone when a platform persistence, definition reload, authorization, audit, snapshot, or administration-view contract changes.
+
 - Stable IDs, versioned codecs/`SavedData`, migration registry, and snapshot/restore.
 - Validated atomic data-definition reload.
 - Administrator roles, permission-gated commands, transaction IDs, and structured audit storage/query.
