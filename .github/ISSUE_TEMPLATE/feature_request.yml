@@ -1,0 +1,51 @@
+name: Feature request
+description: Propose a player-facing or operational improvement.
+title: "[Feature]: "
+labels:
+  - type:feature
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or player need
+      description: Explain the outcome that is currently difficult or impossible.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe observable behavior, not an internal implementation.
+    validations:
+      required: true
+
+  - type: textarea
+    id: rules
+    attributes:
+      label: Rules and edge cases
+      description: Include permissions, failure cases, multiplayer impact, and abuse risks where relevant.
+
+  - type: dropdown
+    id: domain
+    attributes:
+      label: Domain
+      options:
+        - Economy and shops
+        - RPG careers and skill trees
+        - Claims and protection
+        - Worlds and portals
+        - Mobs and bosses
+        - Administration and observability
+        - Build and operations
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and milestones for this request.
+          required: true
+

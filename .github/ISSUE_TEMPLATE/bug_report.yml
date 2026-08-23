@@ -1,0 +1,63 @@
+name: Bug report
+description: Report reproducible incorrect behavior in Rovenfall.
+title: "[Bug]: "
+labels:
+  - type:bug
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping improve Rovenfall. Do not include secrets or private player data.
+
+  - type: input
+    id: version
+    attributes:
+      label: Rovenfall version or commit
+      placeholder: 1.0-SNAPSHOT or commit SHA
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Include Minecraft, NeoForge, Java, and dedicated/client details.
+      placeholder: Minecraft 26.2, NeoForge 26.2.0.66, Java 25, dedicated server
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Start ...
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and logs
+      description: Attach the smallest relevant log excerpt or file. Remove tokens and player-identifying data.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+        - label: This report does not disclose a security vulnerability.
+          required: true
+
