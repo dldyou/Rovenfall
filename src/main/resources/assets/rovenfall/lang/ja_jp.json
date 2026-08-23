@@ -44,5 +44,19 @@
   "command.rovenfall.admin.economy.error.overflow": "この操作は通貨残高のオーバーフローを引き起こします。",
   "command.rovenfall.admin.economy.error.maximum_exceeded": "この操作は設定された最大残高%sを超えます。",
   "command.rovenfall.admin.economy.error.insufficient_funds": "残高が不足しています。現在の残高: %1$s | 差し引き要求額: %2$s",
-  "command.rovenfall.admin.economy.error.invalid_request": "経済操作のリクエストが無効です。"
+  "command.rovenfall.admin.economy.error.invalid_request": "経済操作のリクエストが無効です。",
+  "command.rovenfall.admin.snapshot.error.dependency_locked": "ショップ操作が進行中のため、復元を中止しました。",
+  "command.rovenfall.admin.shop.success": "ショップ%1$sを更新しました。取引ID: %2$s",
+  "command.rovenfall.admin.shop.duplicate": "取引%sはすでに処理済みのため、ショップは再変更されませんでした。",
+  "command.rovenfall.admin.shop.error.unauthorized": "ショップを管理する権限がありません。",
+  "command.rovenfall.admin.shop.error.invalid_transaction": "ショップ取引IDが無効です。",
+  "command.rovenfall.admin.shop.error.transaction_ledger_full": "最近の取引台帳が上限に達しています。ショップは変更されませんでした。",
+  "command.rovenfall.admin.shop.error.shop_limit": "サーバーのショップ数上限に達しました。",
+  "command.rovenfall.admin.shop.error.exists": "ショップ%sはすでに存在します。",
+  "command.rovenfall.admin.shop.error.not_found": "ショップ%sが見つかりません。",
+  "command.rovenfall.admin.shop.error.template_unresolved": "指定されたショップテンプレートが見つかりません。",
+  "command.rovenfall.admin.shop.error.dependency_locked": "別の操作がこのショップを使用中です。しばらくしてから再試行してください。",
+  "command.rovenfall.admin.shop.error.offer_limit": "ショップオファー数の上限に達しました。",
+  "command.rovenfall.admin.shop.error.offer_not_found": "指定されたショップオファーが見つかりません。",
+  "command.rovenfall.admin.shop.error.invalid_request": "ショップのリクエストが無効です。アイテム、価格、在庫、場所、アクセス設定を確認してください。"
 }

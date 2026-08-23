@@ -234,7 +234,7 @@ public final class EconomyService {
         return state.economyBalance(playerId).orElse(Math.max(0, initialBalance));
     }
 
-    private static boolean canManageEconomy(
+    static boolean canManageEconomy(
             PlatformSavedData state, UUID actorId, boolean authorizationOverride) {
         AdminRole role = state.roleOf(actorId).orElse(null);
         return authorizationOverride || role == AdminRole.ECONOMY_MANAGER || role == AdminRole.OWNER;

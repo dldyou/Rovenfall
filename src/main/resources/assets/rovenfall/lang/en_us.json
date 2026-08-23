@@ -44,5 +44,19 @@
   "command.rovenfall.admin.economy.error.overflow": "The operation would overflow the currency balance.",
   "command.rovenfall.admin.economy.error.maximum_exceeded": "The operation would exceed the configured maximum balance of %s.",
   "command.rovenfall.admin.economy.error.insufficient_funds": "Insufficient funds. Balance: %1$s | Requested debit: %2$s",
-  "command.rovenfall.admin.economy.error.invalid_request": "The economy request is invalid."
+  "command.rovenfall.admin.economy.error.invalid_request": "The economy request is invalid.",
+  "command.rovenfall.admin.snapshot.error.dependency_locked": "Restore was cancelled because a shop operation is in progress.",
+  "command.rovenfall.admin.shop.success": "Updated shop %1$s. Transaction: %2$s",
+  "command.rovenfall.admin.shop.duplicate": "Transaction %s was already processed; the shop was not changed again.",
+  "command.rovenfall.admin.shop.error.unauthorized": "You do not have permission to manage shops.",
+  "command.rovenfall.admin.shop.error.invalid_transaction": "The shop transaction ID is invalid.",
+  "command.rovenfall.admin.shop.error.transaction_ledger_full": "The recent transaction ledger is full. The shop was not changed.",
+  "command.rovenfall.admin.shop.error.shop_limit": "The server shop limit has been reached.",
+  "command.rovenfall.admin.shop.error.exists": "Shop %s already exists.",
+  "command.rovenfall.admin.shop.error.not_found": "Shop %s was not found.",
+  "command.rovenfall.admin.shop.error.template_unresolved": "The requested shop template was not found.",
+  "command.rovenfall.admin.shop.error.dependency_locked": "The shop is currently used by another operation. Try again shortly.",
+  "command.rovenfall.admin.shop.error.offer_limit": "The shop offer limit has been reached.",
+  "command.rovenfall.admin.shop.error.offer_not_found": "The requested shop offer was not found.",
+  "command.rovenfall.admin.shop.error.invalid_request": "The shop request is invalid. Check the item, price, stock, binding, and access values."
 }
