@@ -119,7 +119,11 @@ public final class ShopTemplateReloadListener extends SimplePreparableReloadList
     }
 
     public static Optional<ShopTemplate> get(MinecraftServer server, Identifier id) {
+        return snapshot(server).get(id);
+    }
+
+    public static ShopTemplateSnapshot snapshot(MinecraftServer server) {
         ShopTemplateReloadListener listener = server.getServerResources().managers().getListener(KEY);
-        return listener == null ? Optional.empty() : listener.snapshot().get(id);
+        return listener == null ? ShopTemplateSnapshot.empty() : listener.snapshot();
     }
 }

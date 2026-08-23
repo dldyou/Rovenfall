@@ -125,6 +125,7 @@ final class PlatformSnapshotServiceTest {
         assertEquals(10, state.economyBalance(target).orElseThrow());
         assertTrue(state.hasEconomyTransaction(sourceEconomyTransaction, 4_000));
         assertTrue(state.hasEconomyTransaction(liveEconomyTransaction, 4_000));
+        assertTrue(state.hasTransaction(transactionId, 4_000));
         assertEquals(auditCount + 1, state.auditCount());
         PlatformSavedData safetySnapshot = store.read(safetySnapshotId);
         assertEquals(AdminRole.MODERATOR, safetySnapshot.roleOf(target).orElseThrow());
@@ -134,6 +135,37 @@ final class PlatformSnapshotServiceTest {
         assertTrue(safetySnapshot.hasEconomyTransaction(liveEconomyTransaction, 4_000));
         assertAudit(state, "rovenfall:platform_snapshot_restore",
                 "snapshot:" + safetySnapshotId, "snapshot:" + sourceSnapshotId, transactionId);
+
+        change(state, owner, target, AdminRole.MODERATOR, 5_000, 305);
+        int retryAuditCount = state.auditCount();
+        UUID retrySafetySnapshotId = id(122);
+        var retry = AdministrationService.restoreSnapshot(
+                state, store, owner, false, sourceSnapshotId, "retry restore",
+                6_000, transactionId, retrySafetySnapshotId);
+        assertEquals(AdministrationService.SnapshotRestoreStatus.DUPLICATE_TRANSACTION, retry.status());
+        assertEquals(AdminRole.MODERATOR, state.roleOf(target).orElseThrow());
+        assertEquals(retryAuditCount, state.auditCount());
+        assertFalse(Files.exists(snapshotPath("restore", retrySafetySnapshotId)));
+    }
+
+    @Test
+    void restoreRejectsZeroTransactionBeforeWritingSafetySnapshot() throws Exception {
+        PlatformSavedData state = new PlatformSavedData();
+        UUID owner = id(25);
+        bootstrap(state, owner, AdminRole.OWNER);
+        PlatformSnapshotStore store = store("invalid-transaction");
+        UUID sourceSnapshotId = id(125);
+        UUID safetySnapshotId = id(126);
+        store.write(sourceSnapshotId, state);
+        int auditCount = state.auditCount();
+
+        var result = AdministrationService.restoreSnapshot(
+                state, store, owner, false, sourceSnapshotId, "invalid transaction",
+                2_000, new UUID(0, 0), safetySnapshotId);
+
+        assertEquals(AdministrationService.SnapshotRestoreStatus.INVALID_TRANSACTION, result.status());
+        assertEquals(auditCount + 1, state.auditCount());
+        assertFalse(Files.exists(snapshotPath("invalid-transaction", safetySnapshotId)));
     }
 
     @Test

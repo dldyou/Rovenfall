@@ -150,6 +150,19 @@ public final class AdministrationService {
                     SnapshotRestoreStatus.UNAUTHORIZED, snapshotId, safetySnapshotId, transactionId, audited);
         }
 
+        if (transactionId == null || SYSTEM_ACTOR.equals(transactionId)) {
+            boolean audited = state.appendDeniedAudit(auditEntry(
+                    timestampEpochMillis, actorId, SNAPSHOT_RESTORE_DENIED, PLATFORM_TARGET,
+                    "unchanged", snapshotValue(snapshotId), "invalid_transaction",
+                    UUID.randomUUID()), DENIED_AUDIT_INTERVAL_MILLIS);
+            return new SnapshotRestoreResult(
+                    SnapshotRestoreStatus.INVALID_TRANSACTION, snapshotId, safetySnapshotId, transactionId, audited);
+        }
+        if (state.hasTransaction(transactionId, timestampEpochMillis)) {
+            return new SnapshotRestoreResult(
+                    SnapshotRestoreStatus.DUPLICATE_TRANSACTION, snapshotId, safetySnapshotId, transactionId, false);
+        }
+
         Optional<String> validReason = validReason(reason);
         if (validReason.isEmpty()) {
             boolean audited = state.appendDeniedAudit(auditEntry(
@@ -157,6 +170,14 @@ public final class AdministrationService {
                     "unchanged", snapshotValue(snapshotId), "invalid_reason", transactionId), DENIED_AUDIT_INTERVAL_MILLIS);
             return new SnapshotRestoreResult(
                     SnapshotRestoreStatus.INVALID_REASON, snapshotId, safetySnapshotId, transactionId, audited);
+        }
+
+        if (state.hasShopLocks()) {
+            boolean audited = state.appendDeniedAudit(auditEntry(
+                    timestampEpochMillis, actorId, SNAPSHOT_RESTORE_DENIED, PLATFORM_TARGET,
+                    "unchanged", "dependency_locked", validReason.get(), transactionId), DENIED_AUDIT_INTERVAL_MILLIS);
+            return new SnapshotRestoreResult(
+                    SnapshotRestoreStatus.DEPENDENCY_LOCKED, snapshotId, safetySnapshotId, transactionId, audited);
         }
 
         PlatformSavedData snapshot;
@@ -170,9 +191,14 @@ public final class AdministrationService {
                     SnapshotRestoreStatus.SNAPSHOT_UNAVAILABLE, snapshotId, safetySnapshotId, transactionId, audited);
         }
 
-        Optional<Map<UUID, Long>> restoredEconomyTransactions =
-                state.prepareEconomyTransactionRestore(snapshot, timestampEpochMillis);
-        if (restoredEconomyTransactions.isEmpty()) {
+        if (snapshot.hasTransaction(transactionId, timestampEpochMillis)) {
+            return new SnapshotRestoreResult(
+                    SnapshotRestoreStatus.DUPLICATE_TRANSACTION, snapshotId, safetySnapshotId, transactionId, false);
+        }
+
+        Optional<Map<UUID, Long>> restoredTransactions =
+                state.prepareTransactionRestore(snapshot, transactionId, timestampEpochMillis);
+        if (restoredTransactions.isEmpty()) {
             boolean audited = state.appendDeniedAudit(auditEntry(
                     timestampEpochMillis, actorId, SNAPSHOT_RESTORE_FAILED, PLATFORM_TARGET,
                     "unchanged", "transaction_ledger_full", validReason.get(), transactionId),
@@ -195,7 +221,7 @@ public final class AdministrationService {
                     SnapshotRestoreStatus.SAFETY_SNAPSHOT_FAILED, snapshotId, safetySnapshotId, transactionId, audited);
         }
 
-        state.commitRestore(snapshot, restoredEconomyTransactions.orElseThrow(), auditEntry(
+        state.commitRestore(snapshot, restoredTransactions.orElseThrow(), auditEntry(
                 timestampEpochMillis, actorId, SNAPSHOT_RESTORE, PLATFORM_TARGET,
                 snapshotValue(safetySnapshotId), snapshotValue(snapshotId), validReason.get(), transactionId));
         return new SnapshotRestoreResult(
@@ -307,11 +333,14 @@ public final class AdministrationService {
 
     public enum SnapshotRestoreStatus {
         SUCCESS,
+        DUPLICATE_TRANSACTION,
         UNAUTHORIZED,
+        INVALID_TRANSACTION,
         INVALID_REASON,
         READ_ONLY_SCHEMA,
         SNAPSHOT_UNAVAILABLE,
         TRANSACTION_LEDGER_FULL,
+        DEPENDENCY_LOCKED,
         SAFETY_SNAPSHOT_FAILED
     }
 

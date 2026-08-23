@@ -1,10 +1,14 @@
 package org.dldyou.rovenfall;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.gametest.framework.BuiltinTestFunctions;
 import net.minecraft.gametest.framework.FunctionGameTestInstance;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtOps;
 import net.minecraft.gametest.framework.TestData;
 import net.minecraft.gametest.framework.TestEnvironmentDefinition;
 import net.minecraft.resources.Identifier;
@@ -17,11 +21,14 @@ import net.neoforged.neoforge.event.AddServerReloadListenersEvent;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 import org.dldyou.rovenfall.administration.EconomyConfig;
 import org.dldyou.rovenfall.administration.EconomyService;
+import org.dldyou.rovenfall.administration.AdministrationService;
 import org.dldyou.rovenfall.administration.PlatformSavedData;
 import org.dldyou.rovenfall.administration.PlayerRecordService;
 import org.dldyou.rovenfall.administration.RovenfallCommands;
+import org.dldyou.rovenfall.administration.ShopInstanceService;
 import org.dldyou.rovenfall.definition.TestDefinitionReloadListener;
 import org.dldyou.rovenfall.economy.ShopTemplateReloadListener;
+import org.dldyou.rovenfall.economy.ShopInstance;
 
 @Mod(Rovenfall.MOD_ID)
 public final class Rovenfall {
@@ -85,6 +92,61 @@ public final class Rovenfall {
                 helper.assertTrue(item.getMaxStackSize() == 16, "Shop offer exact max-stack component was not retained");
                 helper.assertTrue(offer.buyPrice().orElseThrow() == 12L, "Shop offer buy price was not retained");
                 helper.assertTrue(offer.sellPrice().orElseThrow() == 6L, "Shop offer sell price was not retained");
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("shop_instance_persistence"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var state = PlatformSavedData.get(server);
+                Identifier shopId = id("gametest_" + UUID.randomUUID());
+                var created = ShopInstanceService.create(
+                        state,
+                        ShopTemplateReloadListener.snapshot(server),
+                        AdministrationService.SYSTEM_ACTOR,
+                        true,
+                        shopId,
+                        id("foundation"),
+                        Optional.empty(),
+                        key -> server.getLevel(key) != null,
+                        ShopInstance.AccessPolicy.publicAccess(),
+                        server.overworld().getGameTime(),
+                        "gametest create",
+                        System.currentTimeMillis(),
+                        UUID.randomUUID());
+                helper.assertTrue(created.status() == ShopInstanceService.Status.SUCCESS,
+                        "Shop instance was not created from the loaded template");
+                var offer = state.shopInstance(shopId).orElseThrow().offers().get(id("foundation_bread"));
+                helper.assertTrue(offer.item().getCount() == 4,
+                        "Shop instance did not retain exact template item count");
+                helper.assertTrue(!offer.item().getComponentsPatch().isEmpty(),
+                        "Shop instance did not retain exact template item components");
+                var encoded = ShopInstance.CODEC.encodeStart(
+                        NbtOps.INSTANCE, state.shopInstance(shopId).orElseThrow()).getOrThrow();
+                var decoded = ShopInstance.CODEC.parse(NbtOps.INSTANCE, encoded).getOrThrow();
+                helper.assertTrue(decoded.offers().get(id("foundation_bread")).item().getCount() == 4,
+                        "Shop offer entry-list codec did not round-trip the exact stack");
+                var encodedState = PlatformSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow();
+                var decodedState = PlatformSavedData.CODEC.parse(NbtOps.INSTANCE, encodedState).getOrThrow();
+                helper.assertTrue(decodedState.shopInstance(shopId).orElseThrow().offers()
+                                .get(id("foundation_bread")).item().getCount() == 4,
+                        "Saved shop instance did not round-trip the exact stack");
+                CompoundTag duplicate = ((CompoundTag) encoded).copy();
+                ListTag encodedOffers = duplicate.getListOrEmpty("offers");
+                encodedOffers.add(encodedOffers.getFirst().copy());
+                helper.assertTrue(ShopInstance.CODEC.parse(NbtOps.INSTANCE, duplicate).error().isPresent(),
+                        "Shop offer entry-list codec accepted a duplicate offer ID");
+                var deleted = ShopInstanceService.delete(
+                        state,
+                        AdministrationService.SYSTEM_ACTOR,
+                        true,
+                        shopId,
+                        "gametest cleanup",
+                        System.currentTimeMillis() + 1_500,
+                        UUID.randomUUID());
+                helper.assertTrue(deleted.status() == ShopInstanceService.Status.SUCCESS,
+                        "Shop instance cleanup failed");
                 helper.succeed();
             }
         });

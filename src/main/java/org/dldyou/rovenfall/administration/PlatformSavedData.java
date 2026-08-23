@@ -6,6 +6,8 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -16,10 +18,11 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.saveddata.SavedDataType;
 import org.dldyou.rovenfall.Rovenfall;
+import org.dldyou.rovenfall.economy.ShopInstance;
 
 public final class PlatformSavedData extends SavedData {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
-    public static final int CURRENT_SCHEMA_VERSION = 3;
+    public static final int CURRENT_SCHEMA_VERSION = 4;
     public static final int MAX_AUDIT_PAGE_SIZE = 50;
     static final int MAX_ECONOMY_TRANSACTIONS = 250_000;
     static final long ECONOMY_TRANSACTION_RETENTION_MILLIS = Duration.ofDays(30).toMillis();
@@ -37,6 +40,8 @@ public final class PlatformSavedData extends SavedData {
             : DataResult.success(timestamp));
     private static final Codec<Map<UUID, Long>> ECONOMY_TRANSACTIONS_CODEC =
             boundedTransactionLedgerCodec(MAX_ECONOMY_TRANSACTIONS);
+    private static final Codec<Map<Identifier, ShopInstance>> SHOP_INSTANCES_CODEC =
+            boundedShopInstancesCodec(ShopInstance.MAX_INSTANCES);
 
     public static final Codec<PlatformSavedData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.optionalFieldOf("schema_version", 0).forGetter(data -> data.schemaVersion),
@@ -45,7 +50,8 @@ public final class PlatformSavedData extends SavedData {
             PLAYER_RECORDS_CODEC.optionalFieldOf("player_records", Map.of()).forGetter(data -> data.playerRecords),
             ECONOMY_BALANCES_CODEC.optionalFieldOf("economy_balances", Map.of()).forGetter(data -> data.economyBalances),
             ECONOMY_TRANSACTIONS_CODEC.optionalFieldOf("economy_transactions", Map.of())
-                    .forGetter(data -> data.economyTransactions)
+                    .forGetter(data -> data.economyTransactions),
+            SHOP_INSTANCES_CODEC.optionalFieldOf("shop_instances", Map.of()).forGetter(data -> data.shopInstances)
     ).apply(instance, PlatformSavedData::decode));
 
     public static final SavedDataType<PlatformSavedData> TYPE = new SavedDataType<>(
@@ -61,10 +67,12 @@ public final class PlatformSavedData extends SavedData {
     private final Map<UUID, PlayerRecord> playerRecords;
     private final Map<UUID, Long> economyBalances;
     private final Map<UUID, Long> economyTransactions;
+    private final Map<Identifier, ShopInstance> shopInstances;
+    private final java.util.Set<Identifier> shopDependencyLocks = new HashSet<>();
     private final Map<UUID, Long> lastDeniedAuditByActor = new HashMap<>();
 
     public PlatformSavedData() {
-        this(CURRENT_SCHEMA_VERSION, Map.of(), List.of(), Map.of(), Map.of(), Map.of(), true);
+        this(CURRENT_SCHEMA_VERSION, Map.of(), List.of(), Map.of(), Map.of(), Map.of(), Map.of(), true);
     }
 
     private PlatformSavedData(
@@ -74,6 +82,7 @@ public final class PlatformSavedData extends SavedData {
             Map<UUID, PlayerRecord> playerRecords,
             Map<UUID, Long> economyBalances,
             Map<UUID, Long> economyTransactions,
+            Map<Identifier, ShopInstance> shopInstances,
             boolean writable) {
         this.schemaVersion = schemaVersion;
         this.writable = writable;
@@ -82,6 +91,7 @@ public final class PlatformSavedData extends SavedData {
         this.playerRecords = new HashMap<>(playerRecords);
         this.economyBalances = new HashMap<>(economyBalances);
         this.economyTransactions = new HashMap<>(economyTransactions);
+        this.shopInstances = new HashMap<>(shopInstances);
     }
 
     private static PlatformSavedData decode(
@@ -90,7 +100,8 @@ public final class PlatformSavedData extends SavedData {
             List<AuditEntry> auditEntries,
             Map<UUID, PlayerRecord> playerRecords,
             Map<UUID, Long> economyBalances,
-            Map<UUID, Long> economyTransactions) {
+            Map<UUID, Long> economyTransactions,
+            Map<Identifier, ShopInstance> shopInstances) {
         var migration = PlatformDataMigrations.migrate(
                 schemaVersion,
                 adminRoles,
@@ -98,6 +109,7 @@ public final class PlatformSavedData extends SavedData {
                 playerRecords,
                 economyBalances,
                 economyTransactions,
+                shopInstances,
                 CURRENT_SCHEMA_VERSION
         );
         var state = migration.state();
@@ -108,6 +120,7 @@ public final class PlatformSavedData extends SavedData {
                 state.playerRecords(),
                 state.economyBalances(),
                 state.economyTransactions(),
+                state.shopInstances(),
                 migration.writable()
         );
     }
@@ -152,6 +165,14 @@ public final class PlatformSavedData extends SavedData {
         return economyBalances.size();
     }
 
+    public Optional<ShopInstance> shopInstance(Identifier shopId) {
+        return Optional.ofNullable(shopInstances.get(shopId));
+    }
+
+    public int shopInstanceCount() {
+        return shopInstances.size();
+    }
+
     public int auditCount() {
         return auditEntries.size();
     }
@@ -182,14 +203,39 @@ public final class PlatformSavedData extends SavedData {
         commitAudit(auditEntry);
     }
 
-    Optional<Map<UUID, Long>> prepareEconomyTransactionRestore(
-            PlatformSavedData snapshot, long timestampEpochMillis) {
-        return mergeEconomyTransactions(
+    Optional<Map<UUID, Long>> prepareTransactionRestore(
+            PlatformSavedData snapshot, UUID transactionId, long timestampEpochMillis) {
+        return mergeRestoreTransactions(
                 economyTransactions,
                 snapshot.economyTransactions,
+                transactionId,
                 timestampEpochMillis,
                 ECONOMY_TRANSACTION_RETENTION_MILLIS,
                 MAX_ECONOMY_TRANSACTIONS);
+    }
+
+    static Optional<Map<UUID, Long>> mergeRestoreTransactions(
+            Map<UUID, Long> currentTransactions,
+            Map<UUID, Long> snapshotTransactions,
+            UUID transactionId,
+            long timestampEpochMillis,
+            long retentionMillis,
+            int maximumEntries) {
+        Optional<Map<UUID, Long>> merged = mergeEconomyTransactions(
+                currentTransactions,
+                snapshotTransactions,
+                timestampEpochMillis,
+                retentionMillis,
+                maximumEntries);
+        if (merged.isEmpty()) {
+            return Optional.empty();
+        }
+        Map<UUID, Long> withRestore = new HashMap<>(merged.orElseThrow());
+        withRestore.put(transactionId, timestampEpochMillis);
+        trimExpiredEconomyTransactions(withRestore, timestampEpochMillis, retentionMillis);
+        return withRestore.size() <= maximumEntries
+                ? Optional.of(Map.copyOf(withRestore))
+                : Optional.empty();
     }
 
     void commitRestore(
@@ -204,21 +250,31 @@ public final class PlatformSavedData extends SavedData {
         economyBalances.putAll(snapshot.economyBalances);
         economyTransactions.clear();
         economyTransactions.putAll(restoredEconomyTransactions);
+        shopInstances.clear();
+        shopInstances.putAll(snapshot.shopInstances);
         commitAudit(auditEntry);
     }
 
-    boolean hasEconomyTransaction(UUID transactionId, long timestampEpochMillis) {
+    boolean hasTransaction(UUID transactionId, long timestampEpochMillis) {
         return ledgerContains(
                 economyTransactions, transactionId, timestampEpochMillis, ECONOMY_TRANSACTION_RETENTION_MILLIS);
     }
 
-    boolean canCommitEconomyTransaction(UUID transactionId, long timestampEpochMillis) {
+    boolean canCommitTransaction(UUID transactionId, long timestampEpochMillis) {
         return ledgerHasCapacity(
                 economyTransactions,
                 transactionId,
                 timestampEpochMillis,
                 ECONOMY_TRANSACTION_RETENTION_MILLIS,
                 MAX_ECONOMY_TRANSACTIONS);
+    }
+
+    boolean hasEconomyTransaction(UUID transactionId, long timestampEpochMillis) {
+        return hasTransaction(transactionId, timestampEpochMillis);
+    }
+
+    boolean canCommitEconomyTransaction(UUID transactionId, long timestampEpochMillis) {
+        return canCommitTransaction(transactionId, timestampEpochMillis);
     }
 
     void commitEconomyTransaction(
@@ -236,6 +292,41 @@ public final class PlatformSavedData extends SavedData {
         commitAudit(auditEntry);
     }
 
+    void commitShopMutation(
+            Identifier shopId,
+            Optional<ShopInstance> shop,
+            UUID transactionId,
+            long timestampEpochMillis,
+            AuditEntry auditEntry) {
+        if (economyTransactions.size() >= MAX_ECONOMY_TRANSACTIONS) {
+            trimExpiredEconomyTransactions(
+                    economyTransactions, timestampEpochMillis, ECONOMY_TRANSACTION_RETENTION_MILLIS);
+        }
+        if (shop.isPresent()) {
+            shopInstances.put(shopId, shop.orElseThrow());
+        } else {
+            shopInstances.remove(shopId);
+        }
+        economyTransactions.put(transactionId, timestampEpochMillis);
+        commitAudit(auditEntry);
+    }
+
+    synchronized boolean tryLockShop(Identifier shopId) {
+        return shopDependencyLocks.add(shopId);
+    }
+
+    synchronized void unlockShop(Identifier shopId) {
+        shopDependencyLocks.remove(shopId);
+    }
+
+    synchronized boolean isShopLocked(Identifier shopId) {
+        return shopDependencyLocks.contains(shopId);
+    }
+
+    synchronized boolean hasShopLocks() {
+        return !shopDependencyLocks.isEmpty();
+    }
+
     static Codec<Map<UUID, Long>> boundedTransactionLedgerCodec(int maximumEntries) {
         return Codec.unboundedMap(UUIDUtil.STRING_CODEC, TRANSACTION_TIMESTAMP_CODEC).validate(transactions ->
                 transactions.containsKey(ZERO_UUID)
@@ -244,6 +335,35 @@ public final class PlatformSavedData extends SavedData {
                                 ? DataResult.error(() ->
                                         "Economy transaction ledger exceeds " + maximumEntries + " entries")
                                 : DataResult.success(Map.copyOf(transactions)));
+    }
+
+    static Codec<Map<Identifier, ShopInstance>> boundedShopInstancesCodec(int maximumEntries) {
+        return ShopInstanceEntry.CODEC.listOf(0, maximumEntries)
+                .flatXmap(PlatformSavedData::shopsFromEntries, PlatformSavedData::shopEntries);
+    }
+
+    private static DataResult<Map<Identifier, ShopInstance>> shopsFromEntries(List<ShopInstanceEntry> entries) {
+        Map<Identifier, ShopInstance> shops = new LinkedHashMap<>();
+        for (ShopInstanceEntry entry : entries) {
+            if (shops.putIfAbsent(entry.id(), entry.shop()) != null) {
+                return DataResult.error(() -> "Duplicate shop instance ID " + entry.id());
+            }
+        }
+        return DataResult.success(Map.copyOf(shops));
+    }
+
+    private static DataResult<List<ShopInstanceEntry>> shopEntries(Map<Identifier, ShopInstance> shops) {
+        return DataResult.success(shops.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> new ShopInstanceEntry(entry.getKey(), entry.getValue()))
+                .toList());
+    }
+
+    private record ShopInstanceEntry(Identifier id, ShopInstance shop) {
+        private static final Codec<ShopInstanceEntry> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                Identifier.CODEC.fieldOf("id").forGetter(ShopInstanceEntry::id),
+                ShopInstance.CODEC.fieldOf("shop").forGetter(ShopInstanceEntry::shop)
+        ).apply(instance, ShopInstanceEntry::new));
     }
 
     static boolean ledgerContains(
