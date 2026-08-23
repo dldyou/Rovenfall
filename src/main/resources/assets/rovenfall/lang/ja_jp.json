@@ -5,6 +5,7 @@
   "admin_role.rovenfall.content_manager": "コンテンツ管理者",
   "admin_role.rovenfall.owner": "所有者",
   "definition.rovenfall.foundation": "基盤定義",
+  "shop_template.rovenfall.foundation": "基盤ショップ",
   "command.rovenfall.admin.role.set.success": "%1$sの管理者ロールを%2$sに変更しました。取引ID: %3$s",
   "command.rovenfall.admin.role.set.no_change": "%sはすでにその管理者ロールを持っています。",
   "command.rovenfall.admin.error.unauthorized": "管理者ロールを変更する権限がありません。",

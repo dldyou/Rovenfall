@@ -15,16 +15,19 @@ import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 import org.dldyou.rovenfall.administration.PlayerRecordService;
 import org.dldyou.rovenfall.administration.RovenfallCommands;
 import org.dldyou.rovenfall.definition.TestDefinitionReloadListener;
+import org.dldyou.rovenfall.economy.ShopTemplateReloadListener;
 
 @Mod(Rovenfall.MOD_ID)
 public final class Rovenfall {
     public static final String MOD_ID = "rovenfall";
+    private final ShopTemplateReloadListener shopTemplates = new ShopTemplateReloadListener();
 
     public Rovenfall(IEventBus modBus) {
         modBus.addListener(this::registerGameTests);
         NeoForge.EVENT_BUS.addListener(RovenfallCommands::register);
         NeoForge.EVENT_BUS.addListener(PlayerRecordService::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(this::addServerReloadListeners);
+        NeoForge.EVENT_BUS.addListener(shopTemplates::onDefaultDataComponentsBound);
     }
 
     private void registerGameTests(RegisterGameTestsEvent event) {
@@ -43,10 +46,26 @@ public final class Rovenfall {
                 helper.succeed();
             }
         });
+        event.registerTest(id("shop_template_reload"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var template = ShopTemplateReloadListener.get(helper.getLevel().getServer(), id("foundation"));
+                helper.assertTrue(template.isPresent(), "Built-in Rovenfall shop template was not loaded");
+                var offer = template.orElseThrow().offers().getFirst();
+                var item = offer.item();
+                helper.assertTrue(item.getCount() == 4, "Shop offer item count was not retained");
+                helper.assertTrue(!item.getComponentsPatch().isEmpty(), "Shop offer item components were not retained");
+                helper.assertTrue(item.getMaxStackSize() == 16, "Shop offer exact max-stack component was not retained");
+                helper.assertTrue(offer.buyPrice().orElseThrow() == 12L, "Shop offer buy price was not retained");
+                helper.assertTrue(offer.sellPrice().orElseThrow() == 6L, "Shop offer sell price was not retained");
+                helper.succeed();
+            }
+        });
     }
 
     private void addServerReloadListeners(AddServerReloadListenersEvent event) {
         event.addRetainedListener(TestDefinitionReloadListener.KEY, new TestDefinitionReloadListener());
+        event.addRetainedListener(ShopTemplateReloadListener.KEY, shopTemplates);
     }
 
     private static Identifier id(String path) {

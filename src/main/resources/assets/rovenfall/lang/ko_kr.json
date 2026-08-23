@@ -5,6 +5,7 @@
   "admin_role.rovenfall.content_manager": "콘텐츠 관리자",
   "admin_role.rovenfall.owner": "최고 관리자",
   "definition.rovenfall.foundation": "기반 정의",
+  "shop_template.rovenfall.foundation": "기반 상점",
   "command.rovenfall.admin.role.set.success": "%1$s님의 관리자 역할을 %2$s(으)로 변경했습니다. 거래 ID: %3$s",
   "command.rovenfall.admin.role.set.no_change": "%s님은 이미 해당 관리자 역할을 가지고 있습니다.",
   "command.rovenfall.admin.error.unauthorized": "관리자 역할을 변경할 권한이 없습니다.",
