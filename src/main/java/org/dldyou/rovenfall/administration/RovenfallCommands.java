@@ -8,6 +8,7 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
+import net.minecraft.commands.arguments.UuidArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.permissions.Permissions;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
@@ -39,24 +40,36 @@ public final class RovenfallCommands {
                                         context.getSource(),
                                         IntegerArgumentType.getInteger(context, "page") - 1))));
 
+        var snapshotCommand = Commands.literal("snapshot")
+                .then(Commands.literal("create")
+                        .then(Commands.argument("reason", StringArgumentType.greedyString())
+                                .executes(context -> createSnapshot(
+                                        context.getSource(),
+                                        StringArgumentType.getString(context, "reason")))))
+                .then(Commands.literal("restore")
+                        .then(Commands.argument("snapshot_id", UuidArgument.uuid())
+                                .then(Commands.argument("reason", StringArgumentType.greedyString())
+                                        .executes(context -> restoreSnapshot(
+                                                context.getSource(),
+                                                UuidArgument.getUuid(context, "snapshot_id"),
+                                                StringArgumentType.getString(context, "reason"))))));
+
         event.getDispatcher().register(Commands.literal("rovenfall")
                 .then(Commands.literal("admin")
                         .requires(RovenfallCommands::canUseAdministration)
                         .then(roleCommand)
-                        .then(auditCommand)));
+                        .then(auditCommand)
+                        .then(snapshotCommand)));
     }
 
     private static int setRole(CommandSourceStack source, net.minecraft.server.level.ServerPlayer target, String roleId, String reason) {
         PlatformSavedData state = PlatformSavedData.get(source.getServer());
-        var actor = source.getPlayer();
-        UUID actorId = actor == null ? AdministrationService.SYSTEM_ACTOR : actor.getUUID();
-        boolean override = hasNativeOwnerPermission(source) && (actor == null || !state.hasAnyAdminRoles());
         UUID transactionId = UUID.randomUUID();
 
         var result = AdministrationService.changeRole(
                 state,
-                actorId,
-                override,
+                actorId(source),
+                authorizationOverride(source, state),
                 target.getUUID(),
                 roleId,
                 reason,
@@ -109,6 +122,66 @@ public final class RovenfallCommands {
         return result.entries().size();
     }
 
+    private static int createSnapshot(CommandSourceStack source, String reason) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        UUID snapshotId = UUID.randomUUID();
+        var result = AdministrationService.createSnapshot(
+                state,
+                PlatformSnapshotStore.forServer(source.getServer()),
+                actorId(source),
+                authorizationOverride(source, state),
+                reason,
+                Instant.now().toEpochMilli(),
+                UUID.randomUUID(),
+                snapshotId
+        );
+
+        return switch (result.status()) {
+            case SUCCESS -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.admin.snapshot.create.success",
+                        result.snapshotId().toString(),
+                        result.transactionId().toString()), true);
+                yield 1;
+            }
+            case UNAUTHORIZED -> failure(source, "command.rovenfall.admin.snapshot.error.unauthorized");
+            case INVALID_REASON -> failure(source, "command.rovenfall.admin.error.invalid_reason", AdministrationService.MAX_REASON_LENGTH);
+            case READ_ONLY_SCHEMA -> failure(source, "command.rovenfall.admin.error.read_only_schema", state.schemaVersion());
+            case STORAGE_ERROR -> failure(source, "command.rovenfall.admin.snapshot.error.write_failed");
+        };
+    }
+
+    private static int restoreSnapshot(CommandSourceStack source, UUID snapshotId, String reason) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = AdministrationService.restoreSnapshot(
+                state,
+                PlatformSnapshotStore.forServer(source.getServer()),
+                actorId(source),
+                authorizationOverride(source, state),
+                snapshotId,
+                reason,
+                Instant.now().toEpochMilli(),
+                UUID.randomUUID(),
+                UUID.randomUUID()
+        );
+
+        return switch (result.status()) {
+            case SUCCESS -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.admin.snapshot.restore.success",
+                        result.snapshotId().toString(),
+                        result.safetySnapshotId().toString(),
+                        result.transactionId().toString()), true);
+                yield 1;
+            }
+            case UNAUTHORIZED -> failure(source, "command.rovenfall.admin.snapshot.error.unauthorized");
+            case INVALID_REASON -> failure(source, "command.rovenfall.admin.error.invalid_reason", AdministrationService.MAX_REASON_LENGTH);
+            case READ_ONLY_SCHEMA -> failure(source, "command.rovenfall.admin.error.read_only_schema", state.schemaVersion());
+            case SNAPSHOT_UNAVAILABLE -> failure(source, "command.rovenfall.admin.snapshot.error.unavailable", snapshotId.toString());
+            case SAFETY_SNAPSHOT_FAILED -> failure(source, "command.rovenfall.admin.snapshot.error.safety_failed");
+        };
+    }
+
     private static boolean canUseAdministration(CommandSourceStack source) {
         PlatformSavedData state = PlatformSavedData.get(source.getServer());
         var player = source.getPlayer();
@@ -120,6 +193,15 @@ public final class RovenfallCommands {
 
     private static boolean hasNativeOwnerPermission(CommandSourceStack source) {
         return source.permissions().hasPermission(Permissions.COMMANDS_OWNER);
+    }
+
+    private static UUID actorId(CommandSourceStack source) {
+        var actor = source.getPlayer();
+        return actor == null ? AdministrationService.SYSTEM_ACTOR : actor.getUUID();
+    }
+
+    private static boolean authorizationOverride(CommandSourceStack source, PlatformSavedData state) {
+        return hasNativeOwnerPermission(source) && (source.getPlayer() == null || !state.hasAnyAdminRoles());
     }
 
     private static int failure(CommandSourceStack source, String translationKey, Object... arguments) {
