@@ -29,5 +29,20 @@
   "command.rovenfall.admin.snapshot.error.unauthorized": "プラットフォームのスナップショットを作成または復元する権限がありません。",
   "command.rovenfall.admin.snapshot.error.write_failed": "プラットフォームのスナップショットを保存できませんでした。監査記録とスナップショットディレクトリの権限を確認してください。",
   "command.rovenfall.admin.snapshot.error.unavailable": "スナップショット%sが見つからないか、安全に読み取れません。",
-  "command.rovenfall.admin.snapshot.error.safety_failed": "現在の状態を安全スナップショットとして保存できなかったため、復元を中止しました。"
+  "command.rovenfall.admin.snapshot.error.safety_failed": "現在の状態を安全スナップショットとして保存できなかったため、復元を中止しました。",
+  "command.rovenfall.admin.snapshot.error.transaction_ledger_full": "最近の取引IDが安全な台帳上限を超えるため、復元を中止しました。",
+  "config.rovenfall.economy.initial_balance": "アカウントの初期残高",
+  "config.rovenfall.economy.maximum_balance": "アカウントの最大残高",
+  "command.rovenfall.admin.economy.grant.success": "%1$sに%2$sを付与しました。残高: %3$s | 取引ID: %4$s",
+  "command.rovenfall.admin.economy.debit.success": "%1$sから%2$sを差し引きました。残高: %3$s | 取引ID: %4$s",
+  "command.rovenfall.admin.economy.duplicate": "取引%1$sは%2$sに対してすでに処理済みです。現在の残高: %3$s",
+  "command.rovenfall.admin.economy.error.unauthorized": "通貨残高を変更する権限がありません。",
+  "command.rovenfall.admin.economy.error.invalid_transaction": "取引IDが無効です。",
+  "command.rovenfall.admin.economy.error.invalid_amount": "通貨の数量は正の値である必要があります。",
+  "command.rovenfall.admin.economy.error.invalid_configuration": "経済残高の設定が無効です。",
+  "command.rovenfall.admin.economy.error.transaction_ledger_full": "最近の取引台帳が上限に達しています。残高は変更されませんでした。",
+  "command.rovenfall.admin.economy.error.overflow": "この操作は通貨残高のオーバーフローを引き起こします。",
+  "command.rovenfall.admin.economy.error.maximum_exceeded": "この操作は設定された最大残高%sを超えます。",
+  "command.rovenfall.admin.economy.error.insufficient_funds": "残高が不足しています。現在の残高: %1$s | 差し引き要求額: %2$s",
+  "command.rovenfall.admin.economy.error.invalid_request": "経済操作のリクエストが無効です。"
 }

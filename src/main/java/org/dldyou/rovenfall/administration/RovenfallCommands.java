@@ -1,6 +1,7 @@
 package org.dldyou.rovenfall.administration;
 
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import java.time.Instant;
@@ -62,10 +63,37 @@ public final class RovenfallCommands {
                                                 UuidArgument.getUuid(context, "snapshot_id"),
                                                 StringArgumentType.getString(context, "reason"))))));
 
+        var economyCommand = Commands.literal("economy")
+                .then(Commands.literal("grant")
+                        .then(Commands.argument("player", EntityArgument.player())
+                                .then(Commands.argument("amount", LongArgumentType.longArg(1))
+                                        .then(Commands.argument("transaction_id", UuidArgument.uuid())
+                                                .then(Commands.argument("reason", StringArgumentType.greedyString())
+                                                        .executes(context -> changeBalance(
+                                                                context.getSource(),
+                                                                EntityArgument.getPlayer(context, "player"),
+                                                                LongArgumentType.getLong(context, "amount"),
+                                                                UuidArgument.getUuid(context, "transaction_id"),
+                                                                StringArgumentType.getString(context, "reason"),
+                                                                true)))))))
+                .then(Commands.literal("debit")
+                        .then(Commands.argument("player", EntityArgument.player())
+                                .then(Commands.argument("amount", LongArgumentType.longArg(1))
+                                        .then(Commands.argument("transaction_id", UuidArgument.uuid())
+                                                .then(Commands.argument("reason", StringArgumentType.greedyString())
+                                                        .executes(context -> changeBalance(
+                                                                context.getSource(),
+                                                                EntityArgument.getPlayer(context, "player"),
+                                                                LongArgumentType.getLong(context, "amount"),
+                                                                UuidArgument.getUuid(context, "transaction_id"),
+                                                                StringArgumentType.getString(context, "reason"),
+                                                                false)))))));
+
         event.getDispatcher().register(Commands.literal("rovenfall")
                 .then(Commands.literal("admin")
                         .requires(RovenfallCommands::canUseAdministration)
                         .then(roleCommand)
+                        .then(economyCommand)
                         .then(auditCommand)
                         .then(snapshotCommand)));
     }
@@ -128,6 +156,57 @@ public final class RovenfallCommands {
                     entry.reason()), false);
         }
         return result.entries().size();
+    }
+
+    private static int changeBalance(
+            CommandSourceStack source,
+            ServerPlayer target,
+            long amount,
+            UUID transactionId,
+            String reason,
+            boolean grant) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = grant
+                ? EconomyService.adminGrant(
+                        state, actorId(source), authorizationOverride(source, state), target.getUUID(), amount, reason,
+                        Instant.now().toEpochMilli(), transactionId,
+                        EconomyConfig.initialBalance(), EconomyConfig.maximumBalance())
+                : EconomyService.adminDebit(
+                        state, actorId(source), authorizationOverride(source, state), target.getUUID(), amount, reason,
+                        Instant.now().toEpochMilli(), transactionId,
+                        EconomyConfig.initialBalance(), EconomyConfig.maximumBalance());
+
+        return switch (result.status()) {
+            case SUCCESS -> {
+                source.sendSuccess(() -> Component.translatable(
+                        grant
+                                ? "command.rovenfall.admin.economy.grant.success"
+                                : "command.rovenfall.admin.economy.debit.success",
+                        target.getDisplayName(), amount, result.balance(), result.transactionId().toString()), true);
+                yield 1;
+            }
+            case DUPLICATE_TRANSACTION -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.admin.economy.duplicate",
+                        result.transactionId().toString(), target.getDisplayName(), result.balance()), false);
+                yield 1;
+            }
+            case UNAUTHORIZED -> failure(source, "command.rovenfall.admin.economy.error.unauthorized");
+            case INVALID_TRANSACTION -> failure(source, "command.rovenfall.admin.economy.error.invalid_transaction");
+            case INVALID_AMOUNT -> failure(source, "command.rovenfall.admin.economy.error.invalid_amount");
+            case INVALID_REASON -> failure(
+                    source, "command.rovenfall.admin.error.invalid_reason", AdministrationService.MAX_REASON_LENGTH);
+            case INVALID_CONFIGURATION -> failure(source, "command.rovenfall.admin.economy.error.invalid_configuration");
+            case TRANSACTION_LEDGER_FULL -> failure(source, "command.rovenfall.admin.economy.error.transaction_ledger_full");
+            case OVERFLOW -> failure(source, "command.rovenfall.admin.economy.error.overflow");
+            case MAXIMUM_EXCEEDED -> failure(
+                    source, "command.rovenfall.admin.economy.error.maximum_exceeded", EconomyConfig.maximumBalance());
+            case INSUFFICIENT_FUNDS -> failure(
+                    source, "command.rovenfall.admin.economy.error.insufficient_funds", result.balance(), amount);
+            case READ_ONLY_SCHEMA -> failure(
+                    source, "command.rovenfall.admin.error.read_only_schema", state.schemaVersion());
+            case ACCOUNT_EXISTS, INVALID_INPUT -> failure(source, "command.rovenfall.admin.economy.error.invalid_request");
+        };
     }
 
     private static int openAuditGui(CommandSourceStack source, int page) throws CommandSyntaxException {
@@ -193,6 +272,8 @@ public final class RovenfallCommands {
             case INVALID_REASON -> failure(source, "command.rovenfall.admin.error.invalid_reason", AdministrationService.MAX_REASON_LENGTH);
             case READ_ONLY_SCHEMA -> failure(source, "command.rovenfall.admin.error.read_only_schema", state.schemaVersion());
             case SNAPSHOT_UNAVAILABLE -> failure(source, "command.rovenfall.admin.snapshot.error.unavailable", snapshotId.toString());
+            case TRANSACTION_LEDGER_FULL -> failure(
+                    source, "command.rovenfall.admin.snapshot.error.transaction_ledger_full");
             case SAFETY_SNAPSHOT_FAILED -> failure(source, "command.rovenfall.admin.snapshot.error.safety_failed");
         };
     }

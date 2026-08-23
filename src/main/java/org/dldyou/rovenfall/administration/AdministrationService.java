@@ -1,5 +1,6 @@
 package org.dldyou.rovenfall.administration;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.resources.Identifier;
@@ -169,6 +170,21 @@ public final class AdministrationService {
                     SnapshotRestoreStatus.SNAPSHOT_UNAVAILABLE, snapshotId, safetySnapshotId, transactionId, audited);
         }
 
+        Optional<Map<UUID, Long>> restoredEconomyTransactions =
+                state.prepareEconomyTransactionRestore(snapshot, timestampEpochMillis);
+        if (restoredEconomyTransactions.isEmpty()) {
+            boolean audited = state.appendDeniedAudit(auditEntry(
+                    timestampEpochMillis, actorId, SNAPSHOT_RESTORE_FAILED, PLATFORM_TARGET,
+                    "unchanged", "transaction_ledger_full", validReason.get(), transactionId),
+                    DENIED_AUDIT_INTERVAL_MILLIS);
+            return new SnapshotRestoreResult(
+                    SnapshotRestoreStatus.TRANSACTION_LEDGER_FULL,
+                    snapshotId,
+                    safetySnapshotId,
+                    transactionId,
+                    audited);
+        }
+
         try {
             store.write(safetySnapshotId, state);
         } catch (PlatformSnapshotStore.SnapshotException exception) {
@@ -179,7 +195,7 @@ public final class AdministrationService {
                     SnapshotRestoreStatus.SAFETY_SNAPSHOT_FAILED, snapshotId, safetySnapshotId, transactionId, audited);
         }
 
-        state.commitRestore(snapshot, auditEntry(
+        state.commitRestore(snapshot, restoredEconomyTransactions.orElseThrow(), auditEntry(
                 timestampEpochMillis, actorId, SNAPSHOT_RESTORE, PLATFORM_TARGET,
                 snapshotValue(safetySnapshotId), snapshotValue(snapshotId), validReason.get(), transactionId));
         return new SnapshotRestoreResult(
@@ -295,6 +311,7 @@ public final class AdministrationService {
         INVALID_REASON,
         READ_ONLY_SCHEMA,
         SNAPSHOT_UNAVAILABLE,
+        TRANSACTION_LEDGER_FULL,
         SAFETY_SNAPSHOT_FAILED
     }
 
