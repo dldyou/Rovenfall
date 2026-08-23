@@ -114,7 +114,7 @@ final class EconomyReceiptPersistenceTest {
     }
 
     @Test
-    void expiryIndexDefersOriginalUntilReversalExpiresThenEvictsThePair() {
+    void capacityPreflightIsPureAndCommitTrimEvictsOnlyTheExpiredPair() {
         PlatformSavedData state = new PlatformSavedData();
         UUID playerId = id(500);
         UUID originalId = id(501);
@@ -128,12 +128,20 @@ final class EconomyReceiptPersistenceTest {
                 reversalId, Long.MAX_VALUE).status());
 
         long originalExpiry = 1_001 + PlatformSavedData.ECONOMY_TRANSACTION_RETENTION_MILLIS;
-        assertFalse(state.maintainReceiptCapacity(originalExpiry, 2));
+        assertFalse(state.hasReceiptCapacity(originalExpiry, 2));
         assertTrue(state.economyReceipt(originalId).isPresent());
         assertTrue(state.economyReceipt(reversalId).isPresent());
 
         long reversalExpiry = 2_001 + PlatformSavedData.ECONOMY_TRANSACTION_RETENTION_MILLIS;
-        assertTrue(state.maintainReceiptCapacity(reversalExpiry, 2));
+        CompoundTag beforeRejectedRequest = (CompoundTag) PlatformSavedData.CODEC
+                .encodeStart(NbtOps.INSTANCE, state).getOrThrow();
+        assertTrue(state.hasReceiptCapacity(reversalExpiry, 2));
+        assertEquals(beforeRejectedRequest, PlatformSavedData.CODEC
+                .encodeStart(NbtOps.INSTANCE, state).getOrThrow());
+        assertTrue(state.economyReceipt(originalId).isPresent());
+        assertTrue(state.economyReceipt(reversalId).isPresent());
+
+        state.trimReceiptCapacity(reversalExpiry, 1);
         assertTrue(state.economyReceipt(originalId).isEmpty());
         assertTrue(state.economyReceipt(reversalId).isEmpty());
     }

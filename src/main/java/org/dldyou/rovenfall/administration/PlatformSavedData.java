@@ -393,7 +393,7 @@ public final class PlatformSavedData extends SavedData {
                 || !canCommitTransaction(transactionId, timestampEpochMillis)) {
             return false;
         }
-        return maintainReceiptCapacity(timestampEpochMillis, MAX_ECONOMY_TRANSACTIONS);
+        return hasReceiptCapacity(timestampEpochMillis, MAX_ECONOMY_TRANSACTIONS);
     }
 
     boolean canCommitReversalTransaction(
@@ -402,7 +402,7 @@ public final class PlatformSavedData extends SavedData {
                 || !canCommitTransaction(transactionId, timestampEpochMillis)) {
             return false;
         }
-        return maintainReceiptCapacity(timestampEpochMillis, MAX_ECONOMY_TRANSACTIONS);
+        return hasReceiptCapacity(timestampEpochMillis, MAX_ECONOMY_TRANSACTIONS);
     }
 
     boolean hasEconomyTransaction(UUID transactionId, long timestampEpochMillis) {
@@ -552,6 +552,7 @@ public final class PlatformSavedData extends SavedData {
             throw new IllegalStateException("Economy transaction receipt already exists");
         }
         registerReceiptExpiry(transactionId, receipt);
+        trimReceiptCapacity(receipt.timestampEpochMillis(), MAX_ECONOMY_TRANSACTIONS);
         ArrayDeque<Long> timestamps = recentTransactionsByPlayer.computeIfAbsent(
                 receipt.playerId(), ignored -> new ArrayDeque<>());
         timestamps.addLast(receipt.timestampEpochMillis());
@@ -575,22 +576,37 @@ public final class PlatformSavedData extends SavedData {
         }
     }
 
-    boolean maintainReceiptCapacity(long timestampEpochMillis, int maximumEntries) {
-        while (economyReceipts.size() >= maximumEntries) {
-            ReceiptExpiry expiry = receiptExpiryQueue.peek();
+    boolean hasReceiptCapacity(long timestampEpochMillis, int maximumEntries) {
+        if (economyReceipts.size() < maximumEntries) {
+            return true;
+        }
+        ReceiptExpiry expiry = nextCurrentReceiptExpiry();
+        return expiry != null && expiry.timestampEpochMillis() <= timestampEpochMillis;
+    }
+
+    void trimReceiptCapacity(long timestampEpochMillis, int maximumEntries) {
+        while (economyReceipts.size() > maximumEntries) {
+            ReceiptExpiry expiry = nextCurrentReceiptExpiry();
             if (expiry == null || expiry.timestampEpochMillis() > timestampEpochMillis) {
-                return false;
+                throw new IllegalStateException("Economy receipt capacity cannot be maintained");
             }
             receiptExpiryQueue.remove();
-            if (receiptEvictionTimes.getOrDefault(expiry.transactionId(), Long.MIN_VALUE)
-                    != expiry.timestampEpochMillis()) {
-                continue;
-            }
             if (evictReceipt(expiry.transactionId())) {
                 setDirty();
             }
         }
-        return true;
+    }
+
+    private ReceiptExpiry nextCurrentReceiptExpiry() {
+        while (!receiptExpiryQueue.isEmpty()) {
+            ReceiptExpiry expiry = receiptExpiryQueue.peek();
+            if (receiptEvictionTimes.getOrDefault(expiry.transactionId(), Long.MIN_VALUE)
+                    == expiry.timestampEpochMillis()) {
+                return expiry;
+            }
+            receiptExpiryQueue.remove();
+        }
+        return null;
     }
 
     private void registerReceiptExpiry(UUID transactionId, EconomyTransactionReceipt receipt) {
