@@ -1,0 +1,108 @@
+# Implementation invariants
+
+These are contracts. A change that violates one needs an explicit product decision and a coordinated update to this reference, affected migrations, and tests.
+
+## Authority and validation
+
+- The server owns balances, prices, stock, claims, permissions, experience, careers, skills, cooldowns, portals, spawns, loot, and rewards.
+- Clients send intent only. Validate packet type, size, count, namespaced IDs, actor, dimension, position, distance, target, permission, and rate before use.
+- Use a strict Rovenfall network protocol version initially. Reject unknown, malformed, replayed, or incompatible requests without mutation.
+- Run gameplay mutations on the server thread. Background work may parse immutable input or write prepared snapshots, but it cannot touch live Minecraft state.
+
+## Ownership and boundaries
+
+- Key players by UUID, chunks by dimension plus coordinates, and definitions by stable namespaced ID.
+- Each domain service is the only writer of its state. Cross-domain code calls operations; it never edits another domain's collections or `SavedData` directly.
+- Keep definitions, runtime state, and presentation separate. Data files define content and balance; versioned `SavedData` owns mutable state; translation files own visible text.
+
+## Atomic operations
+
+Validate the whole operation before committing. On any failure, preserve all prior state.
+
+Required atomic operations include:
+
+- shop purchase/sale: authorization, access policy/proximity, exact offer components, offer-unit quantity, server price, balance, stock, inventory capacity, mutation, audit;
+- shop catalog mutation: administrator role, shop/entry ID, exact item validity, prices, stock policy, dependent operation lock, mutation, audit;
+- claim purchase: eligible chunk, protection override, ownership cap, balance, debit, ownership, audit;
+- promotion: active lineage, prerequisites, inventory/currency costs, branch conflict, mutation, audit;
+- skill unlock/reset: tree version, prerequisites, points/currency, mutation, audit;
+- portal travel: portal link, cooldown, combat rule, safe destination, teleport, audit where required; and
+- administrative mutation: role, reason, target snapshot, mutation, audit.
+
+Use `long` for currency and experience totals. Check addition, multiplication, conversion, negative values, and configured upper bounds before mutation. Assign a unique transaction ID to retryable or multi-domain operations so a retry cannot charge or reward twice.
+
+## Persistence and migration
+
+- Store global player/economy/career state outside the resettable Wilderness dimension.
+- Give every persisted root a schema version. Load through explicit migrations and test representative older fixtures.
+- Never silently discard an unknown or removed definition ID. Preserve it as unresolved, map it through an explicit replacement, or fail the administrative migration with evidence.
+- Definitions in use are deprecated before deletion. Destructive cleanup requires a migration and snapshot.
+- Mark data dirty only after a committed mutation. A failed load keeps the last valid state and blocks unsafe operations.
+
+## Definitions and reload
+
+- Parse all candidate definitions into an isolated snapshot.
+- Validate duplicate IDs, missing references, career cycles, skill cycles, invalid ranks, impossible prerequisites, invalid prices/stocks, portal links, translation keys, and numeric bounds.
+- Swap the complete validated snapshot atomically. A single error keeps the prior snapshot and reports file, definition ID, and cause.
+- Balance and content values belong in data unless they enforce a safety invariant.
+
+## Authorization and protection
+
+- Resolve administrator protection before claim or public flags. Resolve claim roles before a requested interaction.
+- Check the actual affected positions for explosions, pistons, fluids, fire, vehicles, entities, and multi-block actions; checking only the initiating block is insufficient.
+- Cancel unauthorized events before state changes and item consumption. Record security-relevant denied attempts with rate limiting.
+- Fake players and automation have no implicit trust. They require an explicit compatible policy per operation.
+
+## Experience and rewards
+
+- Reward completed server-observed outcomes, not client reports or merely attempted/cancelled events.
+- Track provenance where repeat placement would create XP loops. Player-placed ore cannot become natural ore; immature or instantly replaced crops do not award farming XP.
+- Cap combat credit per target and use contribution for hunting/boss rewards. Last hit alone is insufficient.
+- Apply configurable time/rate ceilings and alert on anomalies. Alerts never punish automatically.
+
+## Audit, monitoring, and recovery
+
+An audit entry contains timestamp, actor UUID, action type, target, dimension/position when relevant, before value, after value, reason, and transaction ID.
+
+Audit at minimum:
+
+- currency and stock changes;
+- shop, claim, trust, career, skill, portal, and configuration changes;
+- Wilderness reset and restoration;
+- boss lifecycle and rewards;
+- administrator commands; and
+- rate-limited denied protected actions and malformed requests.
+
+Keep audit entries append-only for ordinary administrators, searchable, paginated, and retained for 30 days with rotation. Log mod-relevant state only; never collect chat, private messages, or key input. Monitoring thresholds produce GUI and console alerts, not automatic sanctions.
+
+Support targeted reversal for economy, shops, claims, permissions, careers, and skills. A reversal is a new authorized transaction referencing the original; it never erases history. A shop-purchase reversal reclaims the exact granted items only when they remain available; otherwise it requires an explicit compensating administrator decision and records that decision. It never silently duplicates currency or deletes unrelated items. Use snapshots rather than a general block-history engine for Wilderness reset and bulk migrations.
+
+Create a snapshot before Wilderness reset, bulk economy adjustment, destructive migration, or restore. Evacuate players and block concurrent affected operations during reset/restore.
+
+## Performance
+
+- Resolve claims by dimension/chunk index, players by UUID, and shops/portals by ID. Never scan every claim or player in a block, tick, packet, or interaction handler.
+- Paginate admin queries and compute expensive aggregates outside hot event paths from immutable snapshots.
+- Avoid per-tick work when an event, scheduled batch, or cached deadline provides the same behavior.
+- Bound packet collections, search radii, mutation candidates, audit query windows, and definition counts.
+
+## Localization
+
+- No user-visible prose in Java or mutable data. Send translation keys and safe parameters.
+- Keep `ko_kr`, `en_us`, and `ja_jp` key sets equal. Add all three translations in the feature change.
+- Namespaced IDs, commands, save keys, and audit action types are stable technical identifiers and are never translated.
+
+## Verification
+
+For each state-changing feature, cover:
+
+- successful operation;
+- every authorization role that changes the result;
+- invalid/overflow/insufficient input;
+- retry or duplicate delivery where applicable;
+- save/load round trip and migration when applicable;
+- atomic failure with no partial state;
+- audit entry contents; and
+- relevant localized error keys.
+
+Finish with the focused tests, relevant GameTests, and `gradlew build` on JDK 25. Verify the distributable Rovenfall JAR in `build/libs`, not merely the Minecraft development artifacts.
