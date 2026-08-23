@@ -52,10 +52,19 @@ public final class PlatformSavedData extends SavedData {
     }
 
     private static PlatformSavedData decode(int schemaVersion, Map<UUID, AdminRole> adminRoles, List<AuditEntry> auditEntries) {
-        if (schemaVersion == 0) {
-            return new PlatformSavedData(CURRENT_SCHEMA_VERSION, adminRoles, auditEntries, true);
-        }
-        return new PlatformSavedData(schemaVersion, adminRoles, auditEntries, schemaVersion == CURRENT_SCHEMA_VERSION);
+        var migration = PlatformDataMigrations.migrate(
+                schemaVersion,
+                adminRoles,
+                auditEntries,
+                CURRENT_SCHEMA_VERSION
+        );
+        var state = migration.state();
+        return new PlatformSavedData(
+                state.schemaVersion(),
+                state.adminRoles(),
+                state.auditEntries(),
+                migration.writable()
+        );
     }
 
     public static PlatformSavedData get(MinecraftServer server) {

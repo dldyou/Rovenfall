@@ -74,21 +74,39 @@ final class AdministrationServiceTest {
     }
 
     @Test
-    void missingSchemaMigratesAndFutureSchemaBlocksWrites() {
-        PlatformSavedData migrated = PlatformSavedData.CODEC.parse(NbtOps.INSTANCE, new CompoundTag()).getOrThrow();
+    void versionZeroMigrationPreservesState() {
+        PlatformSavedData original = new PlatformSavedData();
+        UUID owner = id(40);
+        UUID viewer = id(41);
+        change(original, AdministrationService.SYSTEM_ACTOR, true, owner, "owner", "bootstrap", 1_000, 501);
+        change(original, owner, false, viewer, "viewer", "support access", 2_000, 502);
+
+        CompoundTag versionZero = (CompoundTag) PlatformSavedData.CODEC.encodeStart(NbtOps.INSTANCE, original).getOrThrow();
+        versionZero.remove("schema_version");
+        PlatformSavedData migrated = PlatformSavedData.CODEC.parse(NbtOps.INSTANCE, versionZero).getOrThrow();
+
         assertEquals(PlatformSavedData.CURRENT_SCHEMA_VERSION, migrated.schemaVersion());
         assertTrue(migrated.isWritable());
+        assertEquals(AdminRole.OWNER, migrated.roleOf(owner).orElseThrow());
+        assertEquals(AdminRole.VIEWER, migrated.roleOf(viewer).orElseThrow());
+        assertEquals(2, migrated.auditCount());
+    }
 
-        CompoundTag futureTag = new CompoundTag();
-        futureTag.putInt("schema_version", PlatformSavedData.CURRENT_SCHEMA_VERSION + 1);
-        PlatformSavedData future = PlatformSavedData.CODEC.parse(NbtOps.INSTANCE, futureTag).getOrThrow();
-        var result = change(future, AdministrationService.SYSTEM_ACTOR, true, id(40), "owner", "bootstrap", 1_000, 501);
+    @Test
+    void unsupportedPastAndFutureSchemasBlockWrites() {
+        for (int schemaVersion : new int[]{-1, PlatformSavedData.CURRENT_SCHEMA_VERSION + 1}) {
+            CompoundTag tag = new CompoundTag();
+            tag.putInt("schema_version", schemaVersion);
+            PlatformSavedData state = PlatformSavedData.CODEC.parse(NbtOps.INSTANCE, tag).getOrThrow();
+            var result = change(state, AdministrationService.SYSTEM_ACTOR, true, id(42), "owner", "bootstrap", 1_000, 503);
 
-        assertFalse(future.isWritable());
-        assertEquals(AdministrationService.RoleChangeStatus.READ_ONLY_SCHEMA, result.status());
-        assertFalse(result.auditRecorded());
-        assertTrue(future.roleOf(id(40)).isEmpty());
-        assertFalse(future.isDirty());
+            assertEquals(schemaVersion, state.schemaVersion());
+            assertFalse(state.isWritable());
+            assertEquals(AdministrationService.RoleChangeStatus.READ_ONLY_SCHEMA, result.status());
+            assertFalse(result.auditRecorded());
+            assertTrue(state.roleOf(id(42)).isEmpty());
+            assertFalse(state.isDirty());
+        }
     }
 
     @Test
