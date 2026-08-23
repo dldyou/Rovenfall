@@ -1,6 +1,5 @@
 package org.dldyou.rovenfall.administration;
 
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.resources.Identifier;
@@ -196,15 +195,19 @@ public final class AdministrationService {
                     SnapshotRestoreStatus.DUPLICATE_TRANSACTION, snapshotId, safetySnapshotId, transactionId, false);
         }
 
-        Optional<Map<UUID, Long>> restoredTransactions =
+        PlatformSavedData.RestorePreparation restoredTransactions =
                 state.prepareTransactionRestore(snapshot, transactionId, timestampEpochMillis);
-        if (restoredTransactions.isEmpty()) {
+        if (restoredTransactions.status() != PlatformSavedData.RestorePreparationStatus.SUCCESS) {
+            String failure = restoredTransactions.status() == PlatformSavedData.RestorePreparationStatus.LEDGER_FULL
+                    ? "transaction_ledger_full" : "transaction_evidence_conflict";
             boolean audited = state.appendDeniedAudit(auditEntry(
                     timestampEpochMillis, actorId, SNAPSHOT_RESTORE_FAILED, PLATFORM_TARGET,
-                    "unchanged", "transaction_ledger_full", validReason.get(), transactionId),
+                    "unchanged", failure, validReason.get(), transactionId),
                     DENIED_AUDIT_INTERVAL_MILLIS);
             return new SnapshotRestoreResult(
-                    SnapshotRestoreStatus.TRANSACTION_LEDGER_FULL,
+                    restoredTransactions.status() == PlatformSavedData.RestorePreparationStatus.LEDGER_FULL
+                            ? SnapshotRestoreStatus.TRANSACTION_LEDGER_FULL
+                            : SnapshotRestoreStatus.TRANSACTION_EVIDENCE_CONFLICT,
                     snapshotId,
                     safetySnapshotId,
                     transactionId,
@@ -221,7 +224,7 @@ public final class AdministrationService {
                     SnapshotRestoreStatus.SAFETY_SNAPSHOT_FAILED, snapshotId, safetySnapshotId, transactionId, audited);
         }
 
-        state.commitRestore(snapshot, restoredTransactions.orElseThrow(), auditEntry(
+        state.commitRestore(snapshot, restoredTransactions.evidence().orElseThrow(), auditEntry(
                 timestampEpochMillis, actorId, SNAPSHOT_RESTORE, PLATFORM_TARGET,
                 snapshotValue(safetySnapshotId), snapshotValue(snapshotId), validReason.get(), transactionId));
         return new SnapshotRestoreResult(
@@ -340,6 +343,7 @@ public final class AdministrationService {
         READ_ONLY_SCHEMA,
         SNAPSHOT_UNAVAILABLE,
         TRANSACTION_LEDGER_FULL,
+        TRANSACTION_EVIDENCE_CONFLICT,
         DEPENDENCY_LOCKED,
         SAFETY_SNAPSHOT_FAILED
     }

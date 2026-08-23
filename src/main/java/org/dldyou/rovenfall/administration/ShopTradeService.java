@@ -168,8 +168,29 @@ public final class ShopTradeService {
             if (!replaceInventory(inventory, beforeInventory, afterInventory)) {
                 return denied(state, playerId, request, Status.INVENTORY_UPDATE_FAILED, timestampEpochMillis);
             }
+            List<EconomyAlert> alerts;
             try {
                 Optional<ShopInstance.Binding> binding = shop.binding();
+                EconomyTransactionReceipt receipt = new EconomyTransactionReceipt(
+                        timestampEpochMillis,
+                        playerId,
+                        playerId,
+                        request.direction() == Direction.BUY
+                                ? EconomyTransactionReceipt.Kind.PURCHASE
+                                : EconomyTransactionReceipt.Kind.SALE,
+                        total,
+                        Optional.of(request.shopId()),
+                        Optional.of(request.offerId()),
+                        Optional.of(offer.item()),
+                        request.quantity(),
+                        Optional.of(availableStock),
+                        Optional.of(changedStock.orElseThrow()),
+                        Optional.empty(),
+                        Optional.empty(),
+                        Optional.empty(),
+                        EconomyTransactionReceipt.CompensationDecision.NONE);
+                alerts = EconomyMonitoringService.evaluate(
+                        state, request.transactionId(), receipt, EconomyConfig.alertThresholds());
                 state.commitShopTrade(
                         playerId,
                         afterBalance,
@@ -177,6 +198,8 @@ public final class ShopTradeService {
                         changedShop,
                         request.transactionId(),
                         timestampEpochMillis,
+                        receipt,
+                        alerts,
                         new AuditEntry(
                                 timestampEpochMillis,
                                 playerId,
@@ -192,6 +215,7 @@ public final class ShopTradeService {
                 restoreInventory(inventory, beforeInventory);
                 throw exception;
             }
+            EconomyMonitoringService.publish(alerts);
             return result(Status.SUCCESS, request, true);
         }
     }
@@ -284,11 +308,11 @@ public final class ShopTradeService {
         }
     }
 
-    private static List<ItemStack> copyInventory(List<ItemStack> inventory) {
+    static List<ItemStack> copyInventory(List<ItemStack> inventory) {
         return inventory.stream().map(ItemStack::copy).collect(java.util.stream.Collectors.toCollection(ArrayList::new));
     }
 
-    private static boolean addExact(List<ItemStack> inventory, ItemStack exact, int amount) {
+    static boolean addExact(List<ItemStack> inventory, ItemStack exact, int amount) {
         int remaining = amount;
         for (ItemStack slot : inventory) {
             if (ItemStack.isSameItemSameComponents(slot, exact) && slot.getCount() < slot.getMaxStackSize()) {
@@ -310,7 +334,7 @@ public final class ShopTradeService {
         return remaining == 0;
     }
 
-    private static boolean removeExact(List<ItemStack> inventory, ItemStack exact, int amount) {
+    static boolean removeExact(List<ItemStack> inventory, ItemStack exact, int amount) {
         if (countExact(inventory, exact) < amount) {
             return false;
         }
@@ -329,14 +353,14 @@ public final class ShopTradeService {
         return true;
     }
 
-    private static long countExact(List<ItemStack> inventory, ItemStack exact) {
+    static long countExact(List<ItemStack> inventory, ItemStack exact) {
         return inventory.stream()
                 .filter(stack -> ItemStack.isSameItemSameComponents(stack, exact))
                 .mapToLong(ItemStack::getCount)
                 .sum();
     }
 
-    private static boolean replaceInventory(
+    static boolean replaceInventory(
             List<ItemStack> inventory, List<ItemStack> before, List<ItemStack> after) {
         try {
             for (int index = 0; index < inventory.size(); index++) {
@@ -351,7 +375,7 @@ public final class ShopTradeService {
         }
     }
 
-    private static void restoreInventory(List<ItemStack> inventory, List<ItemStack> before) {
+    static void restoreInventory(List<ItemStack> inventory, List<ItemStack> before) {
         for (int index = 0; index < inventory.size(); index++) {
             inventory.set(index, before.get(index).copy());
         }

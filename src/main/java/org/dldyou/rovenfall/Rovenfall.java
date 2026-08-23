@@ -21,6 +21,8 @@ import net.neoforged.neoforge.event.AddServerReloadListenersEvent;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 import org.dldyou.rovenfall.administration.EconomyConfig;
 import org.dldyou.rovenfall.administration.EconomyService;
+import org.dldyou.rovenfall.administration.EconomyReversalService;
+import org.dldyou.rovenfall.administration.EconomyTransactionReceipt;
 import org.dldyou.rovenfall.administration.AdministrationService;
 import org.dldyou.rovenfall.administration.PlatformSavedData;
 import org.dldyou.rovenfall.administration.PlayerRecordService;
@@ -259,6 +261,64 @@ public final class Rovenfall {
                         "gametest trade cleanup",
                         timestamp + 3_000,
                         UUID.randomUUID());
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("economy_purchase_reversal"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var state = PlatformSavedData.get(server);
+                var player = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                Identifier shopId = id("reversal_" + UUID.randomUUID());
+                Identifier offerId = id("foundation_bread");
+                long timestamp = System.currentTimeMillis();
+                helper.assertTrue(ShopInstanceService.create(
+                        state, ShopTemplateReloadListener.snapshot(server), AdministrationService.SYSTEM_ACTOR, true,
+                        shopId, id("foundation"), Optional.empty(), key -> server.getLevel(key) != null,
+                        ShopInstance.AccessPolicy.publicAccess(), server.overworld().getGameTime(),
+                        "gametest reversal create", timestamp, UUID.randomUUID()).status()
+                        == ShopInstanceService.Status.SUCCESS, "Reversal shop setup failed");
+                helper.assertTrue(EconomyService.award(
+                        state, player.getUUID(), 100, "gametest reversal seed", timestamp + 1,
+                        UUID.randomUUID(), 0, Long.MAX_VALUE).status() == EconomyService.TransactionStatus.SUCCESS,
+                        "Reversal account setup failed");
+                var offer = state.shopInstance(shopId).orElseThrow().offers().get(offerId);
+                UUID purchaseId = UUID.randomUUID();
+                helper.assertTrue(ShopTradeService.trade(
+                        state, player, new ShopTradeService.TradeRequest(
+                                shopId, offerId, ShopTradeService.Direction.BUY, 1,
+                                offer.item(), offer.buyPrice().orElseThrow(), purchaseId),
+                        server.overworld().getGameTime(), timestamp + 2).status() == ShopTradeService.Status.SUCCESS,
+                        "Reversal purchase setup failed");
+                UUID reversalId = UUID.randomUUID();
+                helper.assertTrue(EconomyReversalService.reverse(
+                        state, player, AdministrationService.SYSTEM_ACTOR, true, purchaseId,
+                        EconomyTransactionReceipt.CompensationDecision.NONE, "gametest exact reversal",
+                        timestamp + 3, reversalId).status() == EconomyReversalService.Status.SUCCESS,
+                        "Exact purchase reversal failed");
+                helper.assertTrue(state.economyBalance(player.getUUID()).orElseThrow() == 100,
+                        "Purchase reversal did not restore balance");
+                helper.assertTrue(state.shopInstance(shopId).orElseThrow().offers().get(offerId).stock().current() == 10,
+                        "Purchase reversal did not restore stock");
+                helper.assertTrue(player.getInventory().getNonEquipmentItems().stream()
+                                .noneMatch(stack -> net.minecraft.world.item.ItemStack.isSameItemSameComponents(
+                                        stack, offer.item())),
+                        "Purchase reversal did not reclaim the exact granted stack");
+                helper.assertTrue(state.economyReceipt(purchaseId).orElseThrow().reversedBy()
+                                .equals(Optional.of(reversalId)),
+                        "Purchase receipt was not linked directly to its reversal");
+                var decoded = PlatformSavedData.CODEC.parse(NbtOps.INSTANCE,
+                        PlatformSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow()).getOrThrow();
+                helper.assertTrue(decoded.economyReceipt(purchaseId).orElseThrow().item().orElseThrow().getCount() == 4,
+                        "Exact purchase receipt evidence did not survive persistence");
+                helper.assertTrue(decoded.economyReceipt(purchaseId).orElseThrow().reversedBy()
+                                .equals(Optional.of(reversalId)),
+                        "Reversal status did not survive persistence");
+                ShopInstanceService.delete(
+                        state, AdministrationService.SYSTEM_ACTOR, true, shopId,
+                        "gametest reversal cleanup", timestamp + 4, UUID.randomUUID());
                 helper.succeed();
             }
         });

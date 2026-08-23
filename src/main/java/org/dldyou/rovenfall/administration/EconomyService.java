@@ -56,7 +56,13 @@ public final class EconomyService {
             return result(TransactionStatus.TRANSACTION_LEDGER_FULL, 0, 0, transactionId, false);
         }
 
-        state.commitEconomyTransaction(playerId, initialBalance, transactionId, timestampEpochMillis, auditEntry(
+        EconomyTransactionReceipt receipt = new EconomyTransactionReceipt(
+                timestampEpochMillis, AdministrationService.SYSTEM_ACTOR, playerId,
+                EconomyTransactionReceipt.Kind.ACCOUNT_CREATE, initialBalance,
+                Optional.empty(), Optional.empty(), Optional.empty(), 0, Optional.empty(), Optional.empty(),
+                Optional.empty(), Optional.empty(), Optional.empty(), EconomyTransactionReceipt.CompensationDecision.NONE);
+        var alerts = EconomyMonitoringService.evaluate(state, transactionId, receipt, EconomyConfig.alertThresholds());
+        state.commitEconomyTransaction(playerId, initialBalance, transactionId, timestampEpochMillis, receipt, alerts, auditEntry(
                 timestampEpochMillis,
                 AdministrationService.SYSTEM_ACTOR,
                 ACCOUNT_CREATE,
@@ -65,6 +71,7 @@ public final class EconomyService {
                 Long.toString(initialBalance),
                 "initial_balance",
                 transactionId));
+        EconomyMonitoringService.publish(alerts);
         return result(TransactionStatus.SUCCESS, initialBalance, initialBalance, transactionId, true);
     }
 
@@ -195,7 +202,12 @@ public final class EconomyService {
             afterBalance = Math.subtractExact(beforeBalance, amount);
         }
 
-        state.commitEconomyTransaction(playerId, afterBalance, transactionId, timestampEpochMillis, auditEntry(
+        EconomyTransactionReceipt receipt = new EconomyTransactionReceipt(
+                timestampEpochMillis, actorId, playerId, operation.receiptKind, amount,
+                Optional.empty(), Optional.empty(), Optional.empty(), 0, Optional.empty(), Optional.empty(),
+                Optional.empty(), Optional.empty(), Optional.empty(), EconomyTransactionReceipt.CompensationDecision.NONE);
+        var alerts = EconomyMonitoringService.evaluate(state, transactionId, receipt, EconomyConfig.alertThresholds());
+        state.commitEconomyTransaction(playerId, afterBalance, transactionId, timestampEpochMillis, receipt, alerts, auditEntry(
                 timestampEpochMillis,
                 actorId,
                 operation.successAction,
@@ -204,6 +216,7 @@ public final class EconomyService {
                 Long.toString(afterBalance),
                 validReason.get(),
                 transactionId));
+        EconomyMonitoringService.publish(alerts);
         return result(TransactionStatus.SUCCESS, beforeBalance, afterBalance, transactionId, true);
     }
 
@@ -319,21 +332,23 @@ public final class EconomyService {
     }
 
     private enum Operation {
-        ADMIN_GRANT(true, true, "economy_admin_grant"),
-        ADMIN_DEBIT(true, false, "economy_admin_debit"),
-        AWARD(false, true, "economy_award"),
-        DEBIT(false, false, "economy_debit");
+        ADMIN_GRANT(true, true, "economy_admin_grant", EconomyTransactionReceipt.Kind.ADMIN_GRANT),
+        ADMIN_DEBIT(true, false, "economy_admin_debit", EconomyTransactionReceipt.Kind.ADMIN_DEBIT),
+        AWARD(false, true, "economy_award", EconomyTransactionReceipt.Kind.AWARD),
+        DEBIT(false, false, "economy_debit", EconomyTransactionReceipt.Kind.DEBIT);
 
         private final boolean administratorOnly;
         private final boolean credit;
         private final Identifier successAction;
         private final Identifier deniedAction;
+        private final EconomyTransactionReceipt.Kind receiptKind;
 
-        Operation(boolean administratorOnly, boolean credit, String actionPath) {
+        Operation(boolean administratorOnly, boolean credit, String actionPath, EconomyTransactionReceipt.Kind receiptKind) {
             this.administratorOnly = administratorOnly;
             this.credit = credit;
             this.successAction = action(actionPath);
             this.deniedAction = action(actionPath + "_denied");
+            this.receiptKind = receiptKind;
         }
     }
 
