@@ -223,11 +223,20 @@ public final class Rovenfall {
                 helper.assertTrue(decodedTrade.shopInstance(shopId).orElseThrow().offers().get(offerId)
                                 .stock().current() == 10,
                         "Committed trade stock did not survive persistence");
-                helper.assertTrue(EconomyService.award(
-                                decodedTrade, player.getUUID(), 1, "gametest persisted retry",
-                                timestamp + 3, purchaseId, 0, Long.MAX_VALUE).status()
-                                == EconomyService.TransactionStatus.DUPLICATE_TRANSACTION,
-                        "Committed trade retry ID did not survive persistence");
+                var crossPayloadRetry = EconomyService.award(
+                        decodedTrade, player.getUUID(), 1, "gametest persisted retry",
+                        timestamp + 3, purchaseId, 0, Long.MAX_VALUE);
+                helper.assertTrue(
+                        crossPayloadRetry.status() == EconomyService.TransactionStatus.TRANSACTION_ID_CONFLICT,
+                        "Persisted trade ID was accepted for a different economy payload");
+                helper.assertTrue(decodedTrade.economyBalance(player.getUUID()).orElseThrow() == 94,
+                        "Conflicting persisted retry changed the balance");
+                helper.assertTrue(decodedTrade.shopInstance(shopId).orElseThrow().offers().get(offerId)
+                                .stock().current() == 10,
+                        "Conflicting persisted retry changed shop stock");
+                helper.assertTrue(decodedTrade.economyReceipt(purchaseId).orElseThrow().kind()
+                                == EconomyTransactionReceipt.Kind.PURCHASE,
+                        "Conflicting persisted retry replaced the purchase receipt");
 
                 var replay = ShopTradeService.trade(
                         state,
