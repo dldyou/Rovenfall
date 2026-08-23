@@ -4,6 +4,7 @@
   "admin_role.rovenfall.economy_manager": "Economy Manager",
   "admin_role.rovenfall.content_manager": "Content Manager",
   "admin_role.rovenfall.owner": "Owner",
+  "definition.rovenfall.foundation": "Foundation definition",
   "command.rovenfall.admin.role.set.success": "Set %1$s's administrator role to %2$s. Transaction: %3$s",
   "command.rovenfall.admin.role.set.no_change": "%s already has that administrator role.",
   "command.rovenfall.admin.error.unauthorized": "You do not have permission to change administrator roles.",
