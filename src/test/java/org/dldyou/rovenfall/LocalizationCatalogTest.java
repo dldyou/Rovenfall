@@ -24,6 +24,8 @@ final class LocalizationCatalogTest {
             "command.rovenfall.admin.shop.success",
             "command.rovenfall.admin.shop.error.invalid_request",
             "command.rovenfall.admin.snapshot.error.dependency_locked",
+            "command.rovenfall.admin.snapshot.restore.duplicate",
+            "command.rovenfall.admin.snapshot.error.invalid_transaction",
             "config.rovenfall.economy.initial_balance",
             "command.rovenfall.admin.audit.header",
             "gui.rovenfall.admin.audit.summary",

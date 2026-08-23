@@ -46,6 +46,8 @@
   "command.rovenfall.admin.economy.error.insufficient_funds": "残高が不足しています。現在の残高: %1$s | 差し引き要求額: %2$s",
   "command.rovenfall.admin.economy.error.invalid_request": "経済操作のリクエストが無効です。",
   "command.rovenfall.admin.snapshot.error.dependency_locked": "ショップ操作が進行中のため、復元を中止しました。",
+  "command.rovenfall.admin.snapshot.restore.duplicate": "復元取引%sはすでに処理済みのため、状態は再度復元されませんでした。",
+  "command.rovenfall.admin.snapshot.error.invalid_transaction": "復元取引IDが無効です。",
   "command.rovenfall.admin.shop.success": "ショップ%1$sを更新しました。取引ID: %2$s",
   "command.rovenfall.admin.shop.duplicate": "取引%sはすでに処理済みのため、ショップは再変更されませんでした。",
   "command.rovenfall.admin.shop.error.unauthorized": "ショップを管理する権限がありません。",

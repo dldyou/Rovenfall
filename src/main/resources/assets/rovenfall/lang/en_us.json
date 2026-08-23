@@ -46,6 +46,8 @@
   "command.rovenfall.admin.economy.error.insufficient_funds": "Insufficient funds. Balance: %1$s | Requested debit: %2$s",
   "command.rovenfall.admin.economy.error.invalid_request": "The economy request is invalid.",
   "command.rovenfall.admin.snapshot.error.dependency_locked": "Restore was cancelled because a shop operation is in progress.",
+  "command.rovenfall.admin.snapshot.restore.duplicate": "Restore transaction %s was already processed; no state was restored again.",
+  "command.rovenfall.admin.snapshot.error.invalid_transaction": "The restore transaction ID is invalid.",
   "command.rovenfall.admin.shop.success": "Updated shop %1$s. Transaction: %2$s",
   "command.rovenfall.admin.shop.duplicate": "Transaction %s was already processed; the shop was not changed again.",
   "command.rovenfall.admin.shop.error.unauthorized": "You do not have permission to manage shops.",

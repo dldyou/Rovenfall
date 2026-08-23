@@ -575,7 +575,14 @@ public final class RovenfallCommands {
                         result.transactionId().toString()), true);
                 yield 1;
             }
+            case DUPLICATE_TRANSACTION -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.admin.snapshot.restore.duplicate", result.transactionId().toString()), false);
+                yield 1;
+            }
             case UNAUTHORIZED -> failure(source, "command.rovenfall.admin.snapshot.error.unauthorized");
+            case INVALID_TRANSACTION -> failure(
+                    source, "command.rovenfall.admin.snapshot.error.invalid_transaction");
             case INVALID_REASON -> failure(source, "command.rovenfall.admin.error.invalid_reason", AdministrationService.MAX_REASON_LENGTH);
             case READ_ONLY_SCHEMA -> failure(source, "command.rovenfall.admin.error.read_only_schema", state.schemaVersion());
             case SNAPSHOT_UNAVAILABLE -> failure(source, "command.rovenfall.admin.snapshot.error.unavailable", snapshotId.toString());

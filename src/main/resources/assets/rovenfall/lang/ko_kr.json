@@ -46,6 +46,8 @@
   "command.rovenfall.admin.economy.error.insufficient_funds": "잔액이 부족합니다. 현재 잔액: %1$s | 요청 차감액: %2$s",
   "command.rovenfall.admin.economy.error.invalid_request": "경제 작업 요청이 올바르지 않습니다.",
   "command.rovenfall.admin.snapshot.error.dependency_locked": "상점 작업이 진행 중이어서 복원을 취소했습니다.",
+  "command.rovenfall.admin.snapshot.restore.duplicate": "복원 거래 %s은(는) 이미 처리되어 상태를 다시 복원하지 않았습니다.",
+  "command.rovenfall.admin.snapshot.error.invalid_transaction": "복원 거래 ID가 올바르지 않습니다.",
   "command.rovenfall.admin.shop.success": "상점 %1$s을(를) 수정했습니다. 거래 ID: %2$s",
   "command.rovenfall.admin.shop.duplicate": "거래 %s은(는) 이미 처리되어 상점을 다시 변경하지 않았습니다.",
   "command.rovenfall.admin.shop.error.unauthorized": "상점을 관리할 권한이 없습니다.",

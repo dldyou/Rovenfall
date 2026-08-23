@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -203,13 +204,38 @@ public final class PlatformSavedData extends SavedData {
     }
 
     Optional<Map<UUID, Long>> prepareTransactionRestore(
-            PlatformSavedData snapshot, long timestampEpochMillis) {
-        return mergeEconomyTransactions(
+            PlatformSavedData snapshot, UUID transactionId, long timestampEpochMillis) {
+        return mergeRestoreTransactions(
                 economyTransactions,
                 snapshot.economyTransactions,
+                transactionId,
                 timestampEpochMillis,
                 ECONOMY_TRANSACTION_RETENTION_MILLIS,
                 MAX_ECONOMY_TRANSACTIONS);
+    }
+
+    static Optional<Map<UUID, Long>> mergeRestoreTransactions(
+            Map<UUID, Long> currentTransactions,
+            Map<UUID, Long> snapshotTransactions,
+            UUID transactionId,
+            long timestampEpochMillis,
+            long retentionMillis,
+            int maximumEntries) {
+        Optional<Map<UUID, Long>> merged = mergeEconomyTransactions(
+                currentTransactions,
+                snapshotTransactions,
+                timestampEpochMillis,
+                retentionMillis,
+                maximumEntries);
+        if (merged.isEmpty()) {
+            return Optional.empty();
+        }
+        Map<UUID, Long> withRestore = new HashMap<>(merged.orElseThrow());
+        withRestore.put(transactionId, timestampEpochMillis);
+        trimExpiredEconomyTransactions(withRestore, timestampEpochMillis, retentionMillis);
+        return withRestore.size() <= maximumEntries
+                ? Optional.of(Map.copyOf(withRestore))
+                : Optional.empty();
     }
 
     void commitRestore(
@@ -312,10 +338,32 @@ public final class PlatformSavedData extends SavedData {
     }
 
     static Codec<Map<Identifier, ShopInstance>> boundedShopInstancesCodec(int maximumEntries) {
-        return Codec.unboundedMap(Identifier.CODEC, ShopInstance.CODEC).validate(shops ->
-                shops.size() > maximumEntries
-                        ? DataResult.error(() -> "Shop instance count exceeds " + maximumEntries)
-                        : DataResult.success(Map.copyOf(shops)));
+        return ShopInstanceEntry.CODEC.listOf(0, maximumEntries)
+                .flatXmap(PlatformSavedData::shopsFromEntries, PlatformSavedData::shopEntries);
+    }
+
+    private static DataResult<Map<Identifier, ShopInstance>> shopsFromEntries(List<ShopInstanceEntry> entries) {
+        Map<Identifier, ShopInstance> shops = new LinkedHashMap<>();
+        for (ShopInstanceEntry entry : entries) {
+            if (shops.putIfAbsent(entry.id(), entry.shop()) != null) {
+                return DataResult.error(() -> "Duplicate shop instance ID " + entry.id());
+            }
+        }
+        return DataResult.success(Map.copyOf(shops));
+    }
+
+    private static DataResult<List<ShopInstanceEntry>> shopEntries(Map<Identifier, ShopInstance> shops) {
+        return DataResult.success(shops.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> new ShopInstanceEntry(entry.getKey(), entry.getValue()))
+                .toList());
+    }
+
+    private record ShopInstanceEntry(Identifier id, ShopInstance shop) {
+        private static final Codec<ShopInstanceEntry> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                Identifier.CODEC.fieldOf("id").forGetter(ShopInstanceEntry::id),
+                ShopInstance.CODEC.fieldOf("shop").forGetter(ShopInstanceEntry::shop)
+        ).apply(instance, ShopInstanceEntry::new));
     }
 
     static boolean ledgerContains(

@@ -150,6 +150,19 @@ public final class AdministrationService {
                     SnapshotRestoreStatus.UNAUTHORIZED, snapshotId, safetySnapshotId, transactionId, audited);
         }
 
+        if (transactionId == null || SYSTEM_ACTOR.equals(transactionId)) {
+            boolean audited = state.appendDeniedAudit(auditEntry(
+                    timestampEpochMillis, actorId, SNAPSHOT_RESTORE_DENIED, PLATFORM_TARGET,
+                    "unchanged", snapshotValue(snapshotId), "invalid_transaction",
+                    UUID.randomUUID()), DENIED_AUDIT_INTERVAL_MILLIS);
+            return new SnapshotRestoreResult(
+                    SnapshotRestoreStatus.INVALID_TRANSACTION, snapshotId, safetySnapshotId, transactionId, audited);
+        }
+        if (state.hasTransaction(transactionId, timestampEpochMillis)) {
+            return new SnapshotRestoreResult(
+                    SnapshotRestoreStatus.DUPLICATE_TRANSACTION, snapshotId, safetySnapshotId, transactionId, false);
+        }
+
         Optional<String> validReason = validReason(reason);
         if (validReason.isEmpty()) {
             boolean audited = state.appendDeniedAudit(auditEntry(
@@ -178,8 +191,13 @@ public final class AdministrationService {
                     SnapshotRestoreStatus.SNAPSHOT_UNAVAILABLE, snapshotId, safetySnapshotId, transactionId, audited);
         }
 
+        if (snapshot.hasTransaction(transactionId, timestampEpochMillis)) {
+            return new SnapshotRestoreResult(
+                    SnapshotRestoreStatus.DUPLICATE_TRANSACTION, snapshotId, safetySnapshotId, transactionId, false);
+        }
+
         Optional<Map<UUID, Long>> restoredTransactions =
-                state.prepareTransactionRestore(snapshot, timestampEpochMillis);
+                state.prepareTransactionRestore(snapshot, transactionId, timestampEpochMillis);
         if (restoredTransactions.isEmpty()) {
             boolean audited = state.appendDeniedAudit(auditEntry(
                     timestampEpochMillis, actorId, SNAPSHOT_RESTORE_FAILED, PLATFORM_TARGET,
@@ -315,7 +333,9 @@ public final class AdministrationService {
 
     public enum SnapshotRestoreStatus {
         SUCCESS,
+        DUPLICATE_TRANSACTION,
         UNAUTHORIZED,
+        INVALID_TRANSACTION,
         INVALID_REASON,
         READ_ONLY_SCHEMA,
         SNAPSHOT_UNAVAILABLE,

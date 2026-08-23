@@ -3,6 +3,8 @@ package org.dldyou.rovenfall.economy;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import net.minecraft.core.BlockPos;
@@ -21,10 +23,9 @@ public record ShopInstance(
     public static final int MAX_ACCESS_DISTANCE = 256;
     public static final int DEFAULT_ACCESS_DISTANCE = 8;
 
-    private static final Codec<Map<Identifier, Offer>> OFFERS_CODEC =
-            Codec.unboundedMap(Identifier.CODEC, Offer.CODEC).validate(offers -> offers.size() > MAX_OFFERS
-                    ? DataResult.error(() -> "Shop instance exceeds " + MAX_OFFERS + " offers")
-                    : DataResult.success(Map.copyOf(offers)));
+    private static final Codec<Map<Identifier, Offer>> OFFERS_CODEC = OfferEntry.CODEC
+            .listOf(0, MAX_OFFERS)
+            .flatXmap(ShopInstance::offersFromEntries, ShopInstance::offerEntries);
 
     public static final Codec<ShopInstance> CODEC = RecordCodecBuilder.<ShopInstance>create(instance -> instance.group(
             Identifier.CODEC.fieldOf("template_id").forGetter(ShopInstance::templateId),
@@ -57,6 +58,30 @@ public record ShopInstance(
         var updated = new java.util.HashMap<>(offers);
         updated.remove(offerId);
         return new ShopInstance(templateId, binding, accessPolicy, updated);
+    }
+
+    private static DataResult<Map<Identifier, Offer>> offersFromEntries(List<OfferEntry> entries) {
+        Map<Identifier, Offer> offers = new LinkedHashMap<>();
+        for (OfferEntry entry : entries) {
+            if (offers.putIfAbsent(entry.id(), entry.offer()) != null) {
+                return DataResult.error(() -> "Duplicate shop offer ID " + entry.id());
+            }
+        }
+        return DataResult.success(Map.copyOf(offers));
+    }
+
+    private static DataResult<List<OfferEntry>> offerEntries(Map<Identifier, Offer> offers) {
+        return DataResult.success(offers.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> new OfferEntry(entry.getKey(), entry.getValue()))
+                .toList());
+    }
+
+    private record OfferEntry(Identifier id, Offer offer) {
+        private static final Codec<OfferEntry> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                Identifier.CODEC.fieldOf("id").forGetter(OfferEntry::id),
+                Offer.CODEC.fieldOf("offer").forGetter(OfferEntry::offer)
+        ).apply(instance, OfferEntry::new));
     }
 
     public static DataResult<ShopInstance> validate(ShopInstance shop) {

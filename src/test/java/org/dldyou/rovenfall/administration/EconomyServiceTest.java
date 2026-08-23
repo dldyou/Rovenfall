@@ -315,6 +315,19 @@ final class EconomyServiceTest {
     }
 
     @Test
+    void restoreLedgerPreflightPrunesThenAtomicallyReservesRestoreTransaction() {
+        long horizon = PlatformSavedData.ECONOMY_TRANSACTION_RETENTION_MILLIS;
+        long now = horizon + 10_000;
+        UUID restoreTransaction = id(143);
+
+        Map<UUID, Long> prepared = PlatformSavedData.mergeRestoreTransactions(
+                Map.of(id(140), 1L), Map.of(id(141), now), restoreTransaction, now, horizon, 2).orElseThrow();
+        assertEquals(Map.of(id(141), now, restoreTransaction, now), prepared);
+        assertTrue(PlatformSavedData.mergeRestoreTransactions(
+                Map.of(id(140), now), Map.of(id(141), now), restoreTransaction, now, horizon, 2).isEmpty());
+    }
+
+    @Test
     void malformedTransactionIdsUseUniqueSafeAuditEvidence() {
         PlatformSavedData state = new PlatformSavedData();
         UUID playerId = id(110);

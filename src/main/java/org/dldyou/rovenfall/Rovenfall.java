@@ -6,6 +6,9 @@ import java.util.UUID;
 import net.minecraft.gametest.framework.BuiltinTestFunctions;
 import net.minecraft.gametest.framework.FunctionGameTestInstance;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.NbtOps;
 import net.minecraft.gametest.framework.TestData;
 import net.minecraft.gametest.framework.TestEnvironmentDefinition;
 import net.minecraft.resources.Identifier;
@@ -119,6 +122,21 @@ public final class Rovenfall {
                         "Shop instance did not retain exact template item count");
                 helper.assertTrue(!offer.item().getComponentsPatch().isEmpty(),
                         "Shop instance did not retain exact template item components");
+                var encoded = ShopInstance.CODEC.encodeStart(
+                        NbtOps.INSTANCE, state.shopInstance(shopId).orElseThrow()).getOrThrow();
+                var decoded = ShopInstance.CODEC.parse(NbtOps.INSTANCE, encoded).getOrThrow();
+                helper.assertTrue(decoded.offers().get(id("foundation_bread")).item().getCount() == 4,
+                        "Shop offer entry-list codec did not round-trip the exact stack");
+                var encodedState = PlatformSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow();
+                var decodedState = PlatformSavedData.CODEC.parse(NbtOps.INSTANCE, encodedState).getOrThrow();
+                helper.assertTrue(decodedState.shopInstance(shopId).orElseThrow().offers()
+                                .get(id("foundation_bread")).item().getCount() == 4,
+                        "Saved shop instance did not round-trip the exact stack");
+                CompoundTag duplicate = ((CompoundTag) encoded).copy();
+                ListTag encodedOffers = duplicate.getListOrEmpty("offers");
+                encodedOffers.add(encodedOffers.getFirst().copy());
+                helper.assertTrue(ShopInstance.CODEC.parse(NbtOps.INSTANCE, duplicate).error().isPresent(),
+                        "Shop offer entry-list codec accepted a duplicate offer ID");
                 var deleted = ShopInstanceService.delete(
                         state,
                         AdministrationService.SYSTEM_ACTOR,

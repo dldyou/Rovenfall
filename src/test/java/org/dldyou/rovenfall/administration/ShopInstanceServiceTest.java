@@ -1,10 +1,10 @@
 package org.dldyou.rovenfall.administration;
 
-import static org.dldyou.rovenfall.PersistenceTestHarness.roundTrip;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.mojang.serialization.Lifecycle;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -13,15 +13,25 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
+import net.minecraft.core.MappedRegistry;
+import net.minecraft.core.RegistrationInfo;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.component.DataComponentPatch;
 import net.minecraft.core.component.DataComponentMap;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.resources.RegistryOps;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ItemStackTemplate;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import org.dldyou.rovenfall.economy.ShopInstance;
@@ -31,11 +41,17 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 final class ShopInstanceServiceTest {
+    private static final DataComponentMap TEST_ITEM_COMPONENTS = DataComponentMap.builder()
+            .set(DataComponents.MAX_STACK_SIZE, 64)
+            .build();
+    private static final Holder<Item> TEST_BREAD = Holder.direct(Items.BREAD, TEST_ITEM_COMPONENTS);
+    private static final Holder<Item> TEST_DIAMOND = Holder.direct(Items.DIAMOND, TEST_ITEM_COMPONENTS);
+
     @TempDir
     Path temporaryDirectory;
 
     @Test
-    void economyManagerCreatesPersistentIndependentExactCatalogWithSharedRetryId() {
+    void economyManagerCreatesIndependentExactCatalogWithSharedRetryId() {
         PlatformSavedData state = new PlatformSavedData();
         UUID actor = id(1);
         bootstrap(state, actor, AdminRole.ECONOMY_MANAGER);
@@ -58,13 +74,9 @@ final class ShopInstanceServiceTest {
         leaked.setCount(1);
         assertEquals(4, state.shopInstance(shopId).orElseThrow().offers().get(identifier("bread")).item().getCount());
 
-        PlatformSavedData loaded = roundTrip(PlatformSavedData.CODEC, state);
-        ShopInstance.Offer loadedOffer = loaded.shopInstance(shopId).orElseThrow().offers().get(identifier("bread"));
-        assertEquals(4, loadedOffer.item().getCount());
-        assertEquals(Component.literal("Foundation bread"), loadedOffer.item().get(DataComponents.CUSTOM_NAME));
-        assertTrue(loaded.hasTransaction(transactionId, 3_000));
+        assertTrue(state.hasTransaction(transactionId, 3_000));
         assertEquals(EconomyService.TransactionStatus.DUPLICATE_TRANSACTION,
-                EconomyService.award(loaded, id(2), 1, "shared retry", 3_000, transactionId, 0, 100).status());
+                EconomyService.award(state, id(2), 1, "shared retry", 3_000, transactionId, 0, 100).status());
 
         AuditEntry audit = state.auditPage(0, 1).entries().getFirst();
         assertEquals("rovenfall:shop_instance_create", audit.actionType().toString());
@@ -112,7 +124,7 @@ final class ShopInstanceServiceTest {
         int auditCount = state.auditCount();
 
         ShopInstance.Offer invalidOffer = new ShopInstance.Offer(
-                new ItemStack(Items.BREAD), Optional.empty(), Optional.empty(), ShopInstance.Stock.unlimitedStock());
+                new ItemStack(TEST_BREAD), Optional.empty(), Optional.empty(), ShopInstance.Stock.unlimitedStock());
         assertEquals(ShopInstanceService.Status.UNAUTHORIZED,
                 ShopInstanceService.putOffer(state, viewer, false, shopId, identifier("secret"), invalidOffer,
                         "viewer attempt", 4_500, id(302)).status());
@@ -139,7 +151,7 @@ final class ShopInstanceServiceTest {
         assertEquals("max_distance=8", accessAudit.beforeValue());
         assertEquals("max_distance=24", accessAudit.afterValue());
 
-        ItemStack exact = new ItemStack(Items.DIAMOND, 2);
+        ItemStack exact = new ItemStack(TEST_DIAMOND, 2);
         exact.set(DataComponents.CUSTOM_NAME, Component.literal("Exact diamond"));
         ShopInstance.Stock restocking = new ShopInstance.Stock(
                 false, 3, 9, Optional.of(2L), Optional.of(400L), 10_000);
@@ -193,12 +205,12 @@ final class ShopInstanceServiceTest {
         ShopInstance.Offer emptyItem = new ShopInstance.Offer(
                 ItemStack.EMPTY, Optional.of(1L), Optional.empty(), ShopInstance.Stock.unlimitedStock());
         ShopInstance.Offer zeroPrice = new ShopInstance.Offer(
-                new ItemStack(Items.BREAD), Optional.of(0L), Optional.empty(), ShopInstance.Stock.unlimitedStock());
+                new ItemStack(TEST_BREAD), Optional.of(0L), Optional.empty(), ShopInstance.Stock.unlimitedStock());
         ShopInstance.Offer highPrice = new ShopInstance.Offer(
-                new ItemStack(Items.BREAD), Optional.of(ShopTemplateSnapshot.MAX_PRICE + 1), Optional.empty(),
+                new ItemStack(TEST_BREAD), Optional.of(ShopTemplateSnapshot.MAX_PRICE + 1), Optional.empty(),
                 ShopInstance.Stock.unlimitedStock());
         ShopInstance.Offer badStock = new ShopInstance.Offer(
-                new ItemStack(Items.BREAD), Optional.of(1L), Optional.empty(),
+                new ItemStack(TEST_BREAD), Optional.of(1L), Optional.empty(),
                 new ShopInstance.Stock(false, 11, 10, Optional.empty(), Optional.empty(), 0));
         List<ShopInstance.Offer> invalidOffers = List.of(emptyItem, zeroPrice, highPrice, badStock);
         for (int index = 0; index < invalidOffers.size(); index++) {
@@ -275,6 +287,8 @@ final class ShopInstanceServiceTest {
         bootstrap(state, owner, AdminRole.OWNER);
         Identifier shopId = identifier("locked");
         create(state, templates(), owner, shopId, id(401), 2_000);
+        ShopInstanceService.removeOffer(
+                state, owner, false, shopId, identifier("bread"), "empty snapshot shop", 3_000, id(407));
         PlatformSnapshotStore store = new PlatformSnapshotStore(temporaryDirectory.resolve("snapshots"));
         UUID snapshotId = id(402);
         store.write(snapshotId, state);
@@ -303,6 +317,8 @@ final class ShopInstanceServiceTest {
         Identifier shopId = identifier("restore");
         UUID createTransaction = id(501);
         create(state, templates(), owner, shopId, createTransaction, 2_000);
+        ShopInstanceService.removeOffer(
+                state, owner, false, shopId, identifier("bread"), "empty snapshot shop", 2_500, id(506));
         PlatformSnapshotStore store = new PlatformSnapshotStore(temporaryDirectory.resolve("restore"));
         UUID sourceSnapshot = id(502);
         store.write(sourceSnapshot, state);
@@ -322,7 +338,6 @@ final class ShopInstanceServiceTest {
 
     @Test
     void schemaThreeMigratesEmptyShopStateAndCodecsEnforceCollectionBounds() {
-        bindTestItemComponents();
         PlatformSavedData original = new PlatformSavedData();
         CompoundTag versionThree = (CompoundTag) PlatformSavedData.CODEC
                 .encodeStart(NbtOps.INSTANCE, original).getOrThrow();
@@ -336,18 +351,34 @@ final class ShopInstanceServiceTest {
 
         ShopInstance valid = new ShopInstance(
                 identifier("foundation"), Optional.empty(), ShopInstance.AccessPolicy.publicAccess(), Map.of());
-        assertTrue(PlatformSavedData.boundedShopInstancesCodec(1).encodeStart(
+        var oneShopCodec = PlatformSavedData.boundedShopInstancesCodec(1);
+        Map<Identifier, ShopInstance> oneShop = Map.of(identifier("one"), valid);
+        var encodedShops = oneShopCodec.encodeStart(NbtOps.INSTANCE, oneShop).getOrThrow();
+        assertEquals(oneShop, oneShopCodec.parse(NbtOps.INSTANCE, encodedShops).getOrThrow());
+        assertTrue(oneShopCodec.encodeStart(
                 NbtOps.INSTANCE, Map.of(identifier("one"), valid, identifier("two"), valid)).error().isPresent());
 
+        ListTag duplicateShops = ((ListTag) encodedShops).copy();
+        duplicateShops.add(encodedShops.asList().orElseThrow().getFirst().copy());
+        assertTrue(PlatformSavedData.boundedShopInstancesCodec(2)
+                .parse(NbtOps.INSTANCE, duplicateShops).error().isPresent());
+
+        TestItemCodec testCodec = testItemCodec();
         Map<Identifier, ShopInstance.Offer> tooMany = new LinkedHashMap<>();
-        for (int index = 0; index <= ShopInstance.MAX_OFFERS; index++) {
+        for (int index = 0; index < ShopInstance.MAX_OFFERS; index++) {
             tooMany.put(identifier("offer_" + index), new ShopInstance.Offer(
-                    new ItemStack(Items.BREAD), Optional.of(1L), Optional.empty(),
+                    new ItemStack(testCodec.item()), Optional.of(1L), Optional.empty(),
                     ShopInstance.Stock.unlimitedStock()));
         }
+        ShopInstance atOfferLimit = new ShopInstance(
+                identifier("foundation"), Optional.empty(), ShopInstance.AccessPolicy.publicAccess(), tooMany);
+        ShopInstance.CODEC.encodeStart(testCodec.ops(), atOfferLimit).getOrThrow();
+        tooMany.put(identifier("offer_over_limit"), new ShopInstance.Offer(
+                new ItemStack(testCodec.item()), Optional.of(1L), Optional.empty(),
+                ShopInstance.Stock.unlimitedStock()));
         ShopInstance oversized = new ShopInstance(
                 identifier("foundation"), Optional.empty(), ShopInstance.AccessPolicy.publicAccess(), tooMany);
-        assertTrue(ShopInstance.CODEC.encodeStart(NbtOps.INSTANCE, oversized).error().isPresent());
+        assertTrue(ShopInstance.CODEC.encodeStart(testCodec.ops(), oversized).error().isPresent());
     }
 
     private static ShopInstanceService.MutationResult create(
@@ -363,11 +394,10 @@ final class ShopInstanceServiceTest {
     }
 
     private static ShopTemplateSnapshot templates() {
-        bindTestItemComponents();
         DataComponentPatch patch = DataComponentPatch.builder()
                 .set(DataComponents.CUSTOM_NAME, Component.literal("Foundation bread"))
                 .build();
-        var item = new ItemStackTemplate(Items.BREAD.builtInRegistryHolder(), 4, patch);
+        var item = new ItemStackTemplate(TEST_BREAD, 4, patch);
         var stock = new ShopTemplate.StockPolicy(
                 false, Optional.of(10L), Optional.of(20L), Optional.of(2L), Optional.of(1_200L));
         var offer = new ShopTemplate.Offer(
@@ -377,22 +407,24 @@ final class ShopInstanceServiceTest {
                 identifier("foundation.json"), "test", identifier("foundation"), template)));
     }
 
+    private static TestItemCodec testItemCodec() {
+        ResourceKey<Item> itemKey = ResourceKey.create(
+                Registries.ITEM, Identifier.withDefaultNamespace("bread"));
+        MappedRegistry<Item> registry = new MappedRegistry<>(Registries.ITEM, Lifecycle.stable());
+        Holder.Reference<Item> holder = registry.register(itemKey, Items.BREAD, RegistrationInfo.BUILT_IN);
+        holder.bindComponents(TEST_ITEM_COMPONENTS);
+        registry.freeze();
+        RegistryAccess access = new RegistryAccess.ImmutableRegistryAccess(List.of(registry));
+        return new TestItemCodec(holder, RegistryOps.create(NbtOps.INSTANCE, access));
+    }
+
+    private record TestItemCodec(Holder<Item> item, RegistryOps<Tag> ops) {
+    }
+
     private static void bootstrap(PlatformSavedData state, UUID actor, AdminRole role) {
         AdministrationService.changeRole(
                 state, AdministrationService.SYSTEM_ACTOR, true, actor, role.getSerializedName(),
                 "bootstrap", 1_000, UUID.randomUUID());
-    }
-
-    private static void bindTestItemComponents() {
-        DataComponentMap components = DataComponentMap.builder()
-                .set(DataComponents.MAX_STACK_SIZE, 64)
-                .build();
-        if (!Items.BREAD.builtInRegistryHolder().areComponentsBound()) {
-            Items.BREAD.builtInRegistryHolder().bindComponents(components);
-        }
-        if (!Items.DIAMOND.builtInRegistryHolder().areComponentsBound()) {
-            Items.DIAMOND.builtInRegistryHolder().bindComponents(components);
-        }
     }
 
     private static Identifier identifier(String path) {
