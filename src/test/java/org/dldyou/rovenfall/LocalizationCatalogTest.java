@@ -18,7 +18,9 @@ final class LocalizationCatalogTest {
             "admin_role.rovenfall.content_manager",
             "admin_role.rovenfall.owner",
             "command.rovenfall.admin.role.set.success",
-            "command.rovenfall.admin.audit.header"
+            "command.rovenfall.admin.audit.header",
+            "gui.rovenfall.admin.audit.summary",
+            "gui.rovenfall.admin.audit.reason"
     );
 
     @Test

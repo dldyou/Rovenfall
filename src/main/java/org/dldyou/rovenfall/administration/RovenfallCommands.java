@@ -2,6 +2,7 @@ package org.dldyou.rovenfall.administration;
 
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import java.time.Instant;
 import java.util.UUID;
 import net.minecraft.commands.CommandSourceStack;
@@ -10,6 +11,7 @@ import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.UuidArgument;
 import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.Permissions;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 
@@ -37,6 +39,12 @@ public final class RovenfallCommands {
                         .executes(context -> listAudit(context.getSource(), 0))
                         .then(Commands.argument("page", IntegerArgumentType.integer(1))
                                 .executes(context -> listAudit(
+                                        context.getSource(),
+                                        IntegerArgumentType.getInteger(context, "page") - 1))))
+                .then(Commands.literal("gui")
+                        .executes(context -> openAuditGui(context.getSource(), 0))
+                        .then(Commands.argument("page", IntegerArgumentType.integer(1))
+                                .executes(context -> openAuditGui(
                                         context.getSource(),
                                         IntegerArgumentType.getInteger(context, "page") - 1))));
 
@@ -122,6 +130,13 @@ public final class RovenfallCommands {
         return result.entries().size();
     }
 
+    private static int openAuditGui(CommandSourceStack source, int page) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData.AuditPage result = PlatformSavedData.get(source.getServer()).auditPage(page, AuditBookView.PAGE_SIZE);
+        AuditBookView.open(player, result);
+        return 1;
+    }
+
     private static int createSnapshot(CommandSourceStack source, String reason) {
         PlatformSavedData state = PlatformSavedData.get(source.getServer());
         UUID snapshotId = UUID.randomUUID();
@@ -185,10 +200,17 @@ public final class RovenfallCommands {
     private static boolean canUseAdministration(CommandSourceStack source) {
         PlatformSavedData state = PlatformSavedData.get(source.getServer());
         var player = source.getPlayer();
-        if (player == null) {
-            return hasNativeOwnerPermission(source);
+        return canUseAdministration(
+                state,
+                player == null ? null : player.getUUID(),
+                hasNativeOwnerPermission(source));
+    }
+
+    static boolean canUseAdministration(PlatformSavedData state, UUID playerId, boolean nativeOwnerPermission) {
+        if (playerId == null) {
+            return nativeOwnerPermission;
         }
-        return state.hasAdminRole(player.getUUID()) || (!state.hasAnyAdminRoles() && hasNativeOwnerPermission(source));
+        return state.hasAdminRole(playerId) || (!state.hasAnyAdminRoles() && nativeOwnerPermission);
     }
 
     private static boolean hasNativeOwnerPermission(CommandSourceStack source) {
