@@ -146,6 +146,34 @@ final class EconomyReceiptPersistenceTest {
         assertTrue(state.economyReceipt(reversalId).isEmpty());
     }
 
+    @Test
+    void overflowedPairExpiryIsNonExpiringBeforeAndAfterIndexRebuild() {
+        PlatformSavedData state = new PlatformSavedData();
+        UUID playerId = id(510);
+        UUID originalId = id(511);
+        UUID reversalId = id(512);
+        long nearMaximum = Long.MAX_VALUE - PlatformSavedData.ECONOMY_TRANSACTION_RETENTION_MILLIS;
+        assertEquals(EconomyService.TransactionStatus.SUCCESS,
+                EconomyService.award(
+                        state, playerId, 10, "near max", nearMaximum, originalId, 0, 100).status());
+        assertEquals(EconomyReversalService.Status.SUCCESS, EconomyReversalService.reverse(
+                state, playerId, NonNullList.withSize(36, ItemStack.EMPTY),
+                AdministrationService.SYSTEM_ACTOR, true, originalId,
+                EconomyTransactionReceipt.CompensationDecision.NONE, "near max undo", nearMaximum + 1,
+                reversalId, Long.MAX_VALUE).status());
+
+        assertFalse(state.hasReceiptCapacity(Long.MAX_VALUE, 2));
+        assertTrue(state.economyReceipt(originalId).isPresent());
+        assertTrue(state.economyReceipt(reversalId).isPresent());
+
+        PlatformSavedData rebuilt = PlatformSavedData.CODEC.parse(
+                NbtOps.INSTANCE, PlatformSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow())
+                .getOrThrow();
+        assertFalse(rebuilt.hasReceiptCapacity(Long.MAX_VALUE, 2));
+        assertTrue(rebuilt.economyReceipt(originalId).isPresent());
+        assertTrue(rebuilt.economyReceipt(reversalId).isPresent());
+    }
+
     private static EconomyTransactionReceipt receipt(long timestamp, UUID playerId) {
         return new EconomyTransactionReceipt(
                 timestamp, AdministrationService.SYSTEM_ACTOR, playerId,

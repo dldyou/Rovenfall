@@ -32,6 +32,7 @@ public final class PlatformSavedData extends SavedData {
     static final int MAX_ECONOMY_ALERTS = 10_000;
     static final int MAX_RATE_INDEX_PER_PLAYER = 10_000;
     static final long ECONOMY_TRANSACTION_RETENTION_MILLIS = Duration.ofDays(30).toMillis();
+    private static final long NON_EXPIRING_RECEIPT = -1L;
     private static final Duration AUDIT_RETENTION = Duration.ofDays(30);
     private static final Codec<Map<UUID, AdminRole>> ADMIN_ROLES_CODEC = Codec.unboundedMap(UUIDUtil.STRING_CODEC, AdminRole.CODEC);
     private static final Codec<Map<UUID, PlayerRecord>> PLAYER_RECORDS_CODEC =
@@ -616,7 +617,8 @@ public final class PlatformSavedData extends SavedData {
             return;
         }
         UUID originalId = receipt.originalTransactionId().orElseThrow();
-        long pairExpiry = Math.max(receiptEvictionTimes.getOrDefault(originalId, expiry), expiry);
+        long pairExpiry = combineReceiptExpiry(
+                receiptEvictionTimes.getOrDefault(originalId, expiry), expiry);
         recordReceiptExpiry(originalId, pairExpiry);
         EconomyTransactionReceipt original = economyReceipts.get(originalId);
         if (original != null && original.reversedBy().equals(Optional.of(transactionId))) {
@@ -631,6 +633,9 @@ public final class PlatformSavedData extends SavedData {
         }
         Long previous = receiptEvictionTimes.put(transactionId, timestampEpochMillis);
         if (previous != null && previous == timestampEpochMillis) {
+            return;
+        }
+        if (timestampEpochMillis == NON_EXPIRING_RECEIPT) {
             return;
         }
         receiptExpiryQueue.add(new ReceiptExpiry(
@@ -671,11 +676,11 @@ public final class PlatformSavedData extends SavedData {
             if (receipt.kind() == EconomyTransactionReceipt.Kind.REVERSAL) {
                 UUID originalId = receipt.originalTransactionId().orElseThrow();
                 receiptEvictionTimes.computeIfPresent(originalId, (ignored, originalExpiry) ->
-                        Math.max(originalExpiry, receiptEvictionTimes.get(transactionId)));
+                        combineReceiptExpiry(originalExpiry, receiptEvictionTimes.get(transactionId)));
             }
         });
         economyReceipts.forEach((transactionId, receipt) -> receipt.reversedBy().ifPresent(reversalId -> {
-            long pairExpiry = Math.max(
+            long pairExpiry = combineReceiptExpiry(
                     receiptEvictionTimes.get(transactionId),
                     receiptEvictionTimes.getOrDefault(reversalId, Long.MIN_VALUE));
             receiptEvictionTimes.put(transactionId, pairExpiry);
@@ -683,8 +688,10 @@ public final class PlatformSavedData extends SavedData {
         }));
         receiptEvictionTimes.forEach((transactionId, expiry) -> {
             EconomyTransactionReceipt receipt = economyReceipts.get(transactionId);
-            receiptExpiryQueue.add(new ReceiptExpiry(
-                    transactionId, expiry, receipt.kind() == EconomyTransactionReceipt.Kind.REVERSAL));
+            if (expiry != NON_EXPIRING_RECEIPT) {
+                receiptExpiryQueue.add(new ReceiptExpiry(
+                        transactionId, expiry, receipt.kind() == EconomyTransactionReceipt.Kind.REVERSAL));
+            }
         });
     }
 
@@ -692,8 +699,14 @@ public final class PlatformSavedData extends SavedData {
         try {
             return Math.addExact(timestampEpochMillis, ECONOMY_TRANSACTION_RETENTION_MILLIS + 1);
         } catch (ArithmeticException exception) {
-            return Long.MAX_VALUE;
+            return NON_EXPIRING_RECEIPT;
         }
+    }
+
+    private static long combineReceiptExpiry(long first, long second) {
+        return first == NON_EXPIRING_RECEIPT || second == NON_EXPIRING_RECEIPT
+                ? NON_EXPIRING_RECEIPT
+                : Math.max(first, second);
     }
 
     static Set<UUID> retainedReceiptIds(
