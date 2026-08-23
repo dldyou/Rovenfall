@@ -532,6 +532,8 @@ public final class RovenfallCommands {
                         "command.rovenfall.shop.duplicate", transactionId.toString()), false);
                 yield 1;
             }
+            case TRANSACTION_ID_CONFLICT -> failure(
+                    source, "command.rovenfall.shop.error.transaction_id_conflict");
             case INVALID_REQUEST, INVALID_TRANSACTION -> failure(source, "command.rovenfall.shop.error.invalid_request");
             case READ_ONLY_SCHEMA -> failure(source, "command.rovenfall.shop.error.read_only");
             case TRANSACTION_LEDGER_FULL -> failure(source, "command.rovenfall.shop.error.ledger_full");
@@ -611,6 +613,8 @@ public final class RovenfallCommands {
                         result.transactionId().toString(), target.getDisplayName(), result.balance()), false);
                 yield 1;
             }
+            case TRANSACTION_ID_CONFLICT -> failure(
+                    source, "command.rovenfall.admin.economy.error.transaction_id_conflict");
             case UNAUTHORIZED -> failure(source, "command.rovenfall.admin.economy.error.unauthorized");
             case INVALID_TRANSACTION -> failure(source, "command.rovenfall.admin.economy.error.invalid_transaction");
             case INVALID_AMOUNT -> failure(source, "command.rovenfall.admin.economy.error.invalid_amount");

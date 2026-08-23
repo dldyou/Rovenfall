@@ -106,6 +106,8 @@
   "economy_transaction_kind.rovenfall.purchase": "구매",
   "economy_transaction_kind.rovenfall.sale": "판매",
   "economy_transaction_kind.rovenfall.reversal": "역거래",
+  "command.rovenfall.admin.economy.error.transaction_id_conflict": "해당 거래 ID는 다른 경제 작업에 사용되었습니다. 새 거래 ID를 사용하세요.",
+  "command.rovenfall.shop.error.transaction_id_conflict": "해당 거래 ID는 다른 상점 거래에 사용되었습니다. 새 거래 ID를 사용하세요.",
   "command.rovenfall.admin.economy.reversal.success": "거래 %1$s을(를) 새 거래 %2$s(으)로 되돌렸습니다.",
   "command.rovenfall.admin.economy.reversal.error.invalid_decision": "역거래 결정은 strict 또는 refund_without_items_or_stock이어야 합니다.",
   "command.rovenfall.admin.economy.reversal.error.transaction_id_conflict": "해당 역거래 ID는 다른 작업에 사용되었습니다. 새 거래 ID를 사용하세요.",

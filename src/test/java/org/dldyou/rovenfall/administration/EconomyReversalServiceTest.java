@@ -166,7 +166,6 @@ final class EconomyReversalServiceTest {
         NonNullList<ItemStack> inventory = emptyInventory();
         UUID purchaseId = purchase(state, inventory, uuid(360));
         UUID unrelatedAwardId = uuid(9_002);
-        int audits = state.auditCount();
 
         assertEquals(EconomyReversalService.Status.TRANSACTION_ID_CONFLICT,
                 reverse(state, inventory, purchaseId, unrelatedAwardId,
@@ -178,10 +177,42 @@ final class EconomyReversalServiceTest {
         assertTrue(state.economyReceipt(purchaseId).orElseThrow().reversedBy().isEmpty());
         assertEquals(EconomyTransactionReceipt.Kind.AWARD,
                 state.economyReceipt(unrelatedAwardId).orElseThrow().kind());
-        assertEquals(audits + 1, state.auditCount());
+        assertEquals("transaction_id_conflict", state.auditPage(0, 1).entries().getFirst().reason());
         AuditEntry denied = state.auditPage(0, 1).entries().getFirst();
         assertEquals(id("economy_transaction_reversal_denied"), denied.actionType());
         assertEquals("transaction_id_conflict", denied.reason());
+    }
+
+    @Test
+    void retainedReversalReceiptPreventsExpiredIdReuseWithoutReversingNewPurchase() {
+        PlatformSavedData state = state();
+        NonNullList<ItemStack> inventory = emptyInventory();
+        UUID firstPurchaseId = purchase(state, inventory, uuid(370));
+        UUID retainedReversalId = uuid(371);
+        assertEquals(EconomyReversalService.Status.SUCCESS,
+                reverse(state, inventory, firstPurchaseId, retainedReversalId,
+                        EconomyTransactionReceipt.CompensationDecision.NONE, 3_000).status());
+
+        long later = PlatformSavedData.ECONOMY_TRANSACTION_RETENTION_MILLIS + 5_000;
+        UUID secondPurchaseId = uuid(372);
+        assertEquals(ShopTradeService.Status.SUCCESS, ShopTradeService.trade(
+                state, PLAYER, Level.OVERWORLD, Vec3.ZERO, inventory,
+                new ShopTradeService.TradeRequest(
+                        SHOP, OFFER, ShopTradeService.Direction.BUY, 1, exactBread(4), 12, secondPurchaseId),
+                0, later, Long.MAX_VALUE).status());
+        int audits = state.auditCount();
+
+        assertEquals(EconomyReversalService.Status.TRANSACTION_ID_CONFLICT,
+                reverse(state, inventory, secondPurchaseId, retainedReversalId,
+                        EconomyTransactionReceipt.CompensationDecision.NONE, later + 1).status());
+
+        assertEquals(88, state.economyBalance(PLAYER).orElseThrow());
+        assertEquals(9, stock(state).current());
+        assertEquals(4, ShopTradeService.countExact(inventory, exactBread(4)));
+        assertTrue(state.economyReceipt(secondPurchaseId).orElseThrow().reversedBy().isEmpty());
+        assertEquals(Optional.of(firstPurchaseId),
+                state.economyReceipt(retainedReversalId).orElseThrow().originalTransactionId());
+        assertEquals(audits + 1, state.auditCount());
     }
 
     @Test

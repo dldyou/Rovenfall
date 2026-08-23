@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.util.Map;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -67,12 +68,63 @@ final class EconomyReceiptPersistenceTest {
         assertEquals(audits, state.auditCount());
     }
 
+    @Test
+    void receiptCodecRejectsOrphanReversalAndPlayerMismatch() {
+        UUID originalId = id(300);
+        UUID reversalId = id(301);
+        var codec = PlatformSavedData.boundedReceiptsCodec(2);
+
+        ListTag orphan = (ListTag) codec.encodeStart(
+                NbtOps.INSTANCE, Map.of(reversalId, reversal(2_000, id(1), originalId))).getOrThrow();
+        assertTrue(codec.parse(NbtOps.INSTANCE, orphan).error().isPresent());
+
+        EconomyTransactionReceipt original = receipt(1_000, id(1)).withReversedBy(reversalId);
+        ListTag mismatchedPlayer = (ListTag) codec.encodeStart(NbtOps.INSTANCE, Map.of(
+                originalId, original,
+                reversalId, reversal(2_000, id(2), originalId))).getOrThrow();
+        assertTrue(codec.parse(NbtOps.INSTANCE, mismatchedPlayer).error().isPresent());
+    }
+
+    @Test
+    void receiptCodecRejectsReversalOfReversalCycle() {
+        UUID firstId = id(310);
+        UUID secondId = id(311);
+        var codec = PlatformSavedData.boundedReceiptsCodec(2);
+        ListTag cycle = (ListTag) codec.encodeStart(NbtOps.INSTANCE, Map.of(
+                firstId, reversal(2_000, id(1), secondId).withReversedBy(secondId),
+                secondId, reversal(3_000, id(1), firstId).withReversedBy(firstId))).getOrThrow();
+
+        assertTrue(codec.parse(NbtOps.INSTANCE, cycle).error().isPresent());
+    }
+
+    @Test
+    void activeReversalRetainsItsExpiredOriginalEvidence() {
+        UUID originalId = id(400);
+        UUID reversalId = id(401);
+        Map<UUID, EconomyTransactionReceipt> receipts = Map.of(
+                originalId, receipt(1_000, id(1)).withReversedBy(reversalId),
+                reversalId, reversal(2_000, id(1), originalId),
+                id(402), receipt(500, id(2)));
+
+        assertEquals(Set.of(originalId, reversalId),
+                PlatformSavedData.retainedReceiptIds(receipts, Set.of(reversalId)));
+    }
+
     private static EconomyTransactionReceipt receipt(long timestamp, UUID playerId) {
         return new EconomyTransactionReceipt(
                 timestamp, AdministrationService.SYSTEM_ACTOR, playerId,
                 EconomyTransactionReceipt.Kind.AWARD, 10,
                 Optional.empty(), Optional.empty(), Optional.empty(), 0,
                 Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                EconomyTransactionReceipt.CompensationDecision.NONE);
+    }
+
+    private static EconomyTransactionReceipt reversal(long timestamp, UUID playerId, UUID originalId) {
+        return new EconomyTransactionReceipt(
+                timestamp, AdministrationService.SYSTEM_ACTOR, playerId,
+                EconomyTransactionReceipt.Kind.REVERSAL, 10,
+                Optional.empty(), Optional.empty(), Optional.empty(), 0,
+                Optional.empty(), Optional.empty(), Optional.of(originalId), Optional.empty(), Optional.empty(),
                 EconomyTransactionReceipt.CompensationDecision.NONE);
     }
 

@@ -57,9 +57,15 @@ final class EconomyServiceTest {
 
         PlatformSavedData loaded = roundTrip(PlatformSavedData.CODEC, state);
         assertEquals(25, loaded.economyBalance(playerId).orElseThrow());
-        assertEquals(EconomyService.TransactionStatus.DUPLICATE_TRANSACTION,
+        assertEquals(EconomyService.TransactionStatus.TRANSACTION_ID_CONFLICT,
                 EconomyService.award(loaded, playerId, 10, "retry", 4_000, transactionId, 25, 100).status());
         assertEquals(25, loaded.economyBalance(playerId).orElseThrow());
+        UUID otherPlayer = id(2);
+        assertEquals(EconomyService.TransactionStatus.TRANSACTION_ID_CONFLICT,
+                EconomyService.createAccount(
+                        loaded, otherPlayer, 25, 100,
+                        1_001 + PlatformSavedData.ECONOMY_TRANSACTION_RETENTION_MILLIS, transactionId).status());
+        assertTrue(loaded.economyBalance(otherPlayer).isEmpty());
     }
 
     @Test
@@ -273,7 +279,7 @@ final class EconomyServiceTest {
     }
 
     @Test
-    void transactionIdCanBeReusedOnlyAfterTheRetryHorizon() {
+    void retainedReceiptPreventsExpiredTransactionIdReuseAndPreservesEvidence() {
         PlatformSavedData state = new PlatformSavedData();
         UUID playerId = id(105);
         UUID transactionId = id(106);
@@ -282,10 +288,13 @@ final class EconomyServiceTest {
         assertEquals(EconomyService.TransactionStatus.SUCCESS,
                 EconomyService.award(state, playerId, 1, "first", 1_000, transactionId, 0, 100).status());
         assertEquals(EconomyService.TransactionStatus.DUPLICATE_TRANSACTION,
-                EconomyService.award(state, playerId, 1, "retry", 1_000 + horizon, transactionId, 0, 100).status());
-        assertEquals(EconomyService.TransactionStatus.SUCCESS,
-                EconomyService.award(state, playerId, 1, "new horizon", 1_001 + horizon, transactionId, 0, 100).status());
-        assertEquals(2, state.economyBalance(playerId).orElseThrow());
+                EconomyService.award(state, playerId, 1, "retry", 1_001 + horizon, transactionId, 0, 100).status());
+        assertEquals(EconomyService.TransactionStatus.TRANSACTION_ID_CONFLICT,
+                EconomyService.award(state, playerId, 2, "conflict", 1_002 + horizon, transactionId, 0, 100).status());
+        assertEquals(1, state.economyBalance(playerId).orElseThrow());
+        EconomyTransactionReceipt retained = state.economyReceipt(transactionId).orElseThrow();
+        assertEquals(1, retained.amount());
+        assertEquals(1_000, retained.timestampEpochMillis());
     }
 
     @Test

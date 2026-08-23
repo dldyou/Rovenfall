@@ -41,9 +41,18 @@ public final class EconomyService {
         if (!validTransactionId(transactionId)) {
             return result(TransactionStatus.INVALID_TRANSACTION, 0, 0, transactionId, false);
         }
+        Optional<EconomyTransactionReceipt> retainedReceipt = state.economyReceipt(transactionId);
+        if (retainedReceipt.isPresent()) {
+            long balance = state.economyBalance(playerId).orElse(0L);
+            return receiptMatches(
+                    retainedReceipt.orElseThrow(), AdministrationService.SYSTEM_ACTOR, playerId,
+                    EconomyTransactionReceipt.Kind.ACCOUNT_CREATE, initialBalance)
+                    ? result(TransactionStatus.DUPLICATE_TRANSACTION, balance, balance, transactionId, false)
+                    : result(TransactionStatus.TRANSACTION_ID_CONFLICT, balance, balance, transactionId, false);
+        }
         if (state.hasEconomyTransaction(transactionId, timestampEpochMillis)) {
             long balance = state.economyBalance(playerId).orElse(0L);
-            return result(TransactionStatus.DUPLICATE_TRANSACTION, balance, balance, transactionId, false);
+            return result(TransactionStatus.TRANSACTION_ID_CONFLICT, balance, balance, transactionId, false);
         }
         Optional<Long> existing = state.economyBalance(playerId);
         if (existing.isPresent()) {
@@ -161,8 +170,17 @@ public final class EconomyService {
                     "invalid_transaction", timestampEpochMillis, transactionId, currentBalance(state, playerId, initialBalance));
         }
         long beforeBalance = currentBalance(state, playerId, initialBalance);
+        Optional<EconomyTransactionReceipt> retainedReceipt = state.economyReceipt(transactionId);
+        if (retainedReceipt.isPresent()) {
+            if (receiptMatches(retainedReceipt.orElseThrow(), actorId, playerId, operation.receiptKind, amount)) {
+                return result(TransactionStatus.DUPLICATE_TRANSACTION, beforeBalance, beforeBalance, transactionId, false);
+            }
+            return denied(state, actorId, playerId, operation, TransactionStatus.TRANSACTION_ID_CONFLICT,
+                    "transaction_id_conflict", timestampEpochMillis, transactionId, beforeBalance);
+        }
         if (state.hasEconomyTransaction(transactionId, timestampEpochMillis)) {
-            return result(TransactionStatus.DUPLICATE_TRANSACTION, beforeBalance, beforeBalance, transactionId, false);
+            return denied(state, actorId, playerId, operation, TransactionStatus.TRANSACTION_ID_CONFLICT,
+                    "transaction_id_conflict", timestampEpochMillis, transactionId, beforeBalance);
         }
         if (amount <= 0) {
             return denied(state, actorId, playerId, operation, TransactionStatus.INVALID_AMOUNT,
@@ -255,6 +273,18 @@ public final class EconomyService {
 
     private static boolean validTransactionId(UUID transactionId) {
         return transactionId != null && !ZERO_UUID.equals(transactionId);
+    }
+
+    private static boolean receiptMatches(
+            EconomyTransactionReceipt receipt,
+            UUID actorId,
+            UUID playerId,
+            EconomyTransactionReceipt.Kind kind,
+            long amount) {
+        return receipt.actorId().equals(actorId)
+                && receipt.playerId().equals(playerId)
+                && receipt.kind() == kind
+                && receipt.amount() == amount;
     }
 
     private static Optional<String> validReason(String reason) {
@@ -360,6 +390,7 @@ public final class EconomyService {
         SUCCESS,
         ACCOUNT_EXISTS,
         DUPLICATE_TRANSACTION,
+        TRANSACTION_ID_CONFLICT,
         UNAUTHORIZED,
         INVALID_INPUT,
         INVALID_TRANSACTION,

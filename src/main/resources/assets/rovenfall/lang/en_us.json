@@ -106,6 +106,8 @@
   "economy_transaction_kind.rovenfall.purchase": "Purchase",
   "economy_transaction_kind.rovenfall.sale": "Sale",
   "economy_transaction_kind.rovenfall.reversal": "Reversal",
+  "command.rovenfall.admin.economy.error.transaction_id_conflict": "That transaction ID belongs to a different economy operation. Use a new transaction ID.",
+  "command.rovenfall.shop.error.transaction_id_conflict": "That transaction ID belongs to a different shop trade. Use a new transaction ID.",
   "command.rovenfall.admin.economy.reversal.success": "Reversed transaction %1$s with new transaction %2$s.",
   "command.rovenfall.admin.economy.reversal.error.invalid_decision": "The reversal decision must be strict or refund_without_items_or_stock.",
   "command.rovenfall.admin.economy.reversal.error.transaction_id_conflict": "That reversal transaction ID belongs to a different operation. Use a new transaction ID.",

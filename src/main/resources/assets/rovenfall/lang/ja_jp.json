@@ -106,6 +106,8 @@
   "economy_transaction_kind.rovenfall.purchase": "購入",
   "economy_transaction_kind.rovenfall.sale": "販売",
   "economy_transaction_kind.rovenfall.reversal": "逆取引",
+  "command.rovenfall.admin.economy.error.transaction_id_conflict": "その取引IDは別の経済操作で使用されています。新しい取引IDを使用してください。",
+  "command.rovenfall.shop.error.transaction_id_conflict": "その取引IDは別のショップ取引で使用されています。新しい取引IDを使用してください。",
   "command.rovenfall.admin.economy.reversal.success": "取引 %1$s を新しい取引 %2$s で取り消しました。",
   "command.rovenfall.admin.economy.reversal.error.invalid_decision": "逆取引の決定は strict または refund_without_items_or_stock にしてください。",
   "command.rovenfall.admin.economy.reversal.error.transaction_id_conflict": "その逆取引IDは別の操作で使用されています。新しい取引IDを使用してください。",
