@@ -158,10 +158,19 @@ public final class ShopTemplateSnapshot {
         templates.forEach((templateId, template) -> {
             Source source = sources.get(templateId);
             for (ShopTemplate.Offer offer : template.offers()) {
-                var item = offer.item();
-                if (item.isEmpty() || item.getCount() != offer.stackTemplate().count()
-                        || item.getCount() > item.getMaxStackSize()) {
+                try {
+                    var item = offer.item();
+                    if (!item.isEmpty() && item.getCount() == offer.stackTemplate().count()
+                            && item.getCount() <= item.getMaxStackSize()) {
+                        continue;
+                    }
                     problems.add(problem(source, "offer " + offer.id() + " has an invalid exact item stack"));
+                } catch (RuntimeException exception) {
+                    String cause = exception.getMessage() == null
+                            ? exception.getClass().getSimpleName()
+                            : exception.getMessage();
+                    problems.add(problem(source,
+                            "offer " + offer.id() + " could not create its exact item stack: " + cause));
                 }
             }
         });
