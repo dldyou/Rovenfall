@@ -17,6 +17,7 @@ final class LocalizationCatalogTest {
             "admin_role.rovenfall.economy_manager",
             "admin_role.rovenfall.content_manager",
             "admin_role.rovenfall.owner",
+            "shop_template.rovenfall.foundation",
             "command.rovenfall.admin.role.set.success",
             "command.rovenfall.admin.audit.header",
             "gui.rovenfall.admin.audit.summary",
