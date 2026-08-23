@@ -1,6 +1,7 @@
 package org.dldyou.rovenfall.administration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -9,9 +10,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import net.minecraft.core.NonNullList;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
+import net.minecraft.world.item.ItemStack;
 import org.junit.jupiter.api.Test;
 
 final class EconomyReceiptPersistenceTest {
@@ -108,6 +111,31 @@ final class EconomyReceiptPersistenceTest {
 
         assertEquals(Set.of(originalId, reversalId),
                 PlatformSavedData.retainedReceiptIds(receipts, Set.of(reversalId)));
+    }
+
+    @Test
+    void expiryIndexDefersOriginalUntilReversalExpiresThenEvictsThePair() {
+        PlatformSavedData state = new PlatformSavedData();
+        UUID playerId = id(500);
+        UUID originalId = id(501);
+        UUID reversalId = id(502);
+        assertEquals(EconomyService.TransactionStatus.SUCCESS,
+                EconomyService.award(state, playerId, 10, "seed", 1_000, originalId, 0, 100).status());
+        assertEquals(EconomyReversalService.Status.SUCCESS, EconomyReversalService.reverse(
+                state, playerId, NonNullList.withSize(36, ItemStack.EMPTY),
+                AdministrationService.SYSTEM_ACTOR, true, originalId,
+                EconomyTransactionReceipt.CompensationDecision.NONE, "undo", 2_000,
+                reversalId, Long.MAX_VALUE).status());
+
+        long originalExpiry = 1_001 + PlatformSavedData.ECONOMY_TRANSACTION_RETENTION_MILLIS;
+        assertFalse(state.maintainReceiptCapacity(originalExpiry, 2));
+        assertTrue(state.economyReceipt(originalId).isPresent());
+        assertTrue(state.economyReceipt(reversalId).isPresent());
+
+        long reversalExpiry = 2_001 + PlatformSavedData.ECONOMY_TRANSACTION_RETENTION_MILLIS;
+        assertTrue(state.maintainReceiptCapacity(reversalExpiry, 2));
+        assertTrue(state.economyReceipt(originalId).isEmpty());
+        assertTrue(state.economyReceipt(reversalId).isEmpty());
     }
 
     private static EconomyTransactionReceipt receipt(long timestamp, UUID playerId) {

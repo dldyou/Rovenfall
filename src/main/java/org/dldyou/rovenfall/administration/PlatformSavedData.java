@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.UUID;
 import net.minecraft.core.UUIDUtil;
@@ -82,6 +83,11 @@ public final class PlatformSavedData extends SavedData {
     private final Map<UUID, EconomyTransactionReceipt> economyReceipts;
     private final List<EconomyAlert> economyAlerts;
     private final Map<UUID, ArrayDeque<Long>> recentTransactionsByPlayer = new HashMap<>();
+    private final Map<UUID, Long> receiptEvictionTimes = new HashMap<>();
+    private final PriorityQueue<ReceiptExpiry> receiptExpiryQueue = new PriorityQueue<>(
+            Comparator.comparingLong(ReceiptExpiry::timestampEpochMillis)
+                    .thenComparing(ReceiptExpiry::reversal, Comparator.reverseOrder())
+                    .thenComparing(ReceiptExpiry::transactionId));
     private final java.util.Set<Identifier> shopDependencyLocks = new HashSet<>();
     private final Map<UUID, Long> lastDeniedAuditByActor = new HashMap<>();
 
@@ -111,6 +117,7 @@ public final class PlatformSavedData extends SavedData {
         this.economyReceipts = new HashMap<>(economyReceipts);
         this.economyAlerts = new ArrayList<>(economyAlerts);
         rebuildRecentTransactionIndex();
+        rebuildReceiptExpiryIndex();
     }
 
     private static PlatformSavedData decode(
@@ -363,6 +370,7 @@ public final class PlatformSavedData extends SavedData {
         economyAlerts.clear();
         economyAlerts.addAll(restoredEconomyEvidence.alerts);
         rebuildRecentTransactionIndex();
+        rebuildReceiptExpiryIndex();
         commitAudit(auditEntry);
     }
 
@@ -385,9 +393,7 @@ public final class PlatformSavedData extends SavedData {
                 || !canCommitTransaction(transactionId, timestampEpochMillis)) {
             return false;
         }
-        return economyReceipts.size() < MAX_ECONOMY_TRANSACTIONS
-                || retainedReceiptCountAfterCommit(transactionId, Optional.empty(), timestampEpochMillis)
-                        <= MAX_ECONOMY_TRANSACTIONS;
+        return maintainReceiptCapacity(timestampEpochMillis, MAX_ECONOMY_TRANSACTIONS);
     }
 
     boolean canCommitReversalTransaction(
@@ -396,10 +402,7 @@ public final class PlatformSavedData extends SavedData {
                 || !canCommitTransaction(transactionId, timestampEpochMillis)) {
             return false;
         }
-        return economyReceipts.size() < MAX_ECONOMY_TRANSACTIONS
-                || retainedReceiptCountAfterCommit(
-                        transactionId, Optional.of(originalTransactionId), timestampEpochMillis)
-                        <= MAX_ECONOMY_TRANSACTIONS;
+        return maintainReceiptCapacity(timestampEpochMillis, MAX_ECONOMY_TRANSACTIONS);
     }
 
     boolean hasEconomyTransaction(UUID transactionId, long timestampEpochMillis) {
@@ -548,6 +551,7 @@ public final class PlatformSavedData extends SavedData {
         if (economyReceipts.putIfAbsent(transactionId, receipt) != null) {
             throw new IllegalStateException("Economy transaction receipt already exists");
         }
+        registerReceiptExpiry(transactionId, receipt);
         ArrayDeque<Long> timestamps = recentTransactionsByPlayer.computeIfAbsent(
                 receipt.playerId(), ignored -> new ArrayDeque<>());
         timestamps.addLast(receipt.timestampEpochMillis());
@@ -562,7 +566,6 @@ public final class PlatformSavedData extends SavedData {
             long cutoff = cutoff(receipt.timestampEpochMillis(), ECONOMY_TRANSACTION_RETENTION_MILLIS);
             economyAlerts.removeIf(alert -> alert.timestampEpochMillis() < cutoff);
         }
-        pruneReceiptsToActiveEvidence(receipt.timestampEpochMillis());
     }
 
     private void prepareLedgerForCommit(long timestampEpochMillis) {
@@ -572,34 +575,109 @@ public final class PlatformSavedData extends SavedData {
         }
     }
 
-    private int retainedReceiptCountAfterCommit(
-            UUID transactionId, Optional<UUID> reversalOriginalId, long timestampEpochMillis) {
-        Set<UUID> activeTransactions = new HashSet<>();
-        long cutoff = cutoff(timestampEpochMillis, ECONOMY_TRANSACTION_RETENTION_MILLIS);
-        economyTransactions.forEach((id, timestamp) -> {
-            if (timestamp >= cutoff) {
-                activeTransactions.add(id);
+    boolean maintainReceiptCapacity(long timestampEpochMillis, int maximumEntries) {
+        while (economyReceipts.size() >= maximumEntries) {
+            ReceiptExpiry expiry = receiptExpiryQueue.peek();
+            if (expiry == null || expiry.timestampEpochMillis() > timestampEpochMillis) {
+                return false;
             }
-        });
-        activeTransactions.add(transactionId);
-        Set<UUID> retainedReceipts = retainedReceiptIds(economyReceipts, activeTransactions);
-        reversalOriginalId.ifPresent(retainedReceipts::add);
-        retainedReceipts.add(transactionId);
-        return retainedReceipts.size();
+            receiptExpiryQueue.remove();
+            if (receiptEvictionTimes.getOrDefault(expiry.transactionId(), Long.MIN_VALUE)
+                    != expiry.timestampEpochMillis()) {
+                continue;
+            }
+            if (evictReceipt(expiry.transactionId())) {
+                setDirty();
+            }
+        }
+        return true;
     }
 
-    private void pruneReceiptsToActiveEvidence(long timestampEpochMillis) {
-        if (economyReceipts.size() <= MAX_ECONOMY_TRANSACTIONS) {
+    private void registerReceiptExpiry(UUID transactionId, EconomyTransactionReceipt receipt) {
+        long expiry = receiptExpiry(receipt.timestampEpochMillis());
+        recordReceiptExpiry(transactionId, expiry);
+        if (receipt.kind() != EconomyTransactionReceipt.Kind.REVERSAL) {
             return;
         }
-        Set<UUID> activeTransactions = new HashSet<>();
-        long cutoff = cutoff(timestampEpochMillis, ECONOMY_TRANSACTION_RETENTION_MILLIS);
-        economyTransactions.forEach((id, timestamp) -> {
-            if (timestamp >= cutoff) {
-                activeTransactions.add(id);
+        UUID originalId = receipt.originalTransactionId().orElseThrow();
+        long pairExpiry = Math.max(receiptEvictionTimes.getOrDefault(originalId, expiry), expiry);
+        recordReceiptExpiry(originalId, pairExpiry);
+        EconomyTransactionReceipt original = economyReceipts.get(originalId);
+        if (original != null && original.reversedBy().equals(Optional.of(transactionId))) {
+            recordReceiptExpiry(transactionId, pairExpiry);
+        }
+    }
+
+    private void recordReceiptExpiry(UUID transactionId, long timestampEpochMillis) {
+        EconomyTransactionReceipt receipt = economyReceipts.get(transactionId);
+        if (receipt == null) {
+            return;
+        }
+        Long previous = receiptEvictionTimes.put(transactionId, timestampEpochMillis);
+        if (previous != null && previous == timestampEpochMillis) {
+            return;
+        }
+        receiptExpiryQueue.add(new ReceiptExpiry(
+                transactionId, timestampEpochMillis,
+                receipt.kind() == EconomyTransactionReceipt.Kind.REVERSAL));
+    }
+
+    private boolean evictReceipt(UUID transactionId) {
+        EconomyTransactionReceipt receipt = economyReceipts.get(transactionId);
+        if (receipt == null) {
+            receiptEvictionTimes.remove(transactionId);
+            return false;
+        }
+        if (receipt.kind() == EconomyTransactionReceipt.Kind.REVERSAL) {
+            UUID originalId = receipt.originalTransactionId().orElseThrow();
+            EconomyTransactionReceipt original = economyReceipts.get(originalId);
+            if (original != null && original.reversedBy().equals(Optional.of(transactionId))) {
+                removeReceipt(originalId);
+            }
+        } else {
+            receipt.reversedBy().ifPresent(this::removeReceipt);
+        }
+        removeReceipt(transactionId);
+        return true;
+    }
+
+    private void removeReceipt(UUID transactionId) {
+        economyReceipts.remove(transactionId);
+        receiptEvictionTimes.remove(transactionId);
+    }
+
+    private void rebuildReceiptExpiryIndex() {
+        receiptEvictionTimes.clear();
+        receiptExpiryQueue.clear();
+        economyReceipts.forEach((transactionId, receipt) ->
+                receiptEvictionTimes.put(transactionId, receiptExpiry(receipt.timestampEpochMillis())));
+        economyReceipts.forEach((transactionId, receipt) -> {
+            if (receipt.kind() == EconomyTransactionReceipt.Kind.REVERSAL) {
+                UUID originalId = receipt.originalTransactionId().orElseThrow();
+                receiptEvictionTimes.computeIfPresent(originalId, (ignored, originalExpiry) ->
+                        Math.max(originalExpiry, receiptEvictionTimes.get(transactionId)));
             }
         });
-        economyReceipts.keySet().retainAll(retainedReceiptIds(economyReceipts, activeTransactions));
+        economyReceipts.forEach((transactionId, receipt) -> receipt.reversedBy().ifPresent(reversalId -> {
+            long pairExpiry = Math.max(
+                    receiptEvictionTimes.get(transactionId),
+                    receiptEvictionTimes.getOrDefault(reversalId, Long.MIN_VALUE));
+            receiptEvictionTimes.put(transactionId, pairExpiry);
+            receiptEvictionTimes.computeIfPresent(reversalId, (ignored, reversalExpiry) -> pairExpiry);
+        }));
+        receiptEvictionTimes.forEach((transactionId, expiry) -> {
+            EconomyTransactionReceipt receipt = economyReceipts.get(transactionId);
+            receiptExpiryQueue.add(new ReceiptExpiry(
+                    transactionId, expiry, receipt.kind() == EconomyTransactionReceipt.Kind.REVERSAL));
+        });
+    }
+
+    private static long receiptExpiry(long timestampEpochMillis) {
+        try {
+            return Math.addExact(timestampEpochMillis, ECONOMY_TRANSACTION_RETENTION_MILLIS + 1);
+        } catch (ArithmeticException exception) {
+            return Long.MAX_VALUE;
+        }
     }
 
     static Set<UUID> retainedReceiptIds(
@@ -700,7 +778,8 @@ public final class PlatformSavedData extends SavedData {
                 if (receipt.reversedBy().isPresent()
                         || original == null
                         || original.kind() == EconomyTransactionReceipt.Kind.REVERSAL
-                        || !original.reversedBy().equals(Optional.of(entry.getKey()))
+                        || (receipt.invalidatedByRestore().isEmpty()
+                                && !original.reversedBy().equals(Optional.of(entry.getKey())))
                         || !original.playerId().equals(receipt.playerId())) {
                     return Optional.of("Economy reversal receipt has an invalid original link " + entry.getKey());
                 }
@@ -871,5 +950,8 @@ public final class PlatformSavedData extends SavedData {
             receipts = Map.copyOf(receipts);
             alerts = List.copyOf(alerts);
         }
+    }
+
+    private record ReceiptExpiry(UUID transactionId, long timestampEpochMillis, boolean reversal) {
     }
 }
