@@ -12,6 +12,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.AddServerReloadListenersEvent;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
+import org.dldyou.rovenfall.administration.PlayerRecordService;
 import org.dldyou.rovenfall.administration.RovenfallCommands;
 import org.dldyou.rovenfall.definition.TestDefinitionReloadListener;
 
@@ -22,6 +23,7 @@ public final class Rovenfall {
     public Rovenfall(IEventBus modBus) {
         modBus.addListener(this::registerGameTests);
         NeoForge.EVENT_BUS.addListener(RovenfallCommands::register);
+        NeoForge.EVENT_BUS.addListener(PlayerRecordService::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(this::addServerReloadListeners);
     }
 
