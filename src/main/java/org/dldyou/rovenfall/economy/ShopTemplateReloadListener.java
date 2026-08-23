@@ -92,11 +92,25 @@ public final class ShopTemplateReloadListener extends SimplePreparableReloadList
         if (event.getUpdateCause() != DefaultDataComponentsBoundEvent.UpdateCause.SERVER_DATA_LOAD) {
             return;
         }
+        installPending();
+    }
+
+    boolean installPending() {
         ShopTemplateSnapshot prepared = pending.getAndSet(null);
-        if (prepared != null) {
+        if (prepared == null) {
+            return false;
+        }
+        try {
             prepared.validateBoundItems();
             store.install(prepared);
             LOGGER.info("Loaded {} validated Rovenfall shop templates", prepared.size());
+            return true;
+        } catch (ShopTemplateSnapshot.ValidationException exception) {
+            for (ShopTemplateSnapshot.Problem problem : exception.problems()) {
+                LOGGER.error("Rejected Rovenfall shop template file={} template={} cause={}",
+                        problem.file(), problem.templateId(), problem.cause());
+            }
+            return false;
         }
     }
 

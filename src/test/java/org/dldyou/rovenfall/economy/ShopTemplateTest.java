@@ -111,6 +111,32 @@ final class ShopTemplateTest {
         assertFalse(store.current().get(id("invalid")).isPresent());
     }
 
+    @Test
+    void lateValidationFailurePreservesInstalledSnapshotAndConsumesPendingCandidate() {
+        ShopTemplateReloadListener listener = new ShopTemplateReloadListener();
+        ShopTemplateSnapshot installed = ShopTemplateSnapshot.compile(List.of(
+                source("valid.json", "rovenfall:valid", validTemplate())));
+        listener.apply(installed, null, null);
+        assertTrue(listener.installPending());
+
+        ShopTemplate invalid = template(new ShopTemplate.Offer(
+                id("oversized"), stack(99), Optional.of(1L), Optional.empty(), unlimited()));
+        listener.apply(ShopTemplateSnapshot.compile(List.of(
+                source("invalid.json", "rovenfall:invalid", invalid))), null, null);
+
+        assertFalse(listener.installPending());
+        assertTrue(listener.snapshot().get(id("valid")).isPresent());
+        assertFalse(listener.snapshot().get(id("invalid")).isPresent());
+        assertFalse(listener.installPending());
+
+        ShopTemplateSnapshot recovered = ShopTemplateSnapshot.compile(List.of(
+                source("recovered.json", "rovenfall:recovered", validTemplate())));
+        listener.apply(recovered, null, null);
+        assertTrue(listener.installPending());
+        assertTrue(listener.snapshot().get(id("recovered")).isPresent());
+        assertFalse(listener.snapshot().get(id("valid")).isPresent());
+    }
+
     private static ShopTemplate validTemplate() {
         return template(new ShopTemplate.Offer(
                 id("bread"), stack(4), Optional.of(12L), Optional.of(6L),
