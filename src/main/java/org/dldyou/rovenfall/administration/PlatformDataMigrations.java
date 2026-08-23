@@ -7,7 +7,8 @@ import java.util.function.UnaryOperator;
 
 final class PlatformDataMigrations {
     private static final Map<Integer, UnaryOperator<PersistedState>> MIGRATIONS = Map.of(
-            0, state -> state.atVersion(1)
+            0, state -> state.atVersion(1),
+            1, state -> state.atVersion(2)
     );
 
     private PlatformDataMigrations() {
@@ -17,8 +18,9 @@ final class PlatformDataMigrations {
             int schemaVersion,
             Map<UUID, AdminRole> adminRoles,
             List<AuditEntry> auditEntries,
+            Map<UUID, PlayerRecord> playerRecords,
             int targetVersion) {
-        PersistedState original = new PersistedState(schemaVersion, adminRoles, auditEntries);
+        PersistedState original = new PersistedState(schemaVersion, adminRoles, auditEntries, playerRecords);
         if (schemaVersion < 0 || schemaVersion > targetVersion) {
             return MigrationResult.readOnly(original);
         }
@@ -39,14 +41,19 @@ final class PlatformDataMigrations {
         return new MigrationResult(candidate, true);
     }
 
-    record PersistedState(int schemaVersion, Map<UUID, AdminRole> adminRoles, List<AuditEntry> auditEntries) {
+    record PersistedState(
+            int schemaVersion,
+            Map<UUID, AdminRole> adminRoles,
+            List<AuditEntry> auditEntries,
+            Map<UUID, PlayerRecord> playerRecords) {
         PersistedState {
             adminRoles = Map.copyOf(adminRoles);
             auditEntries = List.copyOf(auditEntries);
+            playerRecords = Map.copyOf(playerRecords);
         }
 
         PersistedState atVersion(int version) {
-            return new PersistedState(version, adminRoles, auditEntries);
+            return new PersistedState(version, adminRoles, auditEntries, playerRecords);
         }
     }
 

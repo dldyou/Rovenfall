@@ -19,6 +19,7 @@ final class PlatformSnapshotServiceTest {
         PlatformSavedData state = new PlatformSavedData();
         UUID owner = id(1);
         bootstrap(state, owner, AdminRole.OWNER);
+        PlayerRecordService.observeLogin(state, owner, 1_500);
         PlatformSnapshotStore store = store("create");
         UUID snapshotId = id(101);
 
@@ -29,6 +30,7 @@ final class PlatformSnapshotServiceTest {
         assertTrue(Files.isRegularFile(snapshotPath("create", snapshotId)));
         PlatformSavedData loaded = store.read(snapshotId);
         assertEquals(AdminRole.OWNER, loaded.roleOf(owner).orElseThrow());
+        assertEquals(new PlayerRecord(1_500, 1_500), loaded.playerRecord(owner).orElseThrow());
         assertEquals(1, loaded.auditCount());
         assertEquals(2, state.auditCount());
         assertAudit(state, "rovenfall:platform_snapshot_create", "none", "snapshot:" + snapshotId, id(201));
@@ -94,11 +96,13 @@ final class PlatformSnapshotServiceTest {
         UUID target = id(21);
         bootstrap(state, owner, AdminRole.OWNER);
         change(state, owner, target, AdminRole.VIEWER, 2_000, 301);
+        PlayerRecordService.observeLogin(state, target, 2_500);
         PlatformSnapshotStore store = store("restore");
         UUID sourceSnapshotId = id(120);
         store.write(sourceSnapshotId, state);
 
         change(state, owner, target, AdminRole.MODERATOR, 3_000, 302);
+        PlayerRecordService.observeLogin(state, target, 3_500);
         int auditCount = state.auditCount();
         UUID safetySnapshotId = id(121);
         UUID transactionId = id(303);
@@ -109,8 +113,11 @@ final class PlatformSnapshotServiceTest {
 
         assertEquals(AdministrationService.SnapshotRestoreStatus.SUCCESS, result.status());
         assertEquals(AdminRole.VIEWER, state.roleOf(target).orElseThrow());
+        assertEquals(new PlayerRecord(2_500, 2_500), state.playerRecord(target).orElseThrow());
         assertEquals(auditCount + 1, state.auditCount());
         assertEquals(AdminRole.MODERATOR, store.read(safetySnapshotId).roleOf(target).orElseThrow());
+        assertEquals(new PlayerRecord(2_500, 3_500),
+                store.read(safetySnapshotId).playerRecord(target).orElseThrow());
         assertAudit(state, "rovenfall:platform_snapshot_restore",
                 "snapshot:" + safetySnapshotId, "snapshot:" + sourceSnapshotId, transactionId);
     }
