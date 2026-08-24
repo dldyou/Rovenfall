@@ -1,0 +1,105 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out tagged commit
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate release tag
+        id: version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?$'
+          if [[ ! "${tag}" =~ ${semver} ]]; then
+            echo "Release tag must be SemVer in the form vMAJOR.MINOR.PATCH[-PRERELEASE]." >&2
+            exit 1
+          fi
+          if [[ "$(git cat-file -t "${tag}")" != "tag" ]]; then
+            echo "Release tag must be annotated." >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$(git rev-parse HEAD)" origin/main; then
+            echo "Release tag must point to a commit contained in main." >&2
+            exit 1
+          fi
+          echo "version=${tag#v}" >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Java 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+
+      - name: Build and run required tests
+        run: ./gradlew clean build runGameTestServer --warning-mode all -Pmod_version="${{ steps.version.outputs.version }}"
+
+      - name: Prepare release assets
+        id: assets
+        shell: bash
+        run: |
+          jar="build/libs/rovenfall-${{ steps.version.outputs.version }}.jar"
+          test -f "${jar}"
+          sha256sum "${jar}" > "${jar}.sha256"
+          echo "jar=${jar}" >> "${GITHUB_OUTPUT}"
+          echo "checksum=${jar}.sha256" >> "${GITHUB_OUTPUT}"
+
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          jar="${{ steps.assets.outputs.jar }}"
+          checksum="${{ steps.assets.outputs.checksum }}"
+          if gh release view "${tag}" >/dev/null 2>&1; then
+            assets="$(gh release view "${tag}" --json assets --jq '.assets[].name')"
+            expected_hash="$(sha256sum "${jar}" | cut -d ' ' -f 1)"
+            if grep -Fxq "$(basename "${jar}")" <<< "${assets}"; then
+              published_hash="$(gh release download "${tag}" --pattern "$(basename "${jar}")" --output - | sha256sum | cut -d ' ' -f 1)"
+              [[ "${published_hash}" == "${expected_hash}" ]] || { echo "Published JAR differs from this tag build." >&2; exit 1; }
+            else
+              gh release upload "${tag}" "${jar}"
+            fi
+            if grep -Fxq "$(basename "${checksum}")" <<< "${assets}"; then
+              published_checksum="$(gh release download "${tag}" --pattern "$(basename "${checksum}")" --output - | cut -d ' ' -f 1)"
+              [[ "${published_checksum}" == "${expected_hash}" ]] || { echo "Published checksum differs from this tag build." >&2; exit 1; }
+            else
+              gh release upload "${tag}" "${checksum}"
+            fi
+            if [[ "$(gh release view "${tag}" --json isDraft --jq '.isDraft')" == "true" ]]; then
+              gh release edit "${tag}" --draft=false
+            fi
+          else
+            flags=(--verify-tag --generate-notes --title "Rovenfall ${{ steps.version.outputs.version }}")
+            if [[ "${{ steps.version.outputs.version }}" == *-* ]]; then
+              flags+=(--prerelease)
+            fi
+            gh release create "${tag}" "${jar}" "${checksum}" "${flags[@]}"
+          fi
