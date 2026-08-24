@@ -6,7 +6,7 @@ Read versions from the repository before making a version-sensitive decision:
 
 | Concern | Authoritative location | Verified target baseline |
 |---|---|---|
-| Gradle | `gradle/wrapper/gradle-wrapper.properties` | 9.2.1 |
+| Gradle | `gradle/wrapper/gradle-wrapper.properties` | 9.7.1 |
 | Gradle daemon JVM | `gradle/gradle-daemon-jvm.properties` | 25 |
 | Java toolchain | `build.gradle` | 25 |
 | ModDevGradle | `build.gradle` | 2.0.144 |
@@ -51,3 +51,4 @@ Resolve NeoForge types and signatures from the dependency sources in the IDE or 
 - Expected distributable: `build/libs/rovenfall-<mod_version>.jar`
 - `build/moddev/artifacts/minecraft-*.jar` files are development artifacts and must not be distributed as Rovenfall.
 - `src/generated/resources` is generated output. Change the generator or source data rather than hand-editing generated files.
+- Release tags use annotated SemVer names such as `v1.0.0`; the release workflow removes the leading `v`, overrides `mod_version`, and attaches the versioned JAR plus its SHA-256 checksum to GitHub Releases.
