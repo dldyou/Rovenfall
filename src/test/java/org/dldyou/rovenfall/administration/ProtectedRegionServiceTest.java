@@ -45,6 +45,23 @@ final class ProtectedRegionServiceTest {
                 + state.protectedRegionsAt(new ClaimKey(WorldTopology.HUB, 40, 51)).size()
                 + state.protectedRegionsAt(new ClaimKey(WorldTopology.HUB, 41, 51)).size());
 
+        int auditsBeforeNullCreate = state.auditCount();
+        var nullCreate = ProtectedRegionService.create(
+                state, owner, false, Identifier.fromNamespaceAndPath("rovenfall", "null_create"),
+                null, "invalid", 6_500, id(1041));
+        assertEquals(ProtectedRegionService.Status.INVALID_REQUEST, nullCreate.status());
+        assertFalse(nullCreate.auditRecorded());
+        assertEquals(auditsBeforeNullCreate, state.auditCount());
+        assertEquals(hubRegion, state.protectedRegion(regionId).orElseThrow());
+
+        int auditsBeforeNullEdit = state.auditCount();
+        var nullEdit = ProtectedRegionService.edit(
+                state, owner, false, regionId, null, "invalid", 6_600, id(1042));
+        assertEquals(ProtectedRegionService.Status.INVALID_REQUEST, nullEdit.status());
+        assertFalse(nullEdit.auditRecorded());
+        assertEquals(auditsBeforeNullEdit, state.auditCount());
+        assertEquals(hubRegion, state.protectedRegion(regionId).orElseThrow());
+
         ProtectedRegion invalid = new ProtectedRegion(owner, WorldTopology.WILDERNESS, 0, 0, 32, 0);
         var rejected = ProtectedRegionService.edit(
                 state, owner, false, regionId, invalid, "too wide", 7_000, id(105));

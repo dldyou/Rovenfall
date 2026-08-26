@@ -27,6 +27,9 @@ public final class ProtectedRegionService {
             String reason,
             long timestampEpochMillis,
             UUID transactionId) {
+        if (region == null) {
+            return new MutationResult(Status.INVALID_REQUEST, transactionId, false);
+        }
         return mutate(state, actorId, authorizationOverride, regionId, Optional.ofNullable(region), true,
                 reason, timestampEpochMillis, transactionId);
     }
@@ -40,6 +43,9 @@ public final class ProtectedRegionService {
             String reason,
             long timestampEpochMillis,
             UUID transactionId) {
+        if (region == null) {
+            return new MutationResult(Status.INVALID_REQUEST, transactionId, false);
+        }
         return mutate(state, actorId, authorizationOverride, regionId, Optional.ofNullable(region), false,
                 reason, timestampEpochMillis, transactionId);
     }
