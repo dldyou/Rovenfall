@@ -16,7 +16,7 @@ public record RpgPlayerState(
         Map<Identifier, Long> activityXp,
         Map<Identifier, CareerProgress> careers,
         Optional<Identifier> activeCareer,
-        List<Identifier> activeSkillSlots,
+        Map<Integer, Identifier> activeSkillSlots,
         Map<Identifier, Long> cooldowns,
         List<ProgressionProvenance> provenance) {
     public static final int MAX_ACTIVITIES = 128;
@@ -44,12 +44,15 @@ public record RpgPlayerState(
             CareerProgress.CODEC, MAX_CAREERS, "career progress");
     private static final Codec<Map<Identifier, Long>> COOLDOWNS_CODEC = mapCodec(
             TICK_CODEC, MAX_COOLDOWNS, "skill cooldown");
+    private static final Codec<Map<Integer, Identifier>> ACTIVE_SKILL_SLOTS_CODEC =
+            ActiveSkillSlot.CODEC.listOf(0, MAX_ACTIVE_SKILL_SLOTS)
+                    .flatXmap(RpgPlayerState::activeSkillSlotsFromEntries, RpgPlayerState::activeSkillSlotEntries);
 
     public static final Codec<RpgPlayerState> CODEC = RecordCodecBuilder.<RpgPlayerState>create(instance -> instance.group(
             ACTIVITY_XP_CODEC.optionalFieldOf("activity_xp", Map.of()).forGetter(RpgPlayerState::activityXp),
             CAREERS_CODEC.optionalFieldOf("careers", Map.of()).forGetter(RpgPlayerState::careers),
             Identifier.CODEC.optionalFieldOf("active_career").forGetter(RpgPlayerState::activeCareer),
-            Identifier.CODEC.listOf(0, MAX_ACTIVE_SKILL_SLOTS).optionalFieldOf("active_skill_slots", List.of())
+            ACTIVE_SKILL_SLOTS_CODEC.optionalFieldOf("active_skill_slots", Map.of())
                     .forGetter(RpgPlayerState::activeSkillSlots),
             COOLDOWNS_CODEC.optionalFieldOf("cooldowns", Map.of()).forGetter(RpgPlayerState::cooldowns),
             ProgressionProvenance.CODEC.listOf(0, MAX_PROVENANCE).optionalFieldOf("provenance", List.of())
@@ -57,13 +60,13 @@ public record RpgPlayerState(
     ).apply(instance, RpgPlayerState::new)).validate(RpgPlayerState::validate);
 
     public static final RpgPlayerState EMPTY = new RpgPlayerState(
-            Map.of(), Map.of(), Optional.empty(), List.of(), Map.of(), List.of());
+            Map.of(), Map.of(), Optional.empty(), Map.of(), Map.of(), List.of());
 
     public RpgPlayerState {
         activityXp = Map.copyOf(activityXp);
         careers = Map.copyOf(careers);
         activeCareer = activeCareer == null ? Optional.empty() : activeCareer;
-        activeSkillSlots = List.copyOf(activeSkillSlots);
+        activeSkillSlots = Map.copyOf(activeSkillSlots);
         cooldowns = Map.copyOf(cooldowns);
         provenance = List.copyOf(provenance);
     }
@@ -78,7 +81,7 @@ public record RpgPlayerState(
             return DataResult.error(() -> "Active career is missing from career progress");
         }
         Set<Identifier> slots = java.util.HashSet.newHashSet(state.activeSkillSlots().size());
-        if (!state.activeSkillSlots().stream().allMatch(slots::add)) {
+        if (!state.activeSkillSlots().values().stream().allMatch(slots::add)) {
             return DataResult.error(() -> "Active skill slots contain a duplicate skill");
         }
         for (Map.Entry<Identifier, Long> entry : state.activityXp().entrySet()) {
@@ -97,6 +100,36 @@ public record RpgPlayerState(
             }
         }
         return DataResult.success(state);
+    }
+
+    private static DataResult<Map<Integer, Identifier>> activeSkillSlotsFromEntries(
+            List<ActiveSkillSlot> entries) {
+        Map<Integer, Identifier> result = new LinkedHashMap<>();
+        Set<Identifier> skills = java.util.HashSet.newHashSet(entries.size());
+        for (ActiveSkillSlot entry : entries) {
+            if (result.putIfAbsent(entry.slot(), entry.skill()) != null) {
+                return DataResult.error(() -> "Duplicate active skill slot " + entry.slot());
+            }
+            if (!skills.add(entry.skill())) {
+                return DataResult.error(() -> "Duplicate active skill " + entry.skill());
+            }
+        }
+        return DataResult.success(Map.copyOf(result));
+    }
+
+    private static DataResult<List<ActiveSkillSlot>> activeSkillSlotEntries(
+            Map<Integer, Identifier> slots) {
+        return DataResult.success(slots.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> new ActiveSkillSlot(entry.getKey(), entry.getValue()))
+                .toList());
+    }
+
+    private record ActiveSkillSlot(int slot, Identifier skill) {
+        private static final Codec<ActiveSkillSlot> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                Codec.intRange(0, MAX_ACTIVE_SKILL_SLOTS - 1).fieldOf("slot").forGetter(ActiveSkillSlot::slot),
+                Identifier.CODEC.fieldOf("skill").forGetter(ActiveSkillSlot::skill)
+        ).apply(instance, ActiveSkillSlot::new));
     }
 
     static <T> Codec<Map<Identifier, T>> mapCodec(Codec<T> valueCodec, int maximum, String label) {
