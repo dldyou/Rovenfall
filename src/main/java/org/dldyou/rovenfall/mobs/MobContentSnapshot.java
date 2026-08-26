@@ -8,17 +8,24 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
+import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.Level;
 import org.dldyou.rovenfall.Rovenfall;
 
 public final class MobContentSnapshot {
     public static final int MAX_CATALOGS = 256;
     public static final int MAX_TICKS = 20 * 60 * 60 * 24 * 30;
     public static final long MAX_REWARD = 1_000_000_000_000L;
+    public static final ResourceKey<Level> WILDERNESS_DIMENSION = ResourceKey.create(
+            Registries.DIMENSION, Identifier.fromNamespaceAndPath(Rovenfall.MOD_ID, "wilderness"));
     private static final Pattern TRANSLATION_KEY = Pattern.compile("[a-z0-9_.-]{1,160}");
     private static final Set<Identifier> BUILT_IN_BEHAVIOR_MODIFIERS = Set.of(
             rovenfall("ambush"), rovenfall("burrow"), rovenfall("boss_controller"), rovenfall("death_burst"));
@@ -210,6 +217,10 @@ public final class MobContentSnapshot {
             finiteRange(source, mutation.id(), "attribute amount", modifier.amount(), -1_000_000, 1_000_000, problems);
         }
         MobContentCatalog.SpawnCondition spawn = mutation.spawn();
+        if (!spawn.dimension().equals(WILDERNESS_DIMENSION)) {
+            problems.add(problem(source, mutation.id(),
+                    "mutation spawn dimension must be " + WILDERNESS_DIMENSION.identifier()));
+        }
         range(source, mutation.id(), "spawn chance per million", spawn.chancePerMillion(), 1, 1_000_000, problems);
         range(source, mutation.id(), "minimum Y", spawn.minimumY(), -2_048, 2_048, problems);
         range(source, mutation.id(), "maximum Y", spawn.maximumY(), -2_048, 2_048, problems);
@@ -222,6 +233,9 @@ public final class MobContentSnapshot {
 
     private static void validateArena(
             Source source, MobContentCatalog.ArenaPolicy arena, List<Problem> problems) {
+        if (arena.dimension().equals(Level.OVERWORLD)) {
+            problems.add(problem(source, arena.id(), "boss arena cannot target the Hub dimension"));
+        }
         range(source, arena.id(), "protection radius", arena.protectionRadius(), 1, 1_024, problems);
         range(source, arena.id(), "leash radius", arena.leashRadius(), 1, 2_048, problems);
         if (arena.leashRadius() < arena.protectionRadius()) {
@@ -371,7 +385,7 @@ public final class MobContentSnapshot {
         return new Problem(source.file(), id, cause);
     }
 
-    public MobContentSnapshot validateBoundRegistries() {
+    public MobContentSnapshot validateRuntimeBindings(RuntimeBindings bindings) {
         List<Problem> problems = new ArrayList<>();
         mobs.forEach((id, mob) -> validateEntityType(id, mob.entityType(), problems));
         mutations.forEach((id, mutation) -> {
@@ -381,6 +395,14 @@ public final class MobContentSnapshot {
                     problems.add(problem(sources.get(id), id, "unknown attribute: " + modifier.attribute()));
                 }
             });
+            validateDimension(id, mutation.spawn().dimension(), bindings, problems);
+        });
+        arenas.forEach((id, arena) -> validateDimension(id, arena.dimension(), bindings, problems));
+        loot.forEach((id, reward) -> {
+            if (bindings.registries().get(reward.lootTable()).isEmpty()) {
+                problems.add(problem(sources.get(id), id,
+                        "unknown loot table: " + reward.lootTable().identifier()));
+            }
         });
         if (!problems.isEmpty()) {
             throw new ValidationException(problems);
@@ -388,10 +410,39 @@ public final class MobContentSnapshot {
         return this;
     }
 
+    private void validateDimension(
+            Identifier id, ResourceKey<Level> dimension, RuntimeBindings bindings, List<Problem> problems) {
+        Source source = sources.get(id);
+        if (dimension.equals(bindings.hubDimension())) {
+            problems.add(problem(source, id, "mob content cannot target the Hub dimension"));
+        } else if (bindings.registries().get(dimension).isEmpty()
+                && !(bindings.allowUnboundWilderness() && dimension.equals(WILDERNESS_DIMENSION))) {
+            problems.add(problem(source, id, "unknown dimension: " + dimension.identifier()));
+        }
+    }
+
     private void validateEntityType(Identifier id, Identifier entityType, List<Problem> problems) {
         if (!BuiltInRegistries.ENTITY_TYPE.containsKey(entityType)) {
             Source source = sources.get(id);
             problems.add(problem(source, id, "unknown entity type: " + entityType));
+        }
+    }
+
+    public record RuntimeBindings(
+            HolderLookup.Provider registries,
+            ResourceKey<Level> hubDimension,
+            boolean allowUnboundWilderness) {
+        public RuntimeBindings {
+            Objects.requireNonNull(registries, "registries");
+            Objects.requireNonNull(hubDimension, "hubDimension");
+        }
+
+        public static RuntimeBindings awaitingWildernessRegistration(HolderLookup.Provider registries) {
+            return new RuntimeBindings(registries, Level.OVERWORLD, true);
+        }
+
+        public static RuntimeBindings strict(HolderLookup.Provider registries, ResourceKey<Level> hubDimension) {
+            return new RuntimeBindings(registries, hubDimension, false);
         }
     }
 

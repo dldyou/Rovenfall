@@ -10,8 +10,9 @@ final class MobContentStore {
         return current.get();
     }
 
-    MobContentSnapshot replace(Collection<MobContentSnapshot.Source> candidates) {
-        MobContentSnapshot prepared = MobContentSnapshot.compile(candidates).validateBoundRegistries();
+    MobContentSnapshot replace(
+            Collection<MobContentSnapshot.Source> candidates, MobContentSnapshot.RuntimeBindings bindings) {
+        MobContentSnapshot prepared = MobContentSnapshot.compile(candidates).validateRuntimeBindings(bindings);
         install(prepared);
         return prepared;
     }

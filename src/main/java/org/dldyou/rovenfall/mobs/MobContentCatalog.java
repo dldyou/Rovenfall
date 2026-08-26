@@ -5,7 +5,11 @@ import com.mojang.serialization.DataResult;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import java.util.List;
 import java.util.Optional;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.loot.LootTable;
 
 public record MobContentCatalog(
         List<MobDefinition> mobs,
@@ -124,9 +128,9 @@ public record MobContentCatalog(
         }, value -> value.name().toLowerCase(java.util.Locale.ROOT));
     }
 
-    public record SpawnCondition(Identifier dimension, int chancePerMillion, int minimumY, int maximumY) {
+    public record SpawnCondition(ResourceKey<Level> dimension, int chancePerMillion, int minimumY, int maximumY) {
         public static final Codec<SpawnCondition> CODEC = RecordCodecBuilder.create(instance -> instance.group(
-                Identifier.CODEC.fieldOf("dimension").forGetter(SpawnCondition::dimension),
+                ResourceKey.codec(Registries.DIMENSION).fieldOf("dimension").forGetter(SpawnCondition::dimension),
                 Codec.INT.fieldOf("chance_per_million").forGetter(SpawnCondition::chancePerMillion),
                 Codec.INT.fieldOf("minimum_y").forGetter(SpawnCondition::minimumY),
                 Codec.INT.fieldOf("maximum_y").forGetter(SpawnCondition::maximumY)
@@ -135,13 +139,13 @@ public record MobContentCatalog(
 
     public record ArenaPolicy(
             Identifier id,
-            Identifier dimension,
+            ResourceKey<Level> dimension,
             int protectionRadius,
             int leashRadius,
             int resetTimeoutTicks) {
         public static final Codec<ArenaPolicy> CODEC = RecordCodecBuilder.create(instance -> instance.group(
                 Identifier.CODEC.fieldOf("id").forGetter(ArenaPolicy::id),
-                Identifier.CODEC.fieldOf("dimension").forGetter(ArenaPolicy::dimension),
+                ResourceKey.codec(Registries.DIMENSION).fieldOf("dimension").forGetter(ArenaPolicy::dimension),
                 Codec.INT.fieldOf("protection_radius").forGetter(ArenaPolicy::protectionRadius),
                 Codec.INT.fieldOf("leash_radius").forGetter(ArenaPolicy::leashRadius),
                 Codec.INT.fieldOf("reset_timeout_ticks").forGetter(ArenaPolicy::resetTimeoutTicks)
@@ -163,13 +167,13 @@ public record MobContentCatalog(
 
     public record LootDefinition(
             Identifier id,
-            Identifier lootTable,
+            ResourceKey<LootTable> lootTable,
             int rolls,
             long currency,
             long experience) {
         public static final Codec<LootDefinition> CODEC = RecordCodecBuilder.create(instance -> instance.group(
                 Identifier.CODEC.fieldOf("id").forGetter(LootDefinition::id),
-                Identifier.CODEC.fieldOf("loot_table").forGetter(LootDefinition::lootTable),
+                ResourceKey.codec(Registries.LOOT_TABLE).fieldOf("loot_table").forGetter(LootDefinition::lootTable),
                 Codec.INT.fieldOf("rolls").forGetter(LootDefinition::rolls),
                 Codec.LONG.optionalFieldOf("currency", 0L).forGetter(LootDefinition::currency),
                 Codec.LONG.optionalFieldOf("experience", 0L).forGetter(LootDefinition::experience)

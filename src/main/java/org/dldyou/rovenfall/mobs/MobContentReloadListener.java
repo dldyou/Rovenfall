@@ -84,7 +84,7 @@ public final class MobContentReloadListener extends SimplePreparableReloadListen
     @Override
     protected void apply(MobContentSnapshot prepared, ResourceManager resourceManager, ProfilerFiller profiler) {
         try {
-            store.install(prepared.validateBoundRegistries());
+            store.install(prepared.validateRuntimeBindings(runtimeBindings()));
             LOGGER.info("Loaded {} validated Rovenfall mob content definitions", prepared.size());
         } catch (MobContentSnapshot.ValidationException exception) {
             for (MobContentSnapshot.Problem problem : exception.problems()) {
@@ -92,6 +92,12 @@ public final class MobContentReloadListener extends SimplePreparableReloadListen
                         problem.file(), problem.definitionId(), problem.cause());
             }
         }
+    }
+
+    private MobContentSnapshot.RuntimeBindings runtimeBindings() {
+        // Issue #30 will switch this single seam to strict(...) once the Wilderness dimension is registered.
+        // Until then only the canonical Wilderness key may be unbound; Hub/unknown dimensions and every loot table fail.
+        return MobContentSnapshot.RuntimeBindings.awaitingWildernessRegistration(getRegistryLookup());
     }
 
     public MobContentSnapshot snapshot() {

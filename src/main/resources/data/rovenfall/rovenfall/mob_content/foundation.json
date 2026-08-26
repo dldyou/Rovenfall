@@ -94,7 +94,7 @@
     },
     {
       "id": "rovenfall:volatile_loot",
-      "loot_table": "minecraft:empty",
+      "loot_table": "rovenfall:volatile_bonus",
       "rolls": 1,
       "currency": 5,
       "experience": 5
