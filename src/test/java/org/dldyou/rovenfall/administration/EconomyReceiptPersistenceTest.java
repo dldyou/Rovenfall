@@ -178,6 +178,7 @@ final class EconomyReceiptPersistenceTest {
         return new EconomyTransactionReceipt(
                 timestamp, AdministrationService.SYSTEM_ACTOR, playerId,
                 EconomyTransactionReceipt.Kind.AWARD, 10,
+                Optional.empty(),
                 Optional.empty(), Optional.empty(), Optional.empty(), 0,
                 Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
                 EconomyTransactionReceipt.CompensationDecision.NONE);
@@ -187,6 +188,7 @@ final class EconomyReceiptPersistenceTest {
         return new EconomyTransactionReceipt(
                 timestamp, AdministrationService.SYSTEM_ACTOR, playerId,
                 EconomyTransactionReceipt.Kind.REVERSAL, 10,
+                Optional.empty(),
                 Optional.empty(), Optional.empty(), Optional.empty(), 0,
                 Optional.empty(), Optional.empty(), Optional.of(originalId), Optional.empty(), Optional.empty(),
                 EconomyTransactionReceipt.CompensationDecision.NONE);

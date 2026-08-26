@@ -9,6 +9,7 @@ import net.minecraft.core.UUIDUtil;
 import net.minecraft.resources.Identifier;
 import net.minecraft.util.StringRepresentable;
 import net.minecraft.world.item.ItemStack;
+import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.economy.ShopInstance;
 
 public record EconomyTransactionReceipt(
@@ -17,6 +18,7 @@ public record EconomyTransactionReceipt(
         UUID playerId,
         Kind kind,
         long amount,
+        Optional<ClaimKey> claim,
         Optional<Identifier> shopId,
         Optional<Identifier> offerId,
         Optional<ItemStack> item,
@@ -33,6 +35,7 @@ public record EconomyTransactionReceipt(
             UUIDUtil.STRING_CODEC.fieldOf("player").forGetter(EconomyTransactionReceipt::playerId),
             Kind.CODEC.fieldOf("kind").forGetter(EconomyTransactionReceipt::kind),
             Codec.LONG.fieldOf("amount").forGetter(EconomyTransactionReceipt::amount),
+            ClaimKey.CODEC.optionalFieldOf("claim").forGetter(EconomyTransactionReceipt::claim),
             Identifier.CODEC.optionalFieldOf("shop").forGetter(EconomyTransactionReceipt::shopId),
             Identifier.CODEC.optionalFieldOf("offer").forGetter(EconomyTransactionReceipt::offerId),
             ItemStack.CODEC.optionalFieldOf("item").forGetter(EconomyTransactionReceipt::item),
@@ -47,6 +50,7 @@ public record EconomyTransactionReceipt(
     ).apply(instance, EconomyTransactionReceipt::new)).validate(EconomyTransactionReceipt::validate);
 
     public EconomyTransactionReceipt {
+        claim = claim == null ? Optional.empty() : claim;
         shopId = shopId == null ? Optional.empty() : shopId;
         offerId = offerId == null ? Optional.empty() : offerId;
         item = item == null ? Optional.empty() : item.map(ItemStack::copy);
@@ -69,14 +73,14 @@ public record EconomyTransactionReceipt(
 
     EconomyTransactionReceipt withReversedBy(UUID transactionId) {
         return new EconomyTransactionReceipt(
-                timestampEpochMillis, actorId, playerId, kind, amount, shopId, offerId, item, quantity,
+                timestampEpochMillis, actorId, playerId, kind, amount, claim, shopId, offerId, item, quantity,
                 stockBefore, stockAfter, originalTransactionId, Optional.of(transactionId), invalidatedByRestore,
                 compensationDecision);
     }
 
     EconomyTransactionReceipt invalidatedByRestore(UUID transactionId) {
         return new EconomyTransactionReceipt(
-                timestampEpochMillis, actorId, playerId, kind, amount, shopId, offerId, item, quantity,
+                timestampEpochMillis, actorId, playerId, kind, amount, claim, shopId, offerId, item, quantity,
                 stockBefore, stockAfter, originalTransactionId, reversedBy, Optional.of(transactionId),
                 compensationDecision);
     }
@@ -96,6 +100,13 @@ public record EconomyTransactionReceipt(
         } else if (value.shopId.isPresent() || value.offerId.isPresent() || value.item.isPresent() || value.quantity != 0
                 || value.stockBefore.isPresent() || value.stockAfter.isPresent()) {
             return DataResult.error(() -> "Non-shop transaction receipt contains shop evidence");
+        }
+        if (value.kind == Kind.CLAIM_PURCHASE) {
+            if (value.amount < 1 || value.claim.isEmpty()) {
+                return DataResult.error(() -> "Claim purchase receipt is incomplete");
+            }
+        } else if (value.claim.isPresent()) {
+            return DataResult.error(() -> "Non-claim transaction receipt contains claim evidence");
         }
         if (value.kind == Kind.REVERSAL && value.originalTransactionId.isEmpty()) {
             return DataResult.error(() -> "Reversal receipt is missing its original transaction");
@@ -117,6 +128,7 @@ public record EconomyTransactionReceipt(
         DEBIT("debit"),
         PURCHASE("purchase"),
         SALE("sale"),
+        CLAIM_PURCHASE("claim_purchase"),
         REVERSAL("reversal");
 
         static final Codec<Kind> CODEC = StringRepresentable.fromEnum(Kind::values);

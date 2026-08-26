@@ -95,6 +95,7 @@ final class EconomyObservabilityServiceTest {
         return new EconomyTransactionReceipt(
                 timestamp, AdministrationService.SYSTEM_ACTOR, player,
                 EconomyTransactionReceipt.Kind.AWARD, amount,
+                Optional.empty(),
                 Optional.empty(), Optional.empty(), Optional.empty(), 0,
                 Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
                 EconomyTransactionReceipt.CompensationDecision.NONE);

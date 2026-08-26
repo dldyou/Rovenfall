@@ -24,6 +24,7 @@ import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import org.dldyou.rovenfall.economy.ShopInstance;
 import org.dldyou.rovenfall.economy.ShopTemplateReloadListener;
 import org.dldyou.rovenfall.economy.ShopTemplateSnapshot;
+import org.dldyou.rovenfall.claims.ClaimConfig;
 
 public final class RovenfallCommands {
     private static final int AUDIT_PAGE_SIZE = 10;
@@ -259,9 +260,13 @@ public final class RovenfallCommands {
         var playerShopCommand = Commands.literal("shop")
                 .then(tradeCommand("buy", ShopTradeService.Direction.BUY))
                 .then(tradeCommand("sell", ShopTradeService.Direction.SELL));
+        var playerClaimCommand = Commands.literal("claim")
+                .then(Commands.literal("buy")
+                        .executes(context -> buyClaim(context.getSource())));
 
         event.getDispatcher().register(Commands.literal("rovenfall")
                 .then(playerShopCommand)
+                .then(playerClaimCommand)
                 .then(Commands.literal("admin")
                         .requires(RovenfallCommands::canUseAdministration)
                         .then(roleCommand)
@@ -550,6 +555,52 @@ public final class RovenfallCommands {
             case INSUFFICIENT_ITEMS -> failure(source, "command.rovenfall.shop.error.insufficient_items");
             case INSUFFICIENT_SPACE -> failure(source, "command.rovenfall.shop.error.insufficient_space");
             case INVENTORY_UPDATE_FAILED -> failure(source, "command.rovenfall.shop.error.inventory_update");
+        };
+    }
+
+    private static int buyClaim(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        UUID transactionId = UUID.randomUUID();
+        var result = ClaimPurchaseService.purchase(
+                PlatformSavedData.get(source.getServer()),
+                player.getUUID(),
+                source.getServer().overworld().dimension(),
+                player.level().dimension(),
+                player.blockPosition(),
+                ignored -> true,
+                ignored -> false,
+                ClaimConfig.basePrice(),
+                ClaimConfig.priceIncrease(),
+                ClaimConfig.ownershipCap(),
+                Instant.now().toEpochMilli(),
+                transactionId);
+        return switch (result.status()) {
+            case SUCCESS -> {
+                var claim = result.claim().orElseThrow();
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.claim.buy.success",
+                        claim.chunkX(), claim.chunkZ(), result.price(), result.balance()), false);
+                yield 1;
+            }
+            case DUPLICATE_TRANSACTION -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.claim.buy.duplicate", transactionId), false);
+                yield 1;
+            }
+            case TRANSACTION_ID_CONFLICT -> failure(source, "command.rovenfall.claim.error.transaction_id_conflict");
+            case INVALID_REQUEST, INVALID_TRANSACTION -> failure(source, "command.rovenfall.claim.error.invalid_request");
+            case READ_ONLY_SCHEMA -> failure(source, "command.rovenfall.claim.error.read_only");
+            case NOT_IN_HUB -> failure(source, "command.rovenfall.claim.error.not_in_hub");
+            case INELIGIBLE_CHUNK -> failure(source, "command.rovenfall.claim.error.ineligible");
+            case PROTECTED_CHUNK -> failure(source, "command.rovenfall.claim.error.protected");
+            case ALREADY_CLAIMED -> failure(source, "command.rovenfall.claim.error.already_claimed");
+            case OWNERSHIP_CAP_REACHED -> failure(source, "command.rovenfall.claim.error.cap");
+            case ACCOUNT_NOT_FOUND -> failure(source, "command.rovenfall.claim.error.account_missing");
+            case INVALID_CONFIGURATION, PRICE_OVERFLOW -> failure(
+                    source, "command.rovenfall.claim.error.invalid_configuration");
+            case INSUFFICIENT_FUNDS -> failure(
+                    source, "command.rovenfall.claim.error.insufficient_funds", result.price(), result.balance());
+            case TRANSACTION_LEDGER_FULL -> failure(source, "command.rovenfall.claim.error.ledger_full");
         };
     }
 
