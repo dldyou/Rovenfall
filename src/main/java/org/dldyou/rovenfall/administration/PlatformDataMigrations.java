@@ -7,6 +7,7 @@ import java.util.function.UnaryOperator;
 import net.minecraft.resources.Identifier;
 import org.dldyou.rovenfall.claims.Claim;
 import org.dldyou.rovenfall.claims.ClaimKey;
+import org.dldyou.rovenfall.claims.ClaimMutationReceipt;
 import org.dldyou.rovenfall.economy.ShopInstance;
 
 final class PlatformDataMigrations {
@@ -16,10 +17,40 @@ final class PlatformDataMigrations {
             2, state -> state.atVersion(3),
             3, state -> state.atVersion(4),
             4, state -> state.atVersion(5),
-            5, state -> state.atVersion(6)
+            5, state -> state.atVersion(6),
+            6, PlatformDataMigrations::migrateClaimsToSeven
     );
 
     private PlatformDataMigrations() {
+    }
+
+    private static PersistedState migrateClaimsToSeven(PersistedState state) {
+        Map<ClaimKey, EconomyTransactionReceipt> latestPurchases = new java.util.HashMap<>();
+        state.economyReceipts().values().stream()
+                .filter(receipt -> receipt.kind() == EconomyTransactionReceipt.Kind.CLAIM_PURCHASE)
+                .filter(receipt -> receipt.claim().isPresent())
+                .filter(receipt -> receipt.invalidatedByRestore().isEmpty())
+                .forEach(receipt -> latestPurchases.merge(
+                        receipt.claim().orElseThrow(), receipt,
+                        (first, second) -> first.timestampEpochMillis() >= second.timestampEpochMillis()
+                                ? first
+                                : second));
+        Map<ClaimKey, Claim> migratedClaims = new java.util.HashMap<>();
+        state.claims().forEach((key, claim) -> {
+            long purchasePrice = claim.purchasePrice();
+            if (purchasePrice < 1) {
+                EconomyTransactionReceipt receipt = latestPurchases.get(key);
+                purchasePrice = receipt != null && receipt.playerId().equals(claim.ownerId())
+                        ? receipt.amount()
+                        : 0L;
+            }
+            migratedClaims.put(key, new Claim(
+                    claim.ownerId(), purchasePrice, claim.trustedRoles(), claim.settings(), claim.pendingTransferTo()));
+        });
+        return new PersistedState(
+                7, state.adminRoles(), state.auditEntries(), state.playerRecords(), state.economyBalances(),
+                state.economyTransactions(), state.shopInstances(), state.economyReceipts(), state.economyAlerts(),
+                migratedClaims, state.claimReceipts());
     }
 
     static MigrationResult migrate(
@@ -33,10 +64,11 @@ final class PlatformDataMigrations {
             Map<UUID, EconomyTransactionReceipt> economyReceipts,
             List<EconomyAlert> economyAlerts,
             Map<ClaimKey, Claim> claims,
+            Map<UUID, ClaimMutationReceipt> claimReceipts,
             int targetVersion) {
         PersistedState original = new PersistedState(
                 schemaVersion, adminRoles, auditEntries, playerRecords, economyBalances, economyTransactions,
-                shopInstances, economyReceipts, economyAlerts, claims);
+                shopInstances, economyReceipts, economyAlerts, claims, claimReceipts);
         if (schemaVersion < 0 || schemaVersion > targetVersion) {
             return MigrationResult.readOnly(original);
         }
@@ -67,7 +99,8 @@ final class PlatformDataMigrations {
             Map<Identifier, ShopInstance> shopInstances,
             Map<UUID, EconomyTransactionReceipt> economyReceipts,
             List<EconomyAlert> economyAlerts,
-            Map<ClaimKey, Claim> claims) {
+            Map<ClaimKey, Claim> claims,
+            Map<UUID, ClaimMutationReceipt> claimReceipts) {
         PersistedState {
             adminRoles = Map.copyOf(adminRoles);
             auditEntries = List.copyOf(auditEntries);
@@ -78,12 +111,13 @@ final class PlatformDataMigrations {
             economyReceipts = Map.copyOf(economyReceipts);
             economyAlerts = List.copyOf(economyAlerts);
             claims = Map.copyOf(claims);
+            claimReceipts = Map.copyOf(claimReceipts);
         }
 
         PersistedState atVersion(int version) {
             return new PersistedState(
                     version, adminRoles, auditEntries, playerRecords, economyBalances, economyTransactions,
-                    shopInstances, economyReceipts, economyAlerts, claims);
+                    shopInstances, economyReceipts, economyAlerts, claims, claimReceipts);
         }
     }
 

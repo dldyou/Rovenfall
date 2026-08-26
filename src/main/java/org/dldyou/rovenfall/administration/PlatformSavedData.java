@@ -24,11 +24,12 @@ import net.minecraft.world.level.saveddata.SavedDataType;
 import org.dldyou.rovenfall.Rovenfall;
 import org.dldyou.rovenfall.claims.Claim;
 import org.dldyou.rovenfall.claims.ClaimKey;
+import org.dldyou.rovenfall.claims.ClaimMutationReceipt;
 import org.dldyou.rovenfall.economy.ShopInstance;
 
 public final class PlatformSavedData extends SavedData {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
-    public static final int CURRENT_SCHEMA_VERSION = 6;
+    public static final int CURRENT_SCHEMA_VERSION = 7;
     public static final int MAX_AUDIT_PAGE_SIZE = 50;
     static final int MAX_ECONOMY_TRANSACTIONS = 250_000;
     static final int MAX_ECONOMY_ALERTS = 10_000;
@@ -56,6 +57,8 @@ public final class PlatformSavedData extends SavedData {
     private static final Codec<List<EconomyAlert>> ECONOMY_ALERTS_CODEC =
             EconomyAlert.CODEC.listOf(0, MAX_ECONOMY_ALERTS);
     private static final Codec<Map<ClaimKey, Claim>> CLAIMS_CODEC = boundedClaimsCodec(Claim.MAX_CLAIMS);
+    private static final Codec<Map<UUID, ClaimMutationReceipt>> CLAIM_RECEIPTS_CODEC =
+            boundedClaimReceiptsCodec(MAX_ECONOMY_TRANSACTIONS);
 
     public static final Codec<PlatformSavedData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.optionalFieldOf("schema_version", 0).forGetter(data -> data.schemaVersion),
@@ -68,7 +71,8 @@ public final class PlatformSavedData extends SavedData {
             SHOP_INSTANCES_CODEC.optionalFieldOf("shop_instances", Map.of()).forGetter(data -> data.shopInstances),
             ECONOMY_RECEIPTS_CODEC.optionalFieldOf("economy_receipts", Map.of()).forGetter(data -> data.economyReceipts),
             ECONOMY_ALERTS_CODEC.optionalFieldOf("economy_alerts", List.of()).forGetter(data -> data.economyAlerts),
-            CLAIMS_CODEC.optionalFieldOf("claims", Map.of()).forGetter(data -> data.claims)
+            CLAIMS_CODEC.optionalFieldOf("claims", Map.of()).forGetter(data -> data.claims),
+            CLAIM_RECEIPTS_CODEC.optionalFieldOf("claim_receipts", Map.of()).forGetter(data -> data.claimReceipts)
     ).apply(instance, PlatformSavedData::decode));
 
     public static final SavedDataType<PlatformSavedData> TYPE = new SavedDataType<>(
@@ -88,6 +92,7 @@ public final class PlatformSavedData extends SavedData {
     private final Map<UUID, EconomyTransactionReceipt> economyReceipts;
     private final List<EconomyAlert> economyAlerts;
     private final Map<ClaimKey, Claim> claims;
+    private final Map<UUID, ClaimMutationReceipt> claimReceipts;
     private final Map<UUID, Integer> claimCountsByOwner = new HashMap<>();
     private final Map<UUID, ArrayDeque<Long>> recentTransactionsByPlayer = new HashMap<>();
     private final Map<UUID, Long> receiptEvictionTimes = new HashMap<>();
@@ -100,7 +105,7 @@ public final class PlatformSavedData extends SavedData {
 
     public PlatformSavedData() {
         this(CURRENT_SCHEMA_VERSION, Map.of(), List.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), List.of(),
-                Map.of(), true);
+                Map.of(), Map.of(), true);
     }
 
     private PlatformSavedData(
@@ -114,6 +119,7 @@ public final class PlatformSavedData extends SavedData {
             Map<UUID, EconomyTransactionReceipt> economyReceipts,
             List<EconomyAlert> economyAlerts,
             Map<ClaimKey, Claim> claims,
+            Map<UUID, ClaimMutationReceipt> claimReceipts,
             boolean writable) {
         this.schemaVersion = schemaVersion;
         this.writable = writable;
@@ -126,6 +132,7 @@ public final class PlatformSavedData extends SavedData {
         this.economyReceipts = new HashMap<>(economyReceipts);
         this.economyAlerts = new ArrayList<>(economyAlerts);
         this.claims = new HashMap<>(claims);
+        this.claimReceipts = new HashMap<>(claimReceipts);
         rebuildRecentTransactionIndex();
         rebuildReceiptExpiryIndex();
         rebuildClaimOwnerIndex();
@@ -141,7 +148,8 @@ public final class PlatformSavedData extends SavedData {
             Map<Identifier, ShopInstance> shopInstances,
             Map<UUID, EconomyTransactionReceipt> economyReceipts,
             List<EconomyAlert> economyAlerts,
-            Map<ClaimKey, Claim> claims) {
+            Map<ClaimKey, Claim> claims,
+            Map<UUID, ClaimMutationReceipt> claimReceipts) {
         var migration = PlatformDataMigrations.migrate(
                 schemaVersion,
                 adminRoles,
@@ -153,6 +161,7 @@ public final class PlatformSavedData extends SavedData {
                 economyReceipts,
                 economyAlerts,
                 claims,
+                claimReceipts,
                 CURRENT_SCHEMA_VERSION
         );
         var state = migration.state();
@@ -167,6 +176,7 @@ public final class PlatformSavedData extends SavedData {
                 state.economyReceipts(),
                 state.economyAlerts(),
                 state.claims(),
+                state.claimReceipts(),
                 migration.writable()
         );
     }
@@ -229,6 +239,10 @@ public final class PlatformSavedData extends SavedData {
 
     public int claimCount() {
         return claims.size();
+    }
+
+    public Optional<ClaimMutationReceipt> claimReceipt(UUID transactionId) {
+        return Optional.ofNullable(claimReceipts.get(transactionId));
     }
 
     public Optional<EconomyTransactionReceipt> economyReceipt(UUID transactionId) {
@@ -397,6 +411,8 @@ public final class PlatformSavedData extends SavedData {
         economyAlerts.addAll(restoredEconomyEvidence.alerts);
         claims.clear();
         claims.putAll(snapshot.claims);
+        claimReceipts.clear();
+        claimReceipts.putAll(snapshot.claimReceipts);
         rebuildRecentTransactionIndex();
         rebuildReceiptExpiryIndex();
         rebuildClaimOwnerIndex();
@@ -423,6 +439,16 @@ public final class PlatformSavedData extends SavedData {
             return false;
         }
         return hasReceiptCapacity(timestampEpochMillis, MAX_ECONOMY_TRANSACTIONS);
+    }
+
+    boolean canCommitClaimTransaction(UUID transactionId, long timestampEpochMillis) {
+        if (claimReceipts.containsKey(transactionId) || !canCommitTransaction(transactionId, timestampEpochMillis)) {
+            return false;
+        }
+        if (claimReceipts.size() < MAX_ECONOMY_TRANSACTIONS) {
+            return true;
+        }
+        return claimReceipts.keySet().stream().anyMatch(id -> !hasTransaction(id, timestampEpochMillis));
     }
 
     boolean canCommitReversalTransaction(
@@ -485,6 +511,53 @@ public final class PlatformSavedData extends SavedData {
         economyBalances.put(playerId, balance);
         claims.put(claimKey, claim);
         claimCountsByOwner.merge(playerId, 1, Math::addExact);
+        economyTransactions.put(transactionId, timestampEpochMillis);
+        commitReceiptEvidence(transactionId, receipt, alerts);
+        commitAudit(auditEntry);
+    }
+
+    void commitClaimMutation(
+            ClaimKey claimKey,
+            Claim claim,
+            UUID transactionId,
+            long timestampEpochMillis,
+            ClaimMutationReceipt receipt,
+            AuditEntry auditEntry) {
+        if (!canCommitClaimTransaction(transactionId, timestampEpochMillis)
+                || !receipt.claim().equals(claimKey)
+                || receipt.timestampEpochMillis() != timestampEpochMillis
+                || claims.get(claimKey) == null) {
+            throw new IllegalStateException("Claim mutation cannot be committed");
+        }
+        prepareLedgerForCommit(timestampEpochMillis);
+        claimReceipts.keySet().retainAll(economyTransactions.keySet());
+        replaceClaim(claimKey, claim);
+        economyTransactions.put(transactionId, timestampEpochMillis);
+        claimReceipts.put(transactionId, receipt);
+        commitAudit(auditEntry);
+    }
+
+    void commitClaimSale(
+            UUID playerId,
+            long balance,
+            ClaimKey claimKey,
+            UUID transactionId,
+            long timestampEpochMillis,
+            EconomyTransactionReceipt receipt,
+            List<EconomyAlert> alerts,
+            AuditEntry auditEntry) {
+        validateEvidence(playerId, transactionId, timestampEpochMillis, receipt, alerts);
+        Claim claim = claims.get(claimKey);
+        if (claim == null || !claim.ownerId().equals(playerId)
+                || economyReceipts.containsKey(transactionId)
+                || !canCommitReceiptTransaction(transactionId, timestampEpochMillis)
+                || receipt.kind() != EconomyTransactionReceipt.Kind.CLAIM_SALE
+                || !receipt.claim().equals(Optional.of(claimKey))) {
+            throw new IllegalStateException("Claim sale cannot be committed");
+        }
+        prepareLedgerForCommit(timestampEpochMillis);
+        economyBalances.put(playerId, balance);
+        replaceClaim(claimKey, null);
         economyTransactions.put(transactionId, timestampEpochMillis);
         commitReceiptEvidence(transactionId, receipt, alerts);
         commitAudit(auditEntry);
@@ -805,6 +878,21 @@ public final class PlatformSavedData extends SavedData {
         }
     }
 
+    private void replaceClaim(ClaimKey key, Claim replacement) {
+        Claim previous = claims.get(key);
+        if (previous != null && (replacement == null || !previous.ownerId().equals(replacement.ownerId()))) {
+            claimCountsByOwner.computeIfPresent(previous.ownerId(), (ignored, count) -> count == 1 ? null : count - 1);
+        }
+        if (replacement == null) {
+            claims.remove(key);
+            return;
+        }
+        claims.put(key, replacement);
+        if (previous == null || !previous.ownerId().equals(replacement.ownerId())) {
+            claimCountsByOwner.merge(replacement.ownerId(), 1, Math::addExact);
+        }
+    }
+
     synchronized boolean tryLockShop(Identifier shopId) {
         return shopDependencyLocks.add(shopId);
     }
@@ -844,6 +932,37 @@ public final class PlatformSavedData extends SavedData {
     static Codec<Map<ClaimKey, Claim>> boundedClaimsCodec(int maximumEntries) {
         return ClaimEntry.CODEC.listOf(0, maximumEntries)
                 .flatXmap(PlatformSavedData::claimsFromEntries, PlatformSavedData::claimEntries);
+    }
+
+    static Codec<Map<UUID, ClaimMutationReceipt>> boundedClaimReceiptsCodec(int maximumEntries) {
+        return ClaimReceiptEntry.CODEC.listOf(0, maximumEntries)
+                .flatXmap(PlatformSavedData::claimReceiptsFromEntries, PlatformSavedData::claimReceiptEntries);
+    }
+
+    private static DataResult<Map<UUID, ClaimMutationReceipt>> claimReceiptsFromEntries(
+            List<ClaimReceiptEntry> entries) {
+        Map<UUID, ClaimMutationReceipt> receipts = new LinkedHashMap<>();
+        for (ClaimReceiptEntry entry : entries) {
+            if (ZERO_UUID.equals(entry.id()) || receipts.putIfAbsent(entry.id(), entry.receipt()) != null) {
+                return DataResult.error(() -> "Duplicate or zero claim receipt ID " + entry.id());
+            }
+        }
+        return DataResult.success(Map.copyOf(receipts));
+    }
+
+    private static DataResult<List<ClaimReceiptEntry>> claimReceiptEntries(
+            Map<UUID, ClaimMutationReceipt> receipts) {
+        return DataResult.success(receipts.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> new ClaimReceiptEntry(entry.getKey(), entry.getValue()))
+                .toList());
+    }
+
+    private record ClaimReceiptEntry(UUID id, ClaimMutationReceipt receipt) {
+        private static final Codec<ClaimReceiptEntry> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                UUIDUtil.STRING_CODEC.fieldOf("id").forGetter(ClaimReceiptEntry::id),
+                ClaimMutationReceipt.CODEC.fieldOf("receipt").forGetter(ClaimReceiptEntry::receipt)
+        ).apply(instance, ClaimReceiptEntry::new));
     }
 
     private static DataResult<Map<ClaimKey, Claim>> claimsFromEntries(List<ClaimEntry> entries) {

@@ -27,6 +27,12 @@ final class LocalizationCatalogTest {
             "command.rovenfall.admin.snapshot.restore.duplicate",
             "command.rovenfall.admin.snapshot.error.invalid_transaction",
             "config.rovenfall.economy.initial_balance",
+            "config.rovenfall.claims.sale_refund_percent",
+            "config.rovenfall.claims.protected_spawn_radius_chunks",
+            "claim_role.rovenfall.manager",
+            "economy_transaction_kind.rovenfall.claim_sale",
+            "command.rovenfall.claim.transfer.accept.success",
+            "command.rovenfall.claim.sell.success",
             "command.rovenfall.admin.audit.header",
             "gui.rovenfall.admin.audit.summary",
             "gui.rovenfall.admin.audit.reason"

@@ -1,5 +1,6 @@
 package org.dldyou.rovenfall.administration;
 
+import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -25,6 +26,10 @@ import org.dldyou.rovenfall.economy.ShopInstance;
 import org.dldyou.rovenfall.economy.ShopTemplateReloadListener;
 import org.dldyou.rovenfall.economy.ShopTemplateSnapshot;
 import org.dldyou.rovenfall.claims.ClaimConfig;
+import org.dldyou.rovenfall.claims.ClaimKey;
+import org.dldyou.rovenfall.claims.ClaimRegionPolicy;
+import org.dldyou.rovenfall.claims.ClaimRole;
+import org.dldyou.rovenfall.claims.ClaimSettings;
 
 public final class RovenfallCommands {
     private static final int AUDIT_PAGE_SIZE = 10;
@@ -262,7 +267,77 @@ public final class RovenfallCommands {
                 .then(tradeCommand("sell", ShopTradeService.Direction.SELL));
         var playerClaimCommand = Commands.literal("claim")
                 .then(Commands.literal("buy")
-                        .executes(context -> buyClaim(context.getSource())));
+                        .executes(context -> buyClaim(context.getSource())))
+                .then(Commands.literal("info")
+                        .executes(context -> viewClaim(context.getSource(), currentClaimKey(context.getSource()))))
+                .then(Commands.literal("trust")
+                        .then(Commands.argument("player", EntityArgument.player())
+                                .then(Commands.argument("role", StringArgumentType.word())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(
+                                                ClaimRole.ids(), builder))
+                                        .executes(context -> setClaimRole(
+                                                context.getSource(), currentClaimKey(context.getSource()),
+                                                EntityArgument.getPlayer(context, "player"),
+                                                StringArgumentType.getString(context, "role"), false,
+                                                "player claim trust")))))
+                .then(Commands.literal("untrust")
+                        .then(Commands.argument("player", EntityArgument.player())
+                                .executes(context -> removeClaimRole(
+                                        context.getSource(), currentClaimKey(context.getSource()),
+                                        EntityArgument.getPlayer(context, "player"), false,
+                                        "player claim untrust"))))
+                .then(Commands.literal("settings")
+                        .then(Commands.argument("entry_restricted", BoolArgumentType.bool())
+                                .then(Commands.argument("public_interactions", BoolArgumentType.bool())
+                                        .executes(context -> setClaimSettings(
+                                                context.getSource(), currentClaimKey(context.getSource()),
+                                                BoolArgumentType.getBool(context, "entry_restricted"),
+                                                BoolArgumentType.getBool(context, "public_interactions"), false,
+                                                "player claim settings")))))
+                .then(Commands.literal("transfer")
+                        .then(Commands.literal("offer")
+                                .then(Commands.argument("player", EntityArgument.player())
+                                        .executes(context -> offerClaimTransfer(
+                                                context.getSource(), currentClaimKey(context.getSource()),
+                                                EntityArgument.getPlayer(context, "player")))))
+                        .then(Commands.literal("cancel")
+                                .executes(context -> cancelClaimTransfer(
+                                        context.getSource(), currentClaimKey(context.getSource())))
+                                .then(Commands.argument("dimension", DimensionArgument.dimension())
+                                        .then(Commands.argument("chunk_x", IntegerArgumentType.integer())
+                                                .then(Commands.argument("chunk_z", IntegerArgumentType.integer())
+                                                        .executes(context -> cancelClaimTransfer(
+                                                                context.getSource(),
+                                                                new ClaimKey(
+                                                                        DimensionArgument.getDimension(
+                                                                                context, "dimension").dimension(),
+                                                                        IntegerArgumentType.getInteger(
+                                                                                context, "chunk_x"),
+                                                                        IntegerArgumentType.getInteger(
+                                                                                context, "chunk_z"))))))))
+                        .then(Commands.literal("accept")
+                                .executes(context -> acceptClaimTransfer(
+                                        context.getSource(), currentClaimKey(context.getSource())))
+                                .then(Commands.argument("dimension", DimensionArgument.dimension())
+                                        .then(Commands.argument("chunk_x", IntegerArgumentType.integer())
+                                                .then(Commands.argument("chunk_z", IntegerArgumentType.integer())
+                                                        .executes(context -> acceptClaimTransfer(
+                                                                context.getSource(),
+                                                                new ClaimKey(
+                                                                        DimensionArgument.getDimension(
+                                                                                context, "dimension").dimension(),
+                                                                        IntegerArgumentType.getInteger(
+                                                                                context, "chunk_x"),
+                                                                        IntegerArgumentType.getInteger(
+                                                                                context, "chunk_z")))))))))
+                .then(Commands.literal("sell")
+                        .executes(context -> sellClaim(context.getSource(), currentClaimKey(context.getSource()))));
+
+        var adminClaimCommand = Commands.literal("claim")
+                .then(adminClaimInfoCommand())
+                .then(adminClaimTrustCommand())
+                .then(adminClaimUntrustCommand())
+                .then(adminClaimSettingsCommand());
 
         event.getDispatcher().register(Commands.literal("rovenfall")
                 .then(playerShopCommand)
@@ -272,6 +347,7 @@ public final class RovenfallCommands {
                         .then(roleCommand)
                         .then(economyCommand)
                         .then(adminShopCommand)
+                        .then(adminClaimCommand)
                         .then(auditCommand)
                         .then(snapshotCommand)));
     }
@@ -301,6 +377,84 @@ public final class RovenfallCommands {
                 .then(Commands.argument("page", IntegerArgumentType.integer(1))
                         .executes(context -> openEconomyGui(
                                 context.getSource(), view, IntegerArgumentType.getInteger(context, "page") - 1)));
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> adminClaimInfoCommand() {
+        return Commands.literal("info")
+                .then(Commands.argument("dimension", DimensionArgument.dimension())
+                        .then(Commands.argument("chunk_x", IntegerArgumentType.integer())
+                                .then(Commands.argument("chunk_z", IntegerArgumentType.integer())
+                                        .executes(context -> viewClaim(
+                                                context.getSource(),
+                                                new ClaimKey(
+                                                        DimensionArgument.getDimension(context, "dimension").dimension(),
+                                                        IntegerArgumentType.getInteger(context, "chunk_x"),
+                                                        IntegerArgumentType.getInteger(context, "chunk_z")))))));
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> adminClaimTrustCommand() {
+        return Commands.literal("trust")
+                .then(Commands.argument("dimension", DimensionArgument.dimension())
+                        .then(Commands.argument("chunk_x", IntegerArgumentType.integer())
+                                .then(Commands.argument("chunk_z", IntegerArgumentType.integer())
+                                        .then(Commands.argument("player", EntityArgument.player())
+                                                .then(Commands.argument("role", StringArgumentType.word())
+                                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(
+                                                                ClaimRole.ids(), builder))
+                                                        .executes(context -> setClaimRole(
+                                                                context.getSource(),
+                                                                new ClaimKey(
+                                                                        DimensionArgument.getDimension(
+                                                                                context, "dimension").dimension(),
+                                                                        IntegerArgumentType.getInteger(
+                                                                                context, "chunk_x"),
+                                                                        IntegerArgumentType.getInteger(
+                                                                                context, "chunk_z")),
+                                                                EntityArgument.getPlayer(context, "player"),
+                                                                StringArgumentType.getString(context, "role"),
+                                                                true,
+                                                                "administrator claim trust")))))));
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> adminClaimUntrustCommand() {
+        return Commands.literal("untrust")
+                .then(Commands.argument("dimension", DimensionArgument.dimension())
+                        .then(Commands.argument("chunk_x", IntegerArgumentType.integer())
+                                .then(Commands.argument("chunk_z", IntegerArgumentType.integer())
+                                        .then(Commands.argument("player", EntityArgument.player())
+                                                .executes(context -> removeClaimRole(
+                                                        context.getSource(),
+                                                        new ClaimKey(
+                                                                DimensionArgument.getDimension(
+                                                                        context, "dimension").dimension(),
+                                                                IntegerArgumentType.getInteger(context, "chunk_x"),
+                                                                IntegerArgumentType.getInteger(context, "chunk_z")),
+                                                        EntityArgument.getPlayer(context, "player"),
+                                                        true,
+                                                        "administrator claim untrust"))))));
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> adminClaimSettingsCommand() {
+        return Commands.literal("settings")
+                .then(Commands.argument("dimension", DimensionArgument.dimension())
+                        .then(Commands.argument("chunk_x", IntegerArgumentType.integer())
+                                .then(Commands.argument("chunk_z", IntegerArgumentType.integer())
+                                        .then(Commands.argument("entry_restricted", BoolArgumentType.bool())
+                                                .then(Commands.argument(
+                                                                "public_interactions", BoolArgumentType.bool())
+                                                        .executes(context -> setClaimSettings(
+                                                                context.getSource(),
+                                                                new ClaimKey(
+                                                                        DimensionArgument.getDimension(
+                                                                                context, "dimension").dimension(),
+                                                                        IntegerArgumentType.getInteger(
+                                                                                context, "chunk_x"),
+                                                                        IntegerArgumentType.getInteger(
+                                                                                context, "chunk_z")),
+                                                                BoolArgumentType.getBool(context, "entry_restricted"),
+                                                                BoolArgumentType.getBool(context, "public_interactions"),
+                                                                true,
+                                                                "administrator claim settings")))))));
     }
 
     private static int setRole(CommandSourceStack source, net.minecraft.server.level.ServerPlayer target, String roleId, String reason) {
@@ -568,7 +722,7 @@ public final class RovenfallCommands {
                 player.level().dimension(),
                 player.blockPosition(),
                 ignored -> true,
-                ignored -> false,
+                candidate -> isProtectedClaimRegion(source, candidate),
                 ClaimConfig.basePrice(),
                 ClaimConfig.priceIncrease(),
                 ClaimConfig.ownershipCap(),
@@ -601,6 +755,243 @@ public final class RovenfallCommands {
             case INSUFFICIENT_FUNDS -> failure(
                     source, "command.rovenfall.claim.error.insufficient_funds", result.price(), result.balance());
             case TRANSACTION_LEDGER_FULL -> failure(source, "command.rovenfall.claim.error.ledger_full");
+        };
+    }
+
+    private static ClaimKey currentClaimKey(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        return ClaimKey.at(player.level().dimension(), player.blockPosition());
+    }
+
+    private static int viewClaim(CommandSourceStack source, ClaimKey key) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var claim = state.claim(key).orElse(null);
+        if (claim == null) {
+            return failure(source, "command.rovenfall.claim.error.not_found", key.chunkX(), key.chunkZ());
+        }
+        Component actorRole = Component.translatable(claim.roleOf(actorId(source)).translationKey());
+        String transferTarget = claim.pendingTransferTo().map(UUID::toString).orElse("-");
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.claim.info",
+                key.dimension().identifier().toString(),
+                key.chunkX(),
+                key.chunkZ(),
+                claim.ownerId().toString(),
+                actorRole,
+                claim.trustedRoles().size(),
+                claim.settings().entryRestricted(),
+                claim.settings().publicInteractions(),
+                transferTarget,
+                claim.purchasePrice()), false);
+        return 1;
+    }
+
+    private static int setClaimRole(
+            CommandSourceStack source,
+            ClaimKey key,
+            ServerPlayer target,
+            String roleId,
+            boolean broadcast,
+            String reason) {
+        ClaimRole role = ClaimRole.fromId(roleId).filter(value -> value != ClaimRole.OWNER).orElse(null);
+        if (role == null) {
+            return failure(source, "command.rovenfall.claim.error.invalid_role");
+        }
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = ClaimManagementService.setRole(
+                state,
+                actorId(source),
+                authorizationOverride(source, state),
+                key,
+                target.getUUID(),
+                role,
+                reason,
+                Instant.now().toEpochMilli(),
+                UUID.randomUUID());
+        return claimMutationResult(
+                source, state, result, broadcast, "command.rovenfall.claim.trust.success",
+                target.getDisplayName(), Component.translatable(role.translationKey()));
+    }
+
+    private static int removeClaimRole(
+            CommandSourceStack source,
+            ClaimKey key,
+            ServerPlayer target,
+            boolean broadcast,
+            String reason) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = ClaimManagementService.removeRole(
+                state,
+                actorId(source),
+                authorizationOverride(source, state),
+                key,
+                target.getUUID(),
+                reason,
+                Instant.now().toEpochMilli(),
+                UUID.randomUUID());
+        return claimMutationResult(
+                source, state, result, broadcast, "command.rovenfall.claim.untrust.success",
+                target.getDisplayName());
+    }
+
+    private static int setClaimSettings(
+            CommandSourceStack source,
+            ClaimKey key,
+            boolean entryRestricted,
+            boolean publicInteractions,
+            boolean broadcast,
+            String reason) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = ClaimManagementService.setSettings(
+                state,
+                actorId(source),
+                authorizationOverride(source, state),
+                key,
+                new ClaimSettings(entryRestricted, publicInteractions),
+                reason,
+                Instant.now().toEpochMilli(),
+                UUID.randomUUID());
+        return claimMutationResult(
+                source, state, result, broadcast, "command.rovenfall.claim.settings.success",
+                entryRestricted, publicInteractions);
+    }
+
+    private static int offerClaimTransfer(
+            CommandSourceStack source, ClaimKey key, ServerPlayer recipient) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = ClaimManagementService.offerTransfer(
+                state,
+                actorId(source),
+                key,
+                recipient.getUUID(),
+                "player claim transfer offer",
+                Instant.now().toEpochMilli(),
+                UUID.randomUUID());
+        return claimMutationResult(
+                source, state, result, false, "command.rovenfall.claim.transfer.offer.success",
+                recipient.getDisplayName());
+    }
+
+    private static int cancelClaimTransfer(CommandSourceStack source, ClaimKey key) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = ClaimManagementService.cancelTransfer(
+                state,
+                actorId(source),
+                key,
+                "player claim transfer cancel",
+                Instant.now().toEpochMilli(),
+                UUID.randomUUID());
+        return claimMutationResult(
+                source, state, result, false, "command.rovenfall.claim.transfer.cancel.success",
+                key.chunkX(), key.chunkZ());
+    }
+
+    private static int acceptClaimTransfer(CommandSourceStack source, ClaimKey key) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = ClaimManagementService.acceptTransfer(
+                state,
+                player.getUUID(),
+                key,
+                candidate -> isProtectedClaimRegion(source, candidate),
+                ClaimConfig.ownershipCap(),
+                "player claim transfer accept",
+                Instant.now().toEpochMilli(),
+                UUID.randomUUID());
+        return claimMutationResult(
+                source, state, result, false, "command.rovenfall.claim.transfer.accept.success",
+                key.chunkX(), key.chunkZ());
+    }
+
+    private static boolean isProtectedClaimRegion(CommandSourceStack source, ClaimKey key) {
+        var hub = source.getServer().overworld();
+        return ClaimRegionPolicy.isProtectedHubRegion(
+                key,
+                hub.dimension(),
+                hub.getRespawnData().pos(),
+                ClaimConfig.protectedSpawnRadiusChunks());
+    }
+
+    private static int sellClaim(CommandSourceStack source, ClaimKey key) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = ClaimManagementService.sell(
+                state,
+                player.getUUID(),
+                key,
+                ClaimConfig.saleRefundPercent(),
+                EconomyConfig.maximumBalance(),
+                "player claim sale",
+                Instant.now().toEpochMilli(),
+                UUID.randomUUID());
+        return switch (result.status()) {
+            case SUCCESS -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.claim.sell.success", result.amount(), result.balance()), false);
+                yield 1;
+            }
+            case DUPLICATE_TRANSACTION -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.claim.duplicate", result.transactionId().toString()), false);
+                yield 1;
+            }
+            default -> claimMutationFailure(source, state, result);
+        };
+    }
+
+    private static int claimMutationResult(
+            CommandSourceStack source,
+            PlatformSavedData state,
+            ClaimManagementService.Result result,
+            boolean broadcast,
+            String successKey,
+            Object... successArguments) {
+        return switch (result.status()) {
+            case SUCCESS -> {
+                source.sendSuccess(() -> Component.translatable(successKey, successArguments), broadcast);
+                yield 1;
+            }
+            case DUPLICATE_TRANSACTION -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.claim.duplicate", result.transactionId().toString()), false);
+                yield 1;
+            }
+            case NO_CHANGE -> {
+                source.sendSuccess(() -> Component.translatable("command.rovenfall.claim.no_change"), false);
+                yield 1;
+            }
+            default -> claimMutationFailure(source, state, result);
+        };
+    }
+
+    private static int claimMutationFailure(
+            CommandSourceStack source,
+            PlatformSavedData state,
+            ClaimManagementService.Result result) {
+        return switch (result.status()) {
+            case TRANSACTION_ID_CONFLICT -> failure(source, "command.rovenfall.claim.error.transaction_id_conflict");
+            case INVALID_REQUEST, INVALID_TRANSACTION -> failure(
+                    source, "command.rovenfall.claim.error.invalid_request");
+            case INVALID_REASON -> failure(
+                    source, "command.rovenfall.admin.error.invalid_reason", AdministrationService.MAX_REASON_LENGTH);
+            case READ_ONLY_SCHEMA -> failure(
+                    source, "command.rovenfall.admin.error.read_only_schema", state.schemaVersion());
+            case UNAUTHORIZED -> failure(source, "command.rovenfall.claim.error.unauthorized");
+            case CLAIM_NOT_FOUND -> failure(source, "command.rovenfall.claim.error.not_found");
+            case INVALID_TARGET -> failure(source, "command.rovenfall.claim.error.invalid_target");
+            case TRUST_LIMIT_REACHED -> failure(
+                    source, "command.rovenfall.claim.error.trust_limit", org.dldyou.rovenfall.claims.Claim.MAX_TRUSTED_PLAYERS);
+            case PROTECTED_CHUNK -> failure(source, "command.rovenfall.claim.error.protected");
+            case OWNERSHIP_CAP_REACHED -> failure(source, "command.rovenfall.claim.error.cap");
+            case TRANSFER_NOT_PENDING -> failure(source, "command.rovenfall.claim.error.transfer_not_pending");
+            case TRANSFER_PENDING -> failure(source, "command.rovenfall.claim.error.transfer_pending");
+            case PURCHASE_PRICE_UNAVAILABLE -> failure(
+                    source, "command.rovenfall.claim.error.purchase_price_unavailable");
+            case ACCOUNT_NOT_FOUND -> failure(source, "command.rovenfall.claim.error.account_missing");
+            case OVERFLOW, MAXIMUM_BALANCE_EXCEEDED -> failure(source, "command.rovenfall.claim.error.balance_limit");
+            case TRANSACTION_LEDGER_FULL -> failure(source, "command.rovenfall.claim.error.ledger_full");
+            case SUCCESS, DUPLICATE_TRANSACTION, NO_CHANGE -> throw new IllegalStateException(
+                    "Successful claim result reached failure handling");
         };
     }
 
