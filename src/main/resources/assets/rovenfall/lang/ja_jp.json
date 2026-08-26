@@ -161,5 +161,9 @@
   "command.rovenfall.claim.error.transfer_pending": "土地を売却する前に、保留中の譲渡を完了または取り消してください。",
   "command.rovenfall.claim.error.purchase_price_unavailable": "この旧バージョンの土地には確認可能な購入価格がないため、自動売却できません。管理者に確認を依頼してください。",
   "command.rovenfall.claim.error.balance_limit": "払い戻し後の残高が通貨の上限を超えます。",
-  "command.rovenfall.claim.error.ledger_full": "最近の取引台帳が上限に達しています。何も変更されませんでした。"
+  "command.rovenfall.claim.error.ledger_full": "最近の取引台帳が上限に達しています。何も変更されませんでした。",
+  "message.rovenfall.claim.denied.build": "ここではブロックを設置または破壊できません。",
+  "message.rovenfall.claim.denied.interact": "ここではブロックやコンテナを使用できません。",
+  "message.rovenfall.claim.denied.entity": "ここではエンティティと対話できません。",
+  "message.rovenfall.claim.denied.entry": "土地の所有者が立ち入りを制限しています。"
 }

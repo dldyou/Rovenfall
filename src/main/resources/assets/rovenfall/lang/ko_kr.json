@@ -161,5 +161,9 @@
   "command.rovenfall.claim.error.transfer_pending": "토지를 판매하기 전에 대기 중인 양도를 완료하거나 취소해야 합니다.",
   "command.rovenfall.claim.error.purchase_price_unavailable": "이 구버전 토지는 확인 가능한 구매 가격이 없어 자동 판매할 수 없습니다. 관리자에게 검토를 요청하세요.",
   "command.rovenfall.claim.error.balance_limit": "환급 후 잔액이 최대 화폐 보유 한도를 초과합니다.",
-  "command.rovenfall.claim.error.ledger_full": "최근 거래 원장이 가득 찼습니다. 아무것도 변경하지 않았습니다."
+  "command.rovenfall.claim.error.ledger_full": "최근 거래 원장이 가득 찼습니다. 아무것도 변경하지 않았습니다.",
+  "message.rovenfall.claim.denied.build": "이곳에서는 블록을 설치하거나 파괴할 수 없습니다.",
+  "message.rovenfall.claim.denied.interact": "이곳에서는 블록이나 보관함을 사용할 수 없습니다.",
+  "message.rovenfall.claim.denied.entity": "이곳에서는 엔티티와 상호작용할 수 없습니다.",
+  "message.rovenfall.claim.denied.entry": "토지 소유자가 출입을 제한했습니다."
 }

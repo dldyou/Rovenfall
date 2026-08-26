@@ -33,6 +33,10 @@ final class LocalizationCatalogTest {
             "economy_transaction_kind.rovenfall.claim_sale",
             "command.rovenfall.claim.transfer.accept.success",
             "command.rovenfall.claim.sell.success",
+            "message.rovenfall.claim.denied.build",
+            "message.rovenfall.claim.denied.interact",
+            "message.rovenfall.claim.denied.entity",
+            "message.rovenfall.claim.denied.entry",
             "command.rovenfall.admin.audit.header",
             "gui.rovenfall.admin.audit.summary",
             "gui.rovenfall.admin.audit.reason"
