@@ -6,6 +6,7 @@ import java.util.UUID;
 import net.minecraft.gametest.framework.BuiltinTestFunctions;
 import net.minecraft.gametest.framework.FunctionGameTestInstance;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
@@ -29,6 +30,9 @@ import org.dldyou.rovenfall.administration.PlayerRecordService;
 import org.dldyou.rovenfall.administration.RovenfallCommands;
 import org.dldyou.rovenfall.administration.ShopInstanceService;
 import org.dldyou.rovenfall.administration.ShopTradeService;
+import org.dldyou.rovenfall.administration.ClaimPurchaseService;
+import org.dldyou.rovenfall.claims.ClaimConfig;
+import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.definition.TestDefinitionReloadListener;
 import org.dldyou.rovenfall.economy.ShopTemplateReloadListener;
 import org.dldyou.rovenfall.economy.ShopInstance;
@@ -40,6 +44,7 @@ public final class Rovenfall {
 
     public Rovenfall(IEventBus modBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.SERVER, EconomyConfig.SPEC);
+        modContainer.registerConfig(ModConfig.Type.SERVER, ClaimConfig.SPEC, "rovenfall-claims-server.toml");
         modBus.addListener(this::registerGameTests);
         NeoForge.EVENT_BUS.addListener(RovenfallCommands::register);
         NeoForge.EVENT_BUS.addListener(EconomyService::onPlayerLoggedIn);
@@ -68,6 +73,47 @@ public final class Rovenfall {
                 helper.assertTrue(result.status() == EconomyService.TransactionStatus.SUCCESS,
                         "Economy award was not committed");
                 helper.assertTrue(result.balance() == 1, "Economy balance did not use the server result");
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("claim_purchase_atomicity"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var state = PlatformSavedData.get(server);
+                var player = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                int chunkX = 1_000;
+                int chunkZ = 1_000;
+                while (state.claim(new ClaimKey(player.level().dimension(), chunkX, chunkZ)).isPresent()) {
+                    chunkX++;
+                }
+                BlockPos position = new BlockPos((chunkX << 4) + 8, 70, (chunkZ << 4) + 8);
+                player.setPos(position.getX() + 0.5, position.getY(), position.getZ() + 0.5);
+                long timestamp = System.currentTimeMillis();
+                helper.assertTrue(EconomyService.award(
+                        state, player.getUUID(), 2_000, "gametest claim seed", timestamp,
+                        UUID.randomUUID(), 0, Long.MAX_VALUE).status() == EconomyService.TransactionStatus.SUCCESS,
+                        "Claim GameTest account setup failed");
+                UUID transactionId = UUID.randomUUID();
+                var purchase = ClaimPurchaseService.purchase(
+                        state, player.getUUID(), player.level().dimension(), player.level().dimension(),
+                        player.blockPosition(), ignored -> true, ignored -> false,
+                        1_000, 250, 4, timestamp + 1, transactionId);
+                helper.assertTrue(purchase.status() == ClaimPurchaseService.Status.SUCCESS,
+                        "Hub claim purchase was not committed");
+                ClaimKey key = purchase.claim().orElseThrow();
+                helper.assertTrue(state.claim(key).orElseThrow().ownerId().equals(player.getUUID()),
+                        "Claim owner did not use the server player identity");
+                helper.assertTrue(state.economyBalance(player.getUUID()).orElseThrow() == 1_000,
+                        "Claim purchase did not debit the server price");
+                var decoded = PlatformSavedData.CODEC.parse(NbtOps.INSTANCE,
+                        PlatformSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow()).getOrThrow();
+                helper.assertTrue(decoded.claim(key).orElseThrow().ownerId().equals(player.getUUID()),
+                        "Claim ownership did not survive persistence");
+                helper.assertTrue(decoded.economyReceipt(transactionId).orElseThrow().claim().equals(Optional.of(key)),
+                        "Claim transaction evidence did not survive persistence");
                 helper.succeed();
             }
         });

@@ -8,14 +8,57 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
 import java.util.UUID;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.NonNullList;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import org.dldyou.rovenfall.claims.ClaimKey;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 final class PlatformSnapshotServiceTest {
     @TempDir
     Path temporaryDirectory;
+
+    @Test
+    void restoreReturnsClaimsToSnapshotWhileRetainingLaterReceiptEvidence() throws Exception {
+        PlatformSavedData state = new PlatformSavedData();
+        UUID owner = id(940);
+        bootstrap(state, owner, AdminRole.OWNER);
+        EconomyService.award(state, owner, 5_000, "claim seed", 1_100, id(941), 0, Long.MAX_VALUE);
+        BlockPos firstPosition = new BlockPos(16, 70, 16);
+        UUID firstPurchaseId = id(942);
+        assertEquals(ClaimPurchaseService.Status.SUCCESS, ClaimPurchaseService.purchase(
+                state, owner, Level.OVERWORLD, Level.OVERWORLD, firstPosition,
+                ignored -> true, ignored -> false, 1_000, 0, 4, 1_200, firstPurchaseId).status());
+        ClaimKey firstKey = ClaimKey.at(Level.OVERWORLD, firstPosition);
+
+        PlatformSnapshotStore store = store("claim-restore");
+        UUID snapshotId = id(943);
+        assertEquals(AdministrationService.SnapshotCreateStatus.SUCCESS, AdministrationService.createSnapshot(
+                state, store, owner, false, "before second claim", 1_300, id(944), snapshotId).status());
+
+        BlockPos secondPosition = new BlockPos(32, 70, 32);
+        UUID secondPurchaseId = id(945);
+        assertEquals(ClaimPurchaseService.Status.SUCCESS, ClaimPurchaseService.purchase(
+                state, owner, Level.OVERWORLD, Level.OVERWORLD, secondPosition,
+                ignored -> true, ignored -> false, 1_000, 0, 4, 1_400, secondPurchaseId).status());
+        ClaimKey secondKey = ClaimKey.at(Level.OVERWORLD, secondPosition);
+        assertEquals(2, state.claimCount(owner));
+
+        UUID restoreId = id(946);
+        assertEquals(AdministrationService.SnapshotRestoreStatus.SUCCESS, AdministrationService.restoreSnapshot(
+                state, store, owner, false, snapshotId, "restore claim state", 2_000,
+                restoreId, id(947)).status());
+
+        assertTrue(state.claim(firstKey).isPresent());
+        assertTrue(state.claim(secondKey).isEmpty());
+        assertEquals(1, state.claimCount(owner));
+        assertEquals(4_000, state.economyBalance(owner).orElseThrow());
+        assertEquals(Optional.of(restoreId),
+                state.economyReceipt(secondPurchaseId).orElseThrow().invalidatedByRestore());
+        assertEquals(Optional.of(secondKey), state.economyReceipt(secondPurchaseId).orElseThrow().claim());
+    }
 
     @Test
     void restoreRetainsPostSnapshotReceiptsAsInvalidatedEvidence() throws Exception {

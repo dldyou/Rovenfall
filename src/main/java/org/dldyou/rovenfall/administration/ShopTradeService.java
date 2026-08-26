@@ -185,6 +185,7 @@ public final class ShopTradeService {
                                 ? EconomyTransactionReceipt.Kind.PURCHASE
                                 : EconomyTransactionReceipt.Kind.SALE,
                         total,
+                        Optional.empty(),
                         Optional.of(request.shopId()),
                         Optional.of(request.offerId()),
                         Optional.of(offer.item()),

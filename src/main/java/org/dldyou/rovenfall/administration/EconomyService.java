@@ -68,6 +68,7 @@ public final class EconomyService {
         EconomyTransactionReceipt receipt = new EconomyTransactionReceipt(
                 timestampEpochMillis, AdministrationService.SYSTEM_ACTOR, playerId,
                 EconomyTransactionReceipt.Kind.ACCOUNT_CREATE, initialBalance,
+                Optional.empty(),
                 Optional.empty(), Optional.empty(), Optional.empty(), 0, Optional.empty(), Optional.empty(),
                 Optional.empty(), Optional.empty(), Optional.empty(), EconomyTransactionReceipt.CompensationDecision.NONE);
         var alerts = EconomyMonitoringService.evaluate(state, transactionId, receipt, EconomyConfig.alertThresholds());
@@ -222,6 +223,7 @@ public final class EconomyService {
 
         EconomyTransactionReceipt receipt = new EconomyTransactionReceipt(
                 timestampEpochMillis, actorId, playerId, operation.receiptKind, amount,
+                Optional.empty(),
                 Optional.empty(), Optional.empty(), Optional.empty(), 0, Optional.empty(), Optional.empty(),
                 Optional.empty(), Optional.empty(), Optional.empty(), EconomyTransactionReceipt.CompensationDecision.NONE);
         var alerts = EconomyMonitoringService.evaluate(state, transactionId, receipt, EconomyConfig.alertThresholds());

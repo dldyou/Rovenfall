@@ -95,6 +95,7 @@ public final class EconomyReversalService {
         EconomyTransactionReceipt original = state.economyReceipt(originalTransactionId).orElse(null);
         if (original == null || !state.hasTransaction(originalTransactionId, timestampEpochMillis)
                 || original.kind() == EconomyTransactionReceipt.Kind.ACCOUNT_CREATE
+                || original.kind() == EconomyTransactionReceipt.Kind.CLAIM_PURCHASE
                 || original.kind() == EconomyTransactionReceipt.Kind.REVERSAL
                 || original.invalidatedByRestore().isPresent()) {
             return denied(state, actorId, originalTransactionId, reversalTransactionId,
@@ -189,6 +190,7 @@ public final class EconomyReversalService {
         }
         EconomyTransactionReceipt receipt = new EconomyTransactionReceipt(
                 timestampEpochMillis, actorId, playerId, EconomyTransactionReceipt.Kind.REVERSAL, original.amount(),
+                Optional.empty(),
                 Optional.empty(), Optional.empty(), Optional.empty(), 0, Optional.empty(), Optional.empty(),
                 Optional.of(originalTransactionId), Optional.empty(), Optional.empty(), recordedDecision);
         try {

@@ -5,6 +5,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.UnaryOperator;
 import net.minecraft.resources.Identifier;
+import org.dldyou.rovenfall.claims.Claim;
+import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.economy.ShopInstance;
 
 final class PlatformDataMigrations {
@@ -13,7 +15,8 @@ final class PlatformDataMigrations {
             1, state -> state.atVersion(2),
             2, state -> state.atVersion(3),
             3, state -> state.atVersion(4),
-            4, state -> state.atVersion(5)
+            4, state -> state.atVersion(5),
+            5, state -> state.atVersion(6)
     );
 
     private PlatformDataMigrations() {
@@ -29,10 +32,11 @@ final class PlatformDataMigrations {
             Map<Identifier, ShopInstance> shopInstances,
             Map<UUID, EconomyTransactionReceipt> economyReceipts,
             List<EconomyAlert> economyAlerts,
+            Map<ClaimKey, Claim> claims,
             int targetVersion) {
         PersistedState original = new PersistedState(
                 schemaVersion, adminRoles, auditEntries, playerRecords, economyBalances, economyTransactions,
-                shopInstances, economyReceipts, economyAlerts);
+                shopInstances, economyReceipts, economyAlerts, claims);
         if (schemaVersion < 0 || schemaVersion > targetVersion) {
             return MigrationResult.readOnly(original);
         }
@@ -62,7 +66,8 @@ final class PlatformDataMigrations {
             Map<UUID, Long> economyTransactions,
             Map<Identifier, ShopInstance> shopInstances,
             Map<UUID, EconomyTransactionReceipt> economyReceipts,
-            List<EconomyAlert> economyAlerts) {
+            List<EconomyAlert> economyAlerts,
+            Map<ClaimKey, Claim> claims) {
         PersistedState {
             adminRoles = Map.copyOf(adminRoles);
             auditEntries = List.copyOf(auditEntries);
@@ -72,12 +77,13 @@ final class PlatformDataMigrations {
             shopInstances = Map.copyOf(shopInstances);
             economyReceipts = Map.copyOf(economyReceipts);
             economyAlerts = List.copyOf(economyAlerts);
+            claims = Map.copyOf(claims);
         }
 
         PersistedState atVersion(int version) {
             return new PersistedState(
                     version, adminRoles, auditEntries, playerRecords, economyBalances, economyTransactions,
-                    shopInstances, economyReceipts, economyAlerts);
+                    shopInstances, economyReceipts, economyAlerts, claims);
         }
     }
 
