@@ -39,11 +39,15 @@ import org.dldyou.rovenfall.claims.ClaimSettings;
 import org.dldyou.rovenfall.definition.TestDefinitionReloadListener;
 import org.dldyou.rovenfall.economy.ShopTemplateReloadListener;
 import org.dldyou.rovenfall.economy.ShopInstance;
+import org.dldyou.rovenfall.mobs.MobContentReloadListener;
+import org.dldyou.rovenfall.mobs.MobContentCatalog;
+import org.dldyou.rovenfall.mobs.MobContentSnapshot;
 
 @Mod(Rovenfall.MOD_ID)
 public final class Rovenfall {
     public static final String MOD_ID = "rovenfall";
     private final ShopTemplateReloadListener shopTemplates = new ShopTemplateReloadListener();
+    private final MobContentReloadListener mobContent = new MobContentReloadListener();
 
     public Rovenfall(IEventBus modBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.SERVER, EconomyConfig.SPEC);
@@ -60,6 +64,41 @@ public final class Rovenfall {
         var environment = event.registerEnvironment(id("empty"), new TestEnvironmentDefinition.AllOf(List.of()));
         var testData = new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 1, 0, true);
         event.registerTest(id("foundation"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData));
+        event.registerTest(id("mob_content_definitions"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var snapshot = MobContentReloadListener.snapshot(helper.getLevel().getServer());
+                helper.assertTrue(snapshot.size() == 11, "Built-in mob content catalog did not load atomically");
+                helper.assertTrue(snapshot.mob(id("grove_stalker")).orElseThrow().loot()
+                                .equals(id("grove_stalker_loot")),
+                        "Custom mob reward reference was not preserved");
+                helper.assertTrue(snapshot.mutation(id("volatile")).orElseThrow().eligibleEntityTypes().size() == 3,
+                        "Mutation eligibility definition was not loaded");
+                var boss = snapshot.boss(id("rift_warden")).orElseThrow();
+                helper.assertTrue(boss.phases().size() == 2 && boss.phases().get(1).patterns().size() == 2,
+                        "Boss phase and pattern definitions were not loaded");
+                helper.assertTrue(snapshot.arena(boss.arena()).isPresent()
+                                && snapshot.contributionRule(boss.contributionRule()).isPresent()
+                                && snapshot.loot(boss.loot()).isPresent(),
+                        "Boss references were not resolved in the installed snapshot");
+                try {
+                    var invalidBoss = new MobContentCatalog.BossDefinition(
+                            id("invalid_boss"), "boss.rovenfall.invalid", id("missing_mob"),
+                            id("missing_arena"), id("missing_rule"), id("missing_loot"), 0, List.of());
+                    var invalidCatalog = new MobContentCatalog(
+                            List.of(), List.of(), List.of(), List.of(), List.of(), List.of(invalidBoss));
+                    MobContentSnapshot.compile(List.of(new MobContentSnapshot.Source(
+                            id("invalid_gametest.json"), "gametest", id("invalid_gametest"),
+                            invalidCatalog)));
+                    helper.fail("Invalid mob definitions were accepted");
+                } catch (MobContentSnapshot.ValidationException expected) {
+                    helper.assertTrue(snapshot == MobContentReloadListener.snapshot(helper.getLevel().getServer()),
+                            "Invalid candidate replaced the last valid mob content snapshot");
+                }
+                helper.succeed();
+            }
+        });
         event.registerTest(id("economy_account"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData) {
             @Override
             public void run(GameTestHelper helper) {
@@ -452,6 +491,7 @@ public final class Rovenfall {
     private void addServerReloadListeners(AddServerReloadListenersEvent event) {
         event.addRetainedListener(TestDefinitionReloadListener.KEY, new TestDefinitionReloadListener());
         event.addRetainedListener(ShopTemplateReloadListener.KEY, shopTemplates);
+        event.addRetainedListener(MobContentReloadListener.KEY, mobContent);
     }
 
     private static Identifier id(String path) {

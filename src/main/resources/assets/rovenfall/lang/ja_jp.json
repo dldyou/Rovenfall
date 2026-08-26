@@ -161,5 +161,17 @@
   "command.rovenfall.claim.error.transfer_pending": "土地を売却する前に、保留中の譲渡を完了または取り消してください。",
   "command.rovenfall.claim.error.purchase_price_unavailable": "この旧バージョンの土地には確認可能な購入価格がないため、自動売却できません。管理者に確認を依頼してください。",
   "command.rovenfall.claim.error.balance_limit": "払い戻し後の残高が通貨の上限を超えます。",
-  "command.rovenfall.claim.error.ledger_full": "最近の取引台帳が上限に達しています。何も変更されませんでした。"
+  "command.rovenfall.claim.error.ledger_full": "最近の取引台帳が上限に達しています。何も変更されませんでした。",
+  "mob.rovenfall.grove_stalker": "森の追跡者",
+  "mob.rovenfall.orebound_beetle": "鉱脈甲虫",
+  "mob.rovenfall.rift_warden_vessel": "裂け目の番人の器",
+  "mutation.rovenfall.volatile": "爆発性",
+  "mutation_marker.rovenfall.volatile": "爆発性",
+  "boss.rovenfall.rift_warden": "裂け目の番人",
+  "boss_phase.rovenfall.rift_warden.one": "砕けた守り",
+  "boss_phase.rovenfall.rift_warden.two": "解き放たれた裂け目",
+  "boss_pattern.rovenfall.rift_warden.sweep": "裂け目の薙ぎ払い",
+  "boss_pattern.rovenfall.rift_warden.barrage": "破片の弾幕",
+  "boss_pattern.rovenfall.rift_warden.shockwave": "裂け目の衝撃波",
+  "boss_pattern.rovenfall.rift_warden.summon": "砕けし者の招来"
 }

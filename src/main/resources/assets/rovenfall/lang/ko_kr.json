@@ -161,5 +161,17 @@
   "command.rovenfall.claim.error.transfer_pending": "토지를 판매하기 전에 대기 중인 양도를 완료하거나 취소해야 합니다.",
   "command.rovenfall.claim.error.purchase_price_unavailable": "이 구버전 토지는 확인 가능한 구매 가격이 없어 자동 판매할 수 없습니다. 관리자에게 검토를 요청하세요.",
   "command.rovenfall.claim.error.balance_limit": "환급 후 잔액이 최대 화폐 보유 한도를 초과합니다.",
-  "command.rovenfall.claim.error.ledger_full": "최근 거래 원장이 가득 찼습니다. 아무것도 변경하지 않았습니다."
+  "command.rovenfall.claim.error.ledger_full": "최근 거래 원장이 가득 찼습니다. 아무것도 변경하지 않았습니다.",
+  "mob.rovenfall.grove_stalker": "숲의 추적자",
+  "mob.rovenfall.orebound_beetle": "광맥 딱정벌레",
+  "mob.rovenfall.rift_warden_vessel": "균열 수호자의 그릇",
+  "mutation.rovenfall.volatile": "폭발성",
+  "mutation_marker.rovenfall.volatile": "폭발성",
+  "boss.rovenfall.rift_warden": "균열 수호자",
+  "boss_phase.rovenfall.rift_warden.one": "부서진 수비",
+  "boss_phase.rovenfall.rift_warden.two": "해방된 균열",
+  "boss_pattern.rovenfall.rift_warden.sweep": "균열 휩쓸기",
+  "boss_pattern.rovenfall.rift_warden.barrage": "파편 탄막",
+  "boss_pattern.rovenfall.rift_warden.shockwave": "균열 충격파",
+  "boss_pattern.rovenfall.rift_warden.summon": "파편의 부름"
 }

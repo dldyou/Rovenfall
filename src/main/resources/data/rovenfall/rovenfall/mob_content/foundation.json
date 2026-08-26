@@ -1,0 +1,173 @@
+{
+  "mobs": [
+    {
+      "id": "rovenfall:grove_stalker",
+      "translation_key": "mob.rovenfall.grove_stalker",
+      "entity_type": "minecraft:wolf",
+      "max_health": 30.0,
+      "attack_damage": 6.0,
+      "movement_speed": 0.32,
+      "behavior_modifiers": ["rovenfall:ambush"],
+      "loot": "rovenfall:grove_stalker_loot"
+    },
+    {
+      "id": "rovenfall:orebound_beetle",
+      "translation_key": "mob.rovenfall.orebound_beetle",
+      "entity_type": "minecraft:silverfish",
+      "max_health": 24.0,
+      "attack_damage": 5.0,
+      "movement_speed": 0.28,
+      "behavior_modifiers": ["rovenfall:burrow"],
+      "loot": "rovenfall:orebound_beetle_loot"
+    },
+    {
+      "id": "rovenfall:rift_warden_vessel",
+      "translation_key": "mob.rovenfall.rift_warden_vessel",
+      "entity_type": "minecraft:iron_golem",
+      "max_health": 600.0,
+      "attack_damage": 16.0,
+      "movement_speed": 0.25,
+      "behavior_modifiers": ["rovenfall:boss_controller"],
+      "loot": "rovenfall:rift_warden_loot"
+    }
+  ],
+  "mutations": [
+    {
+      "id": "rovenfall:volatile",
+      "translation_key": "mutation.rovenfall.volatile",
+      "eligible_entity_types": ["minecraft:wolf", "minecraft:silverfish", "minecraft:zombie"],
+      "attributes": [
+        {
+          "attribute": "minecraft:max_health",
+          "operation": "multiply_total",
+          "amount": 0.5
+        },
+        {
+          "attribute": "minecraft:attack_damage",
+          "operation": "multiply_total",
+          "amount": 0.25
+        }
+      ],
+      "behavior_modifiers": ["rovenfall:death_burst"],
+      "marker_translation_key": "mutation_marker.rovenfall.volatile",
+      "spawn": {
+        "dimension": "rovenfall:wilderness",
+        "chance_per_million": 15000,
+        "minimum_y": -64,
+        "maximum_y": 320
+      },
+      "reward_multiplier_percent": 175,
+      "bonus_loot": "rovenfall:volatile_loot"
+    }
+  ],
+  "arenas": [
+    {
+      "id": "rovenfall:rift_warden_arena",
+      "dimension": "rovenfall:wilderness",
+      "protection_radius": 48,
+      "leash_radius": 64,
+      "reset_timeout_ticks": 2400
+    }
+  ],
+  "contribution_rules": [
+    {
+      "id": "rovenfall:rift_warden_contribution",
+      "minimum_points": 50,
+      "minimum_share_basis_points": 500,
+      "maximum_contributors": 50
+    }
+  ],
+  "loot": [
+    {
+      "id": "rovenfall:grove_stalker_loot",
+      "loot_table": "minecraft:entities/wolf",
+      "rolls": 1,
+      "currency": 8,
+      "experience": 12
+    },
+    {
+      "id": "rovenfall:orebound_beetle_loot",
+      "loot_table": "minecraft:entities/silverfish",
+      "rolls": 1,
+      "currency": 7,
+      "experience": 10
+    },
+    {
+      "id": "rovenfall:volatile_loot",
+      "loot_table": "minecraft:empty",
+      "rolls": 1,
+      "currency": 5,
+      "experience": 5
+    },
+    {
+      "id": "rovenfall:rift_warden_loot",
+      "loot_table": "minecraft:entities/iron_golem",
+      "rolls": 3,
+      "currency": 250,
+      "experience": 500
+    }
+  ],
+  "bosses": [
+    {
+      "id": "rovenfall:rift_warden",
+      "translation_key": "boss.rovenfall.rift_warden",
+      "mob": "rovenfall:rift_warden_vessel",
+      "arena": "rovenfall:rift_warden_arena",
+      "contribution_rule": "rovenfall:rift_warden_contribution",
+      "loot": "rovenfall:rift_warden_loot",
+      "reward_cooldown_ticks": 72000,
+      "phases": [
+        {
+          "id": "rovenfall:rift_warden_phase_one",
+          "translation_key": "boss_phase.rovenfall.rift_warden.one",
+          "start_health_percent": 100,
+          "patterns": [
+            {
+              "id": "rovenfall:rift_warden_sweep",
+              "translation_key": "boss_pattern.rovenfall.rift_warden.sweep",
+              "type": "rovenfall:melee_sweep",
+              "telegraph_ticks": 20,
+              "duration_ticks": 30,
+              "cooldown_ticks": 80,
+              "weight": 3
+            },
+            {
+              "id": "rovenfall:rift_warden_barrage",
+              "translation_key": "boss_pattern.rovenfall.rift_warden.barrage",
+              "type": "rovenfall:projectile_barrage",
+              "telegraph_ticks": 30,
+              "duration_ticks": 80,
+              "cooldown_ticks": 120,
+              "weight": 2
+            }
+          ]
+        },
+        {
+          "id": "rovenfall:rift_warden_phase_two",
+          "translation_key": "boss_phase.rovenfall.rift_warden.two",
+          "start_health_percent": 50,
+          "patterns": [
+            {
+              "id": "rovenfall:rift_warden_shockwave",
+              "translation_key": "boss_pattern.rovenfall.rift_warden.shockwave",
+              "type": "rovenfall:shockwave",
+              "telegraph_ticks": 35,
+              "duration_ticks": 20,
+              "cooldown_ticks": 100,
+              "weight": 3
+            },
+            {
+              "id": "rovenfall:rift_warden_summon",
+              "translation_key": "boss_pattern.rovenfall.rift_warden.summon",
+              "type": "rovenfall:summon_minions",
+              "telegraph_ticks": 40,
+              "duration_ticks": 60,
+              "cooldown_ticks": 180,
+              "weight": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

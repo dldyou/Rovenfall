@@ -35,7 +35,19 @@ final class LocalizationCatalogTest {
             "command.rovenfall.claim.sell.success",
             "command.rovenfall.admin.audit.header",
             "gui.rovenfall.admin.audit.summary",
-            "gui.rovenfall.admin.audit.reason"
+            "gui.rovenfall.admin.audit.reason",
+            "mob.rovenfall.grove_stalker",
+            "mob.rovenfall.orebound_beetle",
+            "mob.rovenfall.rift_warden_vessel",
+            "mutation.rovenfall.volatile",
+            "mutation_marker.rovenfall.volatile",
+            "boss.rovenfall.rift_warden",
+            "boss_phase.rovenfall.rift_warden.one",
+            "boss_phase.rovenfall.rift_warden.two",
+            "boss_pattern.rovenfall.rift_warden.sweep",
+            "boss_pattern.rovenfall.rift_warden.barrage",
+            "boss_pattern.rovenfall.rift_warden.shockwave",
+            "boss_pattern.rovenfall.rift_warden.summon"
     );
 
     @Test
