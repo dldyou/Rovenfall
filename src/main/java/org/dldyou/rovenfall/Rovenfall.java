@@ -84,6 +84,8 @@ import org.dldyou.rovenfall.mobs.MobContentReloadListener;
 import org.dldyou.rovenfall.mobs.MobContentCatalog;
 import org.dldyou.rovenfall.mobs.MobContentSnapshot;
 import org.dldyou.rovenfall.rpg.RpgDefinitionReloadListener;
+import org.dldyou.rovenfall.rpg.RpgPlayerSavedData;
+import org.dldyou.rovenfall.rpg.RpgPlayerStateService;
 import org.dldyou.rovenfall.rpg.SkillDefinition;
 import org.dldyou.rovenfall.world.ProtectedRegion;
 import org.dldyou.rovenfall.world.PortalDefinition;
@@ -164,6 +166,28 @@ public final class Rovenfall {
                 var active = snapshot.skill(id("power_strike")).orElseThrow();
                 helper.assertTrue(active.kind() == SkillDefinition.Kind.ACTIVE && active.cooldownTicks().isPresent(),
                         "Active skill metadata was not preserved");
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("rpg_player_state_persistence"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var state = RpgPlayerSavedData.get(server);
+                UUID playerId = UUID.randomUUID();
+                var result = RpgPlayerStateService.awardActivityXp(
+                        state, RpgDefinitionReloadListener.snapshot(server), playerId,
+                        Identifier.fromNamespaceAndPath(MOD_ID, "combat"), 25, "gametest", 1);
+                helper.assertTrue(result.status() == RpgPlayerStateService.Status.SUCCESS,
+                        "RPG activity XP was not committed");
+                var encoded = RpgPlayerSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow();
+                var decoded = RpgPlayerSavedData.CODEC.parse(NbtOps.INSTANCE, encoded).getOrThrow();
+                helper.assertTrue(decoded.state(playerId).activityXp().getOrDefault(
+                        Identifier.fromNamespaceAndPath(MOD_ID, "combat"), 0L) == 25,
+                        "RPG player state did not survive the persistence round trip");
+                helper.assertTrue(decoded.snapshot().player(playerId).isPresent(),
+                        "RPG player state snapshot did not expose the player");
                 helper.succeed();
             }
         });
