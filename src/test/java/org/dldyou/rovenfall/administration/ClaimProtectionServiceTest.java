@@ -12,6 +12,8 @@ import net.minecraft.world.level.Level;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimRole;
 import org.dldyou.rovenfall.claims.ClaimSettings;
+import org.dldyou.rovenfall.world.ProtectedRegion;
+import org.dldyou.rovenfall.world.WorldTopology;
 import org.junit.jupiter.api.Test;
 
 final class ClaimProtectionServiceTest {
@@ -110,6 +112,55 @@ final class ClaimProtectionServiceTest {
                 ClaimProtectionService.Action.BUILD, denied, 1_500));
         assertTrue(ClaimProtectionService.auditDenied(state, visitor, CLAIM,
                 ClaimProtectionService.Action.BUILD, denied, 2_000));
+    }
+
+    @Test
+    void wildernessIsMutableExceptForIndexedAdministratorRegions() {
+        PlatformSavedData state = new PlatformSavedData();
+        UUID owner = id(250);
+        UUID visitor = id(251);
+        Identifier portal = Identifier.fromNamespaceAndPath("rovenfall", "wilderness_portal_ring");
+        assertEquals(ProtectedRegionService.Status.SUCCESS, ProtectedRegionService.create(
+                state,
+                owner,
+                true,
+                portal,
+                new ProtectedRegion(owner, WorldTopology.WILDERNESS, 5, 5, 6, 6),
+                "protect arrival",
+                1_000,
+                id(252)).status());
+
+        ClaimKey ordinary = new ClaimKey(WorldTopology.WILDERNESS, 4, 5);
+        ClaimKey protectedPortal = new ClaimKey(WorldTopology.WILDERNESS, 5, 5);
+        assertTrue(decision(state, visitor, ordinary, ClaimProtectionService.Action.BUILD, false).allowed());
+        assertFalse(decision(state, visitor, protectedPortal, ClaimProtectionService.Action.BUILD, false).allowed());
+        assertTrue(decision(state, visitor, protectedPortal, ClaimProtectionService.Action.ENTRY, false).allowed());
+        assertTrue(decision(state, owner, protectedPortal, ClaimProtectionService.Action.BUILD, true).allowed());
+        assertTrue(ClaimProtectionService.environmentMayModify(
+                state, WorldTopology.HUB, SPAWN, 2, ordinary, ordinary));
+        assertFalse(ClaimProtectionService.environmentMayModify(
+                state, WorldTopology.HUB, SPAWN, 2, ordinary, protectedPortal));
+    }
+
+    @Test
+    void administratorRegionOverridesAnExistingPlayerClaim() {
+        UUID claimOwner = id(270);
+        UUID administrator = id(271);
+        PlatformSavedData state = claimed(claimOwner, CLAIM, 270);
+        assertTrue(decision(state, claimOwner, CLAIM, ClaimProtectionService.Action.BUILD, false).allowed());
+        assertEquals(ProtectedRegionService.Status.SUCCESS, ProtectedRegionService.create(
+                state,
+                administrator,
+                true,
+                Identifier.fromNamespaceAndPath("rovenfall", "claimed_road"),
+                new ProtectedRegion(administrator, CLAIM.dimension(),
+                        CLAIM.chunkX(), CLAIM.chunkZ(), CLAIM.chunkX(), CLAIM.chunkZ()),
+                "reserve road",
+                10_000,
+                id(272)).status());
+
+        assertFalse(decision(state, claimOwner, CLAIM, ClaimProtectionService.Action.BUILD, false).allowed());
+        assertTrue(decision(state, administrator, CLAIM, ClaimProtectionService.Action.BUILD, true).allowed());
     }
 
     @Test

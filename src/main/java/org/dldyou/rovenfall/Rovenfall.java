@@ -1,5 +1,7 @@
 package org.dldyou.rovenfall;
 
+import com.google.gson.JsonParser;
+import com.mojang.serialization.JsonOps;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -16,6 +18,7 @@ import net.minecraft.nbt.NbtOps;
 import net.minecraft.gametest.framework.TestData;
 import net.minecraft.gametest.framework.TestEnvironmentDefinition;
 import net.minecraft.resources.Identifier;
+import net.minecraft.resources.RegistryOps;
 import net.minecraft.world.level.Explosion;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.ServerExplosion;
@@ -31,6 +34,7 @@ import net.minecraft.world.level.block.DispenserBlock;
 import net.minecraft.world.level.block.entity.DispenserBlockEntity;
 import net.minecraft.world.level.block.piston.PistonBaseBlock;
 import net.minecraft.world.level.block.state.properties.ChestType;
+import net.minecraft.world.level.dimension.LevelStem;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
@@ -64,6 +68,7 @@ import org.dldyou.rovenfall.administration.ClaimManagementService;
 import org.dldyou.rovenfall.administration.ClaimPurchaseService;
 import org.dldyou.rovenfall.administration.ClaimProtectionEvents;
 import org.dldyou.rovenfall.administration.ClaimProtectionService;
+import org.dldyou.rovenfall.administration.ProtectedRegionService;
 import org.dldyou.rovenfall.claims.ClaimConfig;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimRole;
@@ -76,6 +81,8 @@ import org.dldyou.rovenfall.mobs.MobContentCatalog;
 import org.dldyou.rovenfall.mobs.MobContentSnapshot;
 import org.dldyou.rovenfall.rpg.RpgDefinitionReloadListener;
 import org.dldyou.rovenfall.rpg.SkillDefinition;
+import org.dldyou.rovenfall.world.ProtectedRegion;
+import org.dldyou.rovenfall.world.WorldTopology;
 
 @Mod(Rovenfall.MOD_ID)
 public final class Rovenfall {
@@ -553,6 +560,122 @@ public final class Rovenfall {
                         "Owner explosion was removed from the owner's claim");
                 helper.assertTrue(!affectedBlocks.contains(crossOwnerTarget),
                         "Owner explosion leaked into a different owner's claim");
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("world_topology_and_protected_regions"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var level = helper.getLevel();
+                var server = level.getServer();
+                var state = PlatformSavedData.get(server);
+                helper.assertTrue(server.getLevel(WorldTopology.HUB) == server.overworld(),
+                        "Hub identity did not resolve to the permanent Overworld");
+                var wildernessResource = server.getResourceManager().getResource(
+                        Identifier.fromNamespaceAndPath(MOD_ID, "dimension/wilderness.json")).orElse(null);
+                helper.assertTrue(wildernessResource != null,
+                        "The rovenfall:wilderness dimension data was not shipped");
+                try (var reader = wildernessResource.openAsReader()) {
+                    LevelStem.CODEC.parse(
+                            RegistryOps.create(JsonOps.INSTANCE, level.registryAccess()),
+                            JsonParser.parseReader(reader)).getOrThrow();
+                } catch (java.io.IOException exception) {
+                    throw new AssertionError("Could not read the Wilderness dimension data", exception);
+                }
+
+                int chunkX = 6_000;
+                int chunkZ = 6_000;
+                ClaimKey portalKey = new ClaimKey(WorldTopology.HUB, chunkX, chunkZ);
+                while (state.isProtectedRegion(portalKey) || state.claim(portalKey).isPresent()) {
+                    chunkX += 2;
+                    portalKey = new ClaimKey(WorldTopology.HUB, chunkX, chunkZ);
+                }
+                Identifier regionId = id("gametest_portal_ring_" + UUID.randomUUID());
+                long timestamp = System.currentTimeMillis();
+                var created = ProtectedRegionService.create(
+                        state,
+                        AdministrationService.SYSTEM_ACTOR,
+                        true,
+                        regionId,
+                        new ProtectedRegion(
+                                AdministrationService.SYSTEM_ACTOR,
+                                WorldTopology.HUB,
+                                portalKey.chunkX(),
+                                portalKey.chunkZ(),
+                                portalKey.chunkX(),
+                                portalKey.chunkZ()),
+                        "gametest portal ring",
+                        timestamp,
+                        UUID.randomUUID());
+                helper.assertTrue(created.status() == ProtectedRegionService.Status.SUCCESS,
+                        "Portal-ring protected region was not created");
+
+                var visitor = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                BlockPos portalPosition = new BlockPos(
+                        (portalKey.chunkX() << 4) + 8, 70, (portalKey.chunkZ() << 4) + 8);
+                var portalBreak = new BreakBlockEvent(
+                        level, portalPosition, level.getBlockState(portalPosition), visitor);
+                NeoForge.EVENT_BUS.post(portalBreak);
+                helper.assertTrue(portalBreak.isCanceled(),
+                        "Visitor block destruction was allowed in a protected portal ring");
+
+                var affectedBlocks = new ArrayList<>(List.of(portalPosition));
+                var explosion = new ServerExplosion(
+                        level, visitor, null, null, Vec3.atCenterOf(portalPosition), 4.0F, false,
+                        Explosion.BlockInteraction.DESTROY);
+                NeoForge.EVENT_BUS.post(new ExplosionEvent.Detonate(
+                        level, explosion, new ArrayList<>(), affectedBlocks));
+                helper.assertTrue(affectedBlocks.isEmpty(),
+                        "Explosion block damage was allowed in a protected portal ring");
+
+                ClaimKey wildernessGround = new ClaimKey(WorldTopology.WILDERNESS, 20, 20);
+                helper.assertTrue(ClaimProtectionService.evaluate(
+                        state,
+                        visitor.getUUID(),
+                        false,
+                        WorldTopology.HUB,
+                        server.overworld().getRespawnData().pos(),
+                        ClaimConfig.protectedSpawnRadiusChunks(),
+                        wildernessGround,
+                        ClaimProtectionService.Action.BUILD).allowed(),
+                        "Ordinary Wilderness gathering/building was denied");
+                var wildernessClaim = ClaimPurchaseService.purchase(
+                        state,
+                        visitor.getUUID(),
+                        WorldTopology.HUB,
+                        WorldTopology.WILDERNESS,
+                        wildernessGround.auditPosition(),
+                        ignored -> true,
+                        ignored -> false,
+                        1_000,
+                        0,
+                        64,
+                        timestamp + 1,
+                        UUID.randomUUID());
+                helper.assertTrue(wildernessClaim.status() == ClaimPurchaseService.Status.NOT_IN_HUB,
+                        "A player claim was allowed in the Wilderness");
+
+                var loaded = PlatformSavedData.CODEC.parse(
+                        NbtOps.INSTANCE,
+                        PlatformSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow()).getOrThrow();
+                helper.assertTrue(loaded.isProtectedRegion(portalKey),
+                        "Protected region index was not rebuilt after persistence round-trip");
+                helper.assertTrue(loaded.auditPage(0, 10).entries().stream()
+                                .anyMatch(entry -> entry.target().equals(regionId.toString())),
+                        "Protected region mutation audit did not survive persistence");
+
+                var deleted = ProtectedRegionService.delete(
+                        state,
+                        AdministrationService.SYSTEM_ACTOR,
+                        true,
+                        regionId,
+                        "gametest cleanup",
+                        timestamp + 2_000,
+                        UUID.randomUUID());
+                helper.assertTrue(deleted.status() == ProtectedRegionService.Status.SUCCESS,
+                        "Portal-ring protected region cleanup failed");
                 helper.succeed();
             }
         });

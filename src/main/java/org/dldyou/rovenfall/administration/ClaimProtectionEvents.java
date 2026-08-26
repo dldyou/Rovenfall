@@ -53,6 +53,7 @@ import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import org.dldyou.rovenfall.claims.ClaimConfig;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimRole;
+import org.dldyou.rovenfall.world.WorldTopology;
 
 public final class ClaimProtectionEvents {
     private static final long FEEDBACK_INTERVAL_MILLIS = 1_000L;
@@ -571,7 +572,7 @@ public final class ClaimProtectionEvents {
                 state,
                 player.getUUID(),
                 nativeOverride,
-                hub.dimension(),
+                WorldTopology.HUB,
                 hub.getRespawnData().pos(),
                 ClaimConfig.protectedSpawnRadiusChunks(),
                 key,

@@ -192,5 +192,16 @@
   "message.rovenfall.claim.denied.build": "ここではブロックを設置または破壊できません。",
   "message.rovenfall.claim.denied.interact": "ここではブロックやコンテナを使用できません。",
   "message.rovenfall.claim.denied.entity": "ここではエンティティと対話できません。",
-  "message.rovenfall.claim.denied.entry": "土地の所有者が立ち入りを制限しています。"
+  "message.rovenfall.claim.denied.entry": "土地の所有者が立ち入りを制限しています。",
+  "command.rovenfall.admin.region.create.success": "保護地域 %s を作成しました。",
+  "command.rovenfall.admin.region.edit.success": "保護地域 %s を更新しました。",
+  "command.rovenfall.admin.region.delete.success": "保護地域 %s を削除しました。",
+  "command.rovenfall.admin.region.info": "%1$s: %2$s のチャンク %3$s,%4$s ～ %5$s,%6$s（管理者 %7$s）",
+  "command.rovenfall.admin.region.list.header": "保護地域: %1$s 件（%2$s/%3$s ページ）",
+  "command.rovenfall.admin.region.list.entry": "%1$s — %2$s のチャンク %3$s,%4$s ～ %5$s,%6$s",
+  "command.rovenfall.admin.region.error.invalid_request": "保護地域のリクエストが無効です。",
+  "command.rovenfall.admin.region.error.unauthorized": "オーナー管理者のみ保護地域を変更できます。",
+  "command.rovenfall.admin.region.error.already_exists": "その ID の保護地域はすでに存在します。",
+  "command.rovenfall.admin.region.error.not_found": "その ID の保護地域は存在しません。",
+  "command.rovenfall.admin.region.error.limit": "保護地域の件数またはインデックス面積の上限を超えます。"
 }

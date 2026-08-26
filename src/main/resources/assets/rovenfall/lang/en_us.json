@@ -192,5 +192,16 @@
   "message.rovenfall.claim.denied.build": "You cannot place or break blocks here.",
   "message.rovenfall.claim.denied.interact": "You cannot use blocks or containers here.",
   "message.rovenfall.claim.denied.entity": "You cannot interact with entities here.",
-  "message.rovenfall.claim.denied.entry": "The owner has restricted entry to this land."
+  "message.rovenfall.claim.denied.entry": "The owner has restricted entry to this land.",
+  "command.rovenfall.admin.region.create.success": "Created protected region %s.",
+  "command.rovenfall.admin.region.edit.success": "Updated protected region %s.",
+  "command.rovenfall.admin.region.delete.success": "Deleted protected region %s.",
+  "command.rovenfall.admin.region.info": "%1$s: %2$s chunks %3$s,%4$s through %5$s,%6$s (administrator %7$s)",
+  "command.rovenfall.admin.region.list.header": "Protected regions: %1$s (page %2$s/%3$s)",
+  "command.rovenfall.admin.region.list.entry": "%1$s — %2$s chunks %3$s,%4$s through %5$s,%6$s",
+  "command.rovenfall.admin.region.error.invalid_request": "The protected-region request is invalid.",
+  "command.rovenfall.admin.region.error.unauthorized": "Only an owner administrator can change protected regions.",
+  "command.rovenfall.admin.region.error.already_exists": "A protected region already uses that ID.",
+  "command.rovenfall.admin.region.error.not_found": "No protected region uses that ID.",
+  "command.rovenfall.admin.region.error.limit": "The protected-region count or indexed area limit would be exceeded."
 }

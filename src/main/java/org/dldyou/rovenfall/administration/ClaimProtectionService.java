@@ -31,13 +31,18 @@ public final class ClaimProtectionService {
                 || action == null || protectedSpawnRadiusChunks < 0 || protectedSpawnRadiusChunks > 64) {
             return new Decision(false, Reason.INVALID_REQUEST, ClaimRole.VISITOR, Optional.empty());
         }
-        if (!key.dimension().equals(hubDimension)) {
-            return new Decision(true, Reason.OUTSIDE_HUB, ClaimRole.VISITOR, Optional.empty());
-        }
         Optional<Claim> retained = state.claim(key);
         ClaimRole role = retained.map(claim -> claim.roleOf(actorId)).orElse(ClaimRole.VISITOR);
         if (administratorOverride || hasClaimAdministratorRole(state, actorId)) {
             return new Decision(true, Reason.ADMINISTRATOR_OVERRIDE, role, retained);
+        }
+        if (state.isProtectedRegion(key)) {
+            return action == Action.ENTRY
+                    ? new Decision(true, Reason.PROTECTED_PUBLIC_ENTRY, role, retained)
+                    : new Decision(false, Reason.PROTECTED_REGION, role, retained);
+        }
+        if (!key.dimension().equals(hubDimension)) {
+            return new Decision(true, Reason.OUTSIDE_HUB, ClaimRole.VISITOR, Optional.empty());
         }
         if (ClaimRegionPolicy.isProtectedHubRegion(
                 key, hubDimension, hubSpawn, protectedSpawnRadiusChunks)) {
@@ -77,6 +82,9 @@ public final class ClaimProtectionService {
             ClaimKey target) {
         if (state == null || hubDimension == null || hubSpawn == null || source == null || target == null
                 || protectedSpawnRadiusChunks < 0 || protectedSpawnRadiusChunks > 64) {
+            return false;
+        }
+        if (state.isProtectedRegion(target)) {
             return false;
         }
         if (!target.dimension().equals(hubDimension)) {
