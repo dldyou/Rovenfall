@@ -1,0 +1,11 @@
+{
+  "translation_key": "skill.rovenfall.power_strike",
+  "career": "rovenfall:warrior",
+  "kind": "active",
+  "max_rank": 5,
+  "point_cost": 2,
+  "prerequisites": [
+    {"skill": "rovenfall:sturdy_body", "rank": 2}
+  ],
+  "cooldown_ticks": 160
+}
