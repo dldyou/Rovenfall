@@ -122,7 +122,7 @@ public final class ClaimPurchaseService {
         List<EconomyAlert> alerts = EconomyMonitoringService.evaluate(
                 state, transactionId, receipt, EconomyConfig.alertThresholds());
         state.commitClaimPurchase(
-                playerId, afterBalance, key, new Claim(playerId), transactionId, timestampEpochMillis,
+                playerId, afterBalance, key, new Claim(playerId, purchasePrice), transactionId, timestampEpochMillis,
                 receipt, alerts, auditEntry(
                         timestampEpochMillis, playerId, PURCHASE, key, playerPosition,
                         "unowned;balance=" + beforeBalance,

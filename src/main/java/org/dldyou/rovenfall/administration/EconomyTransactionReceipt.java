@@ -105,6 +105,10 @@ public record EconomyTransactionReceipt(
             if (value.amount < 1 || value.claim.isEmpty()) {
                 return DataResult.error(() -> "Claim purchase receipt is incomplete");
             }
+        } else if (value.kind == Kind.CLAIM_SALE) {
+            if (value.claim.isEmpty()) {
+                return DataResult.error(() -> "Claim sale receipt is incomplete");
+            }
         } else if (value.claim.isPresent()) {
             return DataResult.error(() -> "Non-claim transaction receipt contains claim evidence");
         }
@@ -129,6 +133,7 @@ public record EconomyTransactionReceipt(
         PURCHASE("purchase"),
         SALE("sale"),
         CLAIM_PURCHASE("claim_purchase"),
+        CLAIM_SALE("claim_sale"),
         REVERSAL("reversal");
 
         static final Codec<Kind> CODEC = StringRepresentable.fromEnum(Kind::values);

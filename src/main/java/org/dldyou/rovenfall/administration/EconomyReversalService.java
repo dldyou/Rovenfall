@@ -96,6 +96,7 @@ public final class EconomyReversalService {
         if (original == null || !state.hasTransaction(originalTransactionId, timestampEpochMillis)
                 || original.kind() == EconomyTransactionReceipt.Kind.ACCOUNT_CREATE
                 || original.kind() == EconomyTransactionReceipt.Kind.CLAIM_PURCHASE
+                || original.kind() == EconomyTransactionReceipt.Kind.CLAIM_SALE
                 || original.kind() == EconomyTransactionReceipt.Kind.REVERSAL
                 || original.invalidatedByRestore().isPresent()) {
             return denied(state, actorId, originalTransactionId, reversalTransactionId,

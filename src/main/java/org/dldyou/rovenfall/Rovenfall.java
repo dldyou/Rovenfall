@@ -30,9 +30,12 @@ import org.dldyou.rovenfall.administration.PlayerRecordService;
 import org.dldyou.rovenfall.administration.RovenfallCommands;
 import org.dldyou.rovenfall.administration.ShopInstanceService;
 import org.dldyou.rovenfall.administration.ShopTradeService;
+import org.dldyou.rovenfall.administration.ClaimManagementService;
 import org.dldyou.rovenfall.administration.ClaimPurchaseService;
 import org.dldyou.rovenfall.claims.ClaimConfig;
 import org.dldyou.rovenfall.claims.ClaimKey;
+import org.dldyou.rovenfall.claims.ClaimRole;
+import org.dldyou.rovenfall.claims.ClaimSettings;
 import org.dldyou.rovenfall.definition.TestDefinitionReloadListener;
 import org.dldyou.rovenfall.economy.ShopTemplateReloadListener;
 import org.dldyou.rovenfall.economy.ShopInstance;
@@ -114,6 +117,73 @@ public final class Rovenfall {
                         "Claim ownership did not survive persistence");
                 helper.assertTrue(decoded.economyReceipt(transactionId).orElseThrow().claim().equals(Optional.of(key)),
                         "Claim transaction evidence did not survive persistence");
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("claim_management_atomicity"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var state = PlatformSavedData.get(helper.getLevel().getServer());
+                var owner = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                UUID recipientId = UUID.randomUUID();
+                UUID trustedId = UUID.randomUUID();
+                int chunkX = 2_000;
+                int chunkZ = 2_000;
+                ClaimKey key = new ClaimKey(owner.level().dimension(), chunkX, chunkZ);
+                while (state.claim(key).isPresent()) {
+                    key = new ClaimKey(owner.level().dimension(), ++chunkX, chunkZ);
+                }
+                long timestamp = System.currentTimeMillis();
+                helper.assertTrue(EconomyService.award(
+                        state, owner.getUUID(), 2_000, "gametest claim owner seed", timestamp,
+                        UUID.randomUUID(), 0, Long.MAX_VALUE).status() == EconomyService.TransactionStatus.SUCCESS,
+                        "Claim management owner account setup failed");
+                helper.assertTrue(EconomyService.award(
+                        state, recipientId, 1, "gametest claim recipient seed", timestamp + 1,
+                        UUID.randomUUID(), 0, Long.MAX_VALUE).status() == EconomyService.TransactionStatus.SUCCESS,
+                        "Claim management recipient account setup failed");
+                var purchase = ClaimPurchaseService.purchase(
+                        state, owner.getUUID(), owner.level().dimension(), owner.level().dimension(),
+                        new BlockPos((chunkX << 4) + 8, 70, (chunkZ << 4) + 8), ignored -> true, ignored -> false,
+                        1_000, 250, 4, timestamp + 2, UUID.randomUUID());
+                helper.assertTrue(purchase.status() == ClaimPurchaseService.Status.SUCCESS,
+                        "Claim management test purchase failed");
+
+                UUID roleTransaction = UUID.randomUUID();
+                helper.assertTrue(ClaimManagementService.setRole(
+                        state, owner.getUUID(), false, key, trustedId, ClaimRole.BUILDER,
+                        "gametest role", timestamp + 3, roleTransaction).status()
+                        == ClaimManagementService.Status.SUCCESS, "Claim role was not committed");
+                helper.assertTrue(ClaimManagementService.setSettings(
+                        state, owner.getUUID(), false, key, new ClaimSettings(true, false),
+                        "gametest settings", timestamp + 4, UUID.randomUUID()).status()
+                        == ClaimManagementService.Status.SUCCESS, "Claim settings were not committed");
+                helper.assertTrue(ClaimManagementService.offerTransfer(
+                        state, owner.getUUID(), key, recipientId, "gametest offer", timestamp + 5,
+                        UUID.randomUUID()).status() == ClaimManagementService.Status.SUCCESS,
+                        "Claim transfer offer was not committed");
+                helper.assertTrue(ClaimManagementService.acceptTransfer(
+                        state, recipientId, key, ignored -> false, 4, "gametest accept", timestamp + 6,
+                        UUID.randomUUID()).status() == ClaimManagementService.Status.SUCCESS,
+                        "Claim transfer acceptance was not committed");
+
+                UUID saleTransaction = UUID.randomUUID();
+                var sale = ClaimManagementService.sell(
+                        state, recipientId, key, 50, Long.MAX_VALUE, "gametest sale", timestamp + 7,
+                        saleTransaction);
+                helper.assertTrue(sale.status() == ClaimManagementService.Status.SUCCESS,
+                        "Claim sale was not committed");
+                helper.assertTrue(sale.amount() == 500 && sale.balance() == 501,
+                        "Claim sale did not use the stored purchase price");
+                var decoded = PlatformSavedData.CODEC.parse(NbtOps.INSTANCE,
+                        PlatformSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow()).getOrThrow();
+                helper.assertTrue(decoded.claim(key).isEmpty(), "Sold claim reappeared after persistence");
+                helper.assertTrue(decoded.claimReceipt(roleTransaction).isPresent(),
+                        "Claim mutation receipt did not survive persistence");
+                helper.assertTrue(decoded.economyReceipt(saleTransaction).orElseThrow().claim().equals(Optional.of(key)),
+                        "Claim sale evidence did not survive persistence");
                 helper.succeed();
             }
         });

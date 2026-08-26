@@ -25,6 +25,10 @@ public record ClaimKey(ResourceKey<Level> dimension, int chunkX, int chunkZ) {
         return dimension.identifier() + "@" + chunkX + "," + chunkZ;
     }
 
+    public BlockPos auditPosition() {
+        return new BlockPos((chunkX << 4) + 8, 0, (chunkZ << 4) + 8);
+    }
+
     private static DataResult<ClaimKey> validate(ClaimKey key) {
         return key == null || key.dimension == null
                 ? DataResult.error(() -> "Claim key is missing a dimension")
