@@ -43,6 +43,7 @@ public final class PlayerDashboardMenu extends ChestMenu {
     enum Action {
         NONE,
         OPEN_ECONOMY,
+        OPEN_SHOPS,
         OPEN_CLAIMS,
         OPEN_RPG,
         BACK,
@@ -91,6 +92,10 @@ public final class PlayerDashboardMenu extends ChestMenu {
         lastHandledGameTime = gameTime;
         switch (action) {
             case OPEN_ECONOMY -> page = Page.ECONOMY;
+            case OPEN_SHOPS -> {
+                PlayerShopMenu.open(viewer);
+                return;
+            }
             case OPEN_CLAIMS -> page = Page.CLAIMS;
             case OPEN_RPG -> page = Page.RPG;
             case BACK -> page = Page.HOME;
@@ -128,7 +133,7 @@ public final class PlayerDashboardMenu extends ChestMenu {
                 case 16 -> Action.OPEN_RPG;
                 default -> Action.NONE;
             };
-            case ECONOMY -> slot == 15 ? Action.UNAVAILABLE : Action.NONE;
+            case ECONOMY -> slot == 15 ? Action.OPEN_SHOPS : Action.NONE;
             case CLAIMS, RPG -> slot == 24 ? Action.UNAVAILABLE : Action.NONE;
         };
     }
@@ -239,7 +244,7 @@ public final class PlayerDashboardMenu extends ChestMenu {
         dashboard.setItem(15, icon(
                 Items.CHEST,
                 Component.translatable("gui.rovenfall.player.shop"),
-                Component.translatable("gui.rovenfall.player.planned", "#78")));
+                Component.translatable("gui.rovenfall.player.click")));
     }
 
     private void renderClaims(DashboardSnapshot snapshot) {
@@ -349,7 +354,7 @@ public final class PlayerDashboardMenu extends ChestMenu {
                 .orElseGet(() -> Component.literal(id.toString()));
     }
 
-    private static ItemStack icon(Item item, Component name, Component... lore) {
+    static ItemStack icon(Item item, Component name, Component... lore) {
         ItemStack stack = new ItemStack(item);
         stack.set(DataComponents.CUSTOM_NAME, name);
         stack.set(DataComponents.LORE, new ItemLore(List.of(lore).stream()

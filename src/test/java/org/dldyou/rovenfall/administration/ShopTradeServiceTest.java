@@ -260,6 +260,26 @@ final class ShopTradeServiceTest {
     }
 
     @Test
+    void accessibleShopListingUsesTheSameBindingBoundaryAsTrading() {
+        ShopInstance.Binding binding = new ShopInstance.Binding(Level.OVERWORLD, new BlockPos(10, 64, 10));
+        PlatformSavedData bound = stateWith(
+                offer(exactBread(4), 12, 6, ShopInstance.Stock.finite(10, 10)), Optional.of(binding), 100);
+
+        assertEquals(List.of(SHOP), ShopTradeService.accessibleShopIds(
+                bound, Level.OVERWORLD, Vec3.atCenterOf(binding.position())));
+        assertTrue(ShopTradeService.accessibleShopIds(
+                bound, Level.NETHER, Vec3.atCenterOf(binding.position())).isEmpty());
+        assertTrue(ShopTradeService.accessibleShopIds(
+                bound, Level.OVERWORLD, new Vec3(100, 64, 100)).isEmpty());
+        assertTrue(ShopTradeService.accessibleShopIds(
+                bound, Level.OVERWORLD, new Vec3(Double.NaN, 64, 10)).isEmpty());
+
+        PlatformSavedData unbound = stateWith(
+                offer(exactBread(4), 12, 6, ShopInstance.Stock.unlimitedStock()), Optional.empty(), 100);
+        assertEquals(List.of(SHOP), ShopTradeService.accessibleShopIds(unbound, Level.NETHER, Vec3.ZERO));
+    }
+
+    @Test
     void injectedInventoryFailureRestoresEveryChangedSlotAndDoesNotCommitStateOrRetryId() {
         ItemStack stack = exactBread(64);
         PlatformSavedData state = stateWith(
