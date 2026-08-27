@@ -35,6 +35,12 @@ public final class RpgSkillEvents {
                 attacker == null ? null : state.state(attacker.getUUID()),
                 target == null ? null : state.state(target.getUUID()),
                 event.getAmount());
+        changed = RpgActiveSkillRuntime.modifyDamage(
+                attacker,
+                event.getEntity(),
+                level.dimension().identifier(),
+                level.getGameTime(),
+                changed);
         if (Float.isFinite(changed) && changed >= 0 && changed != event.getAmount()) {
             event.setAmount(changed);
         }

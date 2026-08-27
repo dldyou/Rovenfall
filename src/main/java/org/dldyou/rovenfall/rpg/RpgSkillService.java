@@ -116,7 +116,8 @@ public final class RpgSkillService {
                         skillId, definition.pointCost(), timestamp, transactionId, source));
         RpgPlayerState candidate = new RpgPlayerState(
                 current.activityXp(), careers, current.activeCareer(), current.activeSkillSlots(), current.cooldowns(),
-                current.explorationDiscoveries(), CareerProgressionService.activityEvidence(current), careerEvidence);
+                current.explorationDiscoveries(), CareerProgressionService.activityEvidence(current), careerEvidence,
+                current.lastActiveSkillRequestId());
         boolean committed = state.commit(playerId, candidate);
         return new Result(committed ? Status.SUCCESS : Status.STATE_FULL, skillId, Optional.empty(), 0, 0,
                 committed ? currentRank + 1 : currentRank,
@@ -235,8 +236,12 @@ public final class RpgSkillService {
         RpgPlayerState candidate = new RpgPlayerState(
                 changed.activityXp(), changed.careers(), changed.activeCareer(), changed.activeSkillSlots(),
                 changed.cooldowns(), changed.explorationDiscoveries(),
-                CareerProgressionService.activityEvidence(changed), careerEvidence);
+                CareerProgressionService.activityEvidence(changed), careerEvidence,
+                changed.lastActiveSkillRequestId());
         boolean committed = state.commit(playerId, candidate);
+        if (committed) {
+            RpgActiveSkillRuntime.clear(playerId);
+        }
         return new Result(committed ? Status.SUCCESS : Status.STATE_FULL, plan.target(), Optional.empty(),
                 0, 0, 0, 0, committed);
     }
@@ -282,7 +287,7 @@ public final class RpgSkillService {
         return Optional.of(new RpgPlayerState(
                 current.activityXp(), careers, current.activeCareer(), slots, cooldowns,
                 current.explorationDiscoveries(), CareerProgressionService.activityEvidence(current),
-                CareerProgressionService.appendCareerEvidence(current)));
+                CareerProgressionService.appendCareerEvidence(current), current.lastActiveSkillRequestId()));
     }
 
     private static Map<Identifier, LearnedSkill> learnedSkills(

@@ -1,8 +1,10 @@
 package org.dldyou.rovenfall.rpg;
 
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -49,6 +51,28 @@ public final class RpgCommands {
                                         builder))
                                 .executes(context -> learn(
                                         context.getSource(), IdentifierArgument.getId(context, "skill")))))
+                .then(Commands.literal("bind")
+                        .then(Commands.argument("slot", IntegerArgumentType.integer(
+                                        1, RpgPlayerState.MAX_ACTIVE_SKILL_SLOTS))
+                                .then(Commands.argument("skill", IdentifierArgument.id())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(
+                                                RpgDefinitionReloadListener.snapshot(context.getSource().getServer())
+                                                        .skills().entrySet().stream()
+                                                        .filter(entry -> entry.getValue().kind()
+                                                                == SkillDefinition.Kind.ACTIVE)
+                                                        .map(entry -> entry.getKey().toString()),
+                                                builder))
+                                        .executes(context -> assignSlot(
+                                                context.getSource(),
+                                                IntegerArgumentType.getInteger(context, "slot") - 1,
+                                                Optional.of(IdentifierArgument.getId(context, "skill")))))))
+                .then(Commands.literal("unbind")
+                        .then(Commands.argument("slot", IntegerArgumentType.integer(
+                                        1, RpgPlayerState.MAX_ACTIVE_SKILL_SLOTS))
+                                .executes(context -> assignSlot(
+                                        context.getSource(),
+                                        IntegerArgumentType.getInteger(context, "slot") - 1,
+                                        Optional.empty()))))
                 .then(Commands.literal("reset")
                         .then(Commands.literal("branch")
                                 .then(Commands.argument("skill", IdentifierArgument.id())
@@ -174,6 +198,47 @@ public final class RpgCommands {
         }
         return failure(source, "command.rovenfall.skill.error.failed",
                 result.status().name().toLowerCase(java.util.Locale.ROOT));
+    }
+
+    private static int assignSlot(
+            CommandSourceStack source,
+            int slot,
+            Optional<Identifier> skill) throws CommandSyntaxException {
+        var player = source.getPlayerOrException();
+        var result = RpgActiveSkillService.assignSlot(
+                RpgPlayerSavedData.get(source.getServer()),
+                RpgDefinitionReloadListener.snapshot(source.getServer()),
+                player.getUUID(),
+                slot,
+                skill,
+                ActivityXpConfig.activeSkillSlots(),
+                Instant.now().toEpochMilli(),
+                UUID.randomUUID(),
+                "player_command");
+        if (result.status() == RpgActiveSkillService.Status.SUCCESS) {
+            RpgSkillNetwork.sync(player);
+            return skill.isPresent()
+                    ? success(source, "command.rovenfall.skill.bind.success",
+                            slot + 1, skillName(source, skill.orElseThrow()))
+                    : success(source, "command.rovenfall.skill.unbind.success", slot + 1);
+        }
+        return switch (result.status()) {
+            case INVALID_SLOT, INVALID_REQUEST -> failure(
+                    source, "command.rovenfall.skill.bind.error.slot", slot + 1,
+                    ActivityXpConfig.activeSkillSlots());
+            case UNKNOWN_SKILL -> failure(
+                    source, "command.rovenfall.skill.error.unknown", skill.orElse(null));
+            case SKILL_NOT_ACTIVE -> failure(source, "command.rovenfall.skill.bind.error.not_active");
+            case EFFECT_UNAVAILABLE -> failure(source, "command.rovenfall.skill.bind.error.effect");
+            case NOT_LEARNED -> failure(source, "command.rovenfall.skill.bind.error.not_learned");
+            case INACTIVE_CAREER -> failure(source, "command.rovenfall.skill.bind.error.career");
+            case NOTHING_BOUND -> failure(source, "command.rovenfall.skill.unbind.error.empty", slot + 1);
+            case READ_ONLY -> failure(source, "command.rovenfall.skill.error.read_only");
+            case DUPLICATE, STATE_FULL, STALE_DEFINITIONS, WRONG_DIMENSION,
+                    INVALID_TARGET, COOLDOWN -> failure(source, "command.rovenfall.skill.error.failed",
+                    result.status().name().toLowerCase(java.util.Locale.ROOT));
+            case SUCCESS -> 1;
+        };
     }
 
     private static Component careerName(CommandSourceStack source, Identifier careerId) {

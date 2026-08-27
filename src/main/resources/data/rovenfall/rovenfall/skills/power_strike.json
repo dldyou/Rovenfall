@@ -7,5 +7,12 @@
   "prerequisites": [
     {"skill": "rovenfall:sturdy_body", "rank": 2}
   ],
-  "cooldown_ticks": 160
+  "cooldown_ticks": 160,
+  "active_effect": {
+    "type": "damage_dealt",
+    "target": "living_entity",
+    "basis_points_per_rank": 2500,
+    "duration_ticks": 100,
+    "range": 6.0
+  }
 }

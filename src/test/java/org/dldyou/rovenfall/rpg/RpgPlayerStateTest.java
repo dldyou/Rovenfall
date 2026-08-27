@@ -36,12 +36,15 @@ final class RpgPlayerStateTest {
                 Set.of(Identifier.parse("minecraft:adventure/adventuring_time")),
                 List.of(new RpgPlayerState.ProgressionProvenance(
                         RpgPlayerState.ProgressionProvenance.Kind.ACTIVITY_XP,
-                        COMBAT, 500, 42, idUuid(10), "gametest")));
+                        COMBAT, 500, 42, idUuid(10), "gametest")),
+                List.of(),
+                19L);
 
         var encoded = RpgPlayerState.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow();
         assertEquals(encoded, RpgPlayerState.CODEC.encodeStart(NbtOps.INSTANCE, roundTrip(RpgPlayerState.CODEC, state)).getOrThrow());
         assertEquals(state, roundTrip(RpgPlayerState.CODEC, state));
         assertEquals(POWER, roundTrip(RpgPlayerState.CODEC, state).activeSkillSlots().get(3));
+        assertEquals(19L, roundTrip(RpgPlayerState.CODEC, state).lastActiveSkillRequestId());
     }
 
     @Test
@@ -61,6 +64,16 @@ final class RpgPlayerStateTest {
         assertEquals(RpgPlayerSavedData.CURRENT_SCHEMA_VERSION, migrated.schemaVersion());
         assertTrue(migrated.isWritable());
         assertEquals(state, migrated.state(player));
+
+        CompoundTag schemaOne = (CompoundTag) RpgPlayerSavedData.CODEC
+                .encodeStart(NbtOps.INSTANCE, root).getOrThrow();
+        schemaOne.putInt("schema_version", 1);
+        schemaOne.getListOrEmpty("players").getCompoundOrEmpty(0)
+                .getCompoundOrEmpty("state").remove("last_active_skill_request_id");
+        var migratedFromOne = RpgPlayerSavedData.CODEC.parse(NbtOps.INSTANCE, schemaOne).getOrThrow();
+        assertEquals(RpgPlayerSavedData.CURRENT_SCHEMA_VERSION, migratedFromOne.schemaVersion());
+        assertTrue(migratedFromOne.isWritable());
+        assertEquals(0L, migratedFromOne.state(player).lastActiveSkillRequestId());
 
         CompoundTag future = (CompoundTag) RpgPlayerSavedData.CODEC.encodeStart(NbtOps.INSTANCE, root).getOrThrow();
         future.putInt("schema_version", RpgPlayerSavedData.CURRENT_SCHEMA_VERSION + 1);

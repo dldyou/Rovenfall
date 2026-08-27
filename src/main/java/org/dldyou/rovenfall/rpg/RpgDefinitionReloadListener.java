@@ -17,6 +17,7 @@ import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.SimplePreparableReloadListener;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.neoforged.neoforge.resource.ListenerKey;
+import net.neoforged.neoforge.server.ServerLifecycleHooks;
 import org.dldyou.rovenfall.Rovenfall;
 import org.slf4j.Logger;
 
@@ -97,17 +98,42 @@ public final class RpgDefinitionReloadListener extends SimplePreparableReloadLis
     @Override
     protected void apply(RpgDefinitionSnapshot prepared, ResourceManager resourceManager, ProfilerFiller profiler) {
         store.install(prepared);
+        RpgActiveSkillRuntime.clearAll();
         LOGGER.info("Loaded {} activities, {} careers, and {} skills for Rovenfall RPG definitions",
                 prepared.activities().size(), prepared.careers().size(), prepared.skills().size());
+        MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+        if (server != null) {
+            RpgSkillNetwork.syncAll(server);
+        }
     }
 
     public RpgDefinitionSnapshot snapshot() {
         return store.current();
     }
 
+    public long revision() {
+        return store.revision();
+    }
+
+    RpgDefinitionStore.VersionedSnapshot versioned() {
+        return store.versioned();
+    }
+
     public static RpgDefinitionSnapshot snapshot(MinecraftServer server) {
         RpgDefinitionReloadListener listener = server.getServerResources().managers().getListener(KEY);
         return listener == null ? RpgDefinitionSnapshot.empty() : listener.snapshot();
+    }
+
+    public static long revision(MinecraftServer server) {
+        RpgDefinitionReloadListener listener = server.getServerResources().managers().getListener(KEY);
+        return listener == null ? 0 : listener.revision();
+    }
+
+    static RpgDefinitionStore.VersionedSnapshot versioned(MinecraftServer server) {
+        RpgDefinitionReloadListener listener = server.getServerResources().managers().getListener(KEY);
+        return listener == null
+                ? new RpgDefinitionStore.VersionedSnapshot(RpgDefinitionSnapshot.empty(), 0)
+                : listener.versioned();
     }
 
     @FunctionalInterface

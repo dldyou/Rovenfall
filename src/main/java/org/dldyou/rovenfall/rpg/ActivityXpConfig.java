@@ -15,6 +15,7 @@ public final class ActivityXpConfig {
     public static final int DEFAULT_COMBAT_TARGET_XP_CAP = 10;
     public static final long DEFAULT_BRANCH_SKILL_RESET_COST = 500L;
     public static final long DEFAULT_FULL_SKILL_RESET_COST = 1_000L;
+    public static final int DEFAULT_ACTIVE_SKILL_SLOTS = 4;
     public static final List<String> DEFAULT_EXPLORATION_ADVANCEMENTS = List.of(
             "minecraft:adventure/adventuring_time",
             "minecraft:nether/explore_nether");
@@ -26,6 +27,7 @@ public final class ActivityXpConfig {
     private static final ModConfigSpec.IntValue COMBAT_TARGET_XP_CAP;
     private static final ModConfigSpec.LongValue BRANCH_SKILL_RESET_COST;
     private static final ModConfigSpec.LongValue FULL_SKILL_RESET_COST;
+    private static final ModConfigSpec.IntValue ACTIVE_SKILL_SLOTS;
     private static final ModConfigSpec.ConfigValue<List<? extends String>> EXPLORATION_ADVANCEMENTS;
 
     static {
@@ -46,6 +48,9 @@ public final class ActivityXpConfig {
         FULL_SKILL_RESET_COST = builder.translation("config.rovenfall.rpg.skill_reset.full_cost")
                 .defineInRange("rpg.skill_reset.full_cost", DEFAULT_FULL_SKILL_RESET_COST, 1L,
                         RpgPlayerState.MAX_XP);
+        ACTIVE_SKILL_SLOTS = builder.translation("config.rovenfall.rpg.active_skill_slots")
+                .defineInRange("rpg.active_skill_slots", DEFAULT_ACTIVE_SKILL_SLOTS,
+                        1, RpgPlayerState.MAX_ACTIVE_SKILL_SLOTS);
         EXPLORATION_ADVANCEMENTS = builder.translation(
                         "config.rovenfall.rpg.activity_xp.exploration_advancements")
                 .defineListAllowEmpty("rpg.activity_xp.exploration_advancements", DEFAULT_EXPLORATION_ADVANCEMENTS,
@@ -96,6 +101,14 @@ public final class ActivityXpConfig {
             return mode == SkillResetPlan.Mode.FULL
                     ? DEFAULT_FULL_SKILL_RESET_COST
                     : DEFAULT_BRANCH_SKILL_RESET_COST;
+        }
+    }
+
+    public static int activeSkillSlots() {
+        try {
+            return ACTIVE_SKILL_SLOTS.get();
+        } catch (IllegalStateException ignored) {
+            return DEFAULT_ACTIVE_SKILL_SLOTS;
         }
     }
 

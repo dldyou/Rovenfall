@@ -67,7 +67,7 @@ public final class RpgPassiveSkillService {
         return result;
     }
 
-    private static Set<Identifier> activeLineage(
+    static Set<Identifier> activeLineage(
             Identifier activeCareer, RpgDefinitionSnapshot definitions) {
         Set<Identifier> result = new HashSet<>();
         ArrayDeque<Identifier> remaining = new ArrayDeque<>();
