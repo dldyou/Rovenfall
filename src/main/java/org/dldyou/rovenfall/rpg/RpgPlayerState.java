@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import net.minecraft.core.UUIDUtil;
 import net.minecraft.resources.Identifier;
 
 /** Immutable, server-owned progression for one player. */
@@ -19,6 +20,7 @@ public record RpgPlayerState(
         Map<Integer, Identifier> activeSkillSlots,
         Map<Identifier, Long> cooldowns,
         List<ProgressionProvenance> provenance) {
+    private static final UUID ZERO_UUID = new UUID(0L, 0L);
     public static final int MAX_ACTIVITIES = 128;
     public static final int MAX_CAREERS = 256;
     public static final int MAX_SKILLS = 1_024;
@@ -71,35 +73,53 @@ public record RpgPlayerState(
         provenance = List.copyOf(provenance);
     }
 
+    public boolean isValid() {
+        return validationError(this).isEmpty();
+    }
+
     private static DataResult<RpgPlayerState> validate(RpgPlayerState state) {
+        Optional<String> error = validationError(state);
+        return error.isEmpty()
+                ? DataResult.success(state)
+                : DataResult.error(error::orElseThrow);
+    }
+
+    private static Optional<String> validationError(RpgPlayerState state) {
         if (state.activityXp().size() > MAX_ACTIVITIES || state.careers().size() > MAX_CAREERS
                 || state.cooldowns().size() > MAX_COOLDOWNS || state.provenance().size() > MAX_PROVENANCE
                 || state.activeSkillSlots().size() > MAX_ACTIVE_SKILL_SLOTS) {
-            return DataResult.error(() -> "RPG player state exceeds a collection limit");
+            return Optional.of("RPG player state exceeds a collection limit");
         }
         if (state.activeCareer().isPresent() && !state.careers().containsKey(state.activeCareer().orElseThrow())) {
-            return DataResult.error(() -> "Active career is missing from career progress");
+            return Optional.of("Active career is missing from career progress");
         }
         Set<Identifier> slots = java.util.HashSet.newHashSet(state.activeSkillSlots().size());
-        if (!state.activeSkillSlots().values().stream().allMatch(slots::add)) {
-            return DataResult.error(() -> "Active skill slots contain a duplicate skill");
+        if (state.activeSkillSlots().entrySet().stream().anyMatch(entry ->
+                entry.getKey() < 0 || entry.getKey() >= MAX_ACTIVE_SKILL_SLOTS || !slots.add(entry.getValue()))) {
+            return Optional.of("Active skill slots are invalid or contain a duplicate skill");
         }
         for (Map.Entry<Identifier, Long> entry : state.activityXp().entrySet()) {
             if (entry.getValue() < 0 || entry.getValue() > MAX_XP) {
-                return DataResult.error(() -> "Activity XP is out of bounds");
+                return Optional.of("Activity XP is out of bounds");
+            }
+        }
+        for (CareerProgress progress : state.careers().values()) {
+            if (!progress.isValid()) {
+                return Optional.of("Career progress is out of bounds");
             }
         }
         for (Map.Entry<Identifier, Long> entry : state.cooldowns().entrySet()) {
             if (entry.getValue() < 0) {
-                return DataResult.error(() -> "Skill cooldown is out of bounds");
+                return Optional.of("Skill cooldown is out of bounds");
             }
         }
+        Set<UUID> transactions = java.util.HashSet.newHashSet(state.provenance().size());
         for (ProgressionProvenance entry : state.provenance()) {
-            if (entry.amount() < 0 || entry.amount() > MAX_XP || entry.timestamp() < 0) {
-                return DataResult.error(() -> "Progression provenance is out of bounds");
+            if (!entry.isValid() || !transactions.add(entry.transactionId())) {
+                return Optional.of("Progression provenance is invalid or contains a duplicate transaction");
             }
         }
-        return DataResult.success(state);
+        return Optional.empty();
     }
 
     private static DataResult<Map<Integer, Identifier>> activeSkillSlotsFromEntries(
@@ -181,25 +201,42 @@ public record RpgPlayerState(
         }
 
         private static DataResult<CareerProgress> validate(CareerProgress progress) {
-            if (progress.experience() < 0 || progress.experience() > MAX_XP
-                    || progress.rank() < 0 || progress.rank() > MAX_RANK
-                    || progress.skillPoints() < 0 || progress.skillPoints() > MAX_SKILL_POINTS
-                    || progress.learnedSkills().size() > MAX_SKILLS) {
-                return DataResult.error(() -> "Career progress is out of bounds");
-            }
-            return DataResult.success(progress);
+            return progress.isValid()
+                    ? DataResult.success(progress)
+                    : DataResult.error(() -> "Career progress is out of bounds");
+        }
+
+        boolean isValid() {
+            return experience >= 0 && experience <= MAX_XP
+                    && rank >= 0 && rank <= MAX_RANK
+                    && skillPoints >= 0 && skillPoints <= MAX_SKILL_POINTS
+                    && learnedSkills.size() <= MAX_SKILLS
+                    && learnedSkills.values().stream().allMatch(value -> value >= 1 && value <= MAX_SKILL_RANK);
         }
     }
 
     public record ProgressionProvenance(
-            Kind kind, Identifier target, long amount, long timestamp, String source) {
-        public static final Codec<ProgressionProvenance> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+            Kind kind, Identifier target, long amount, long timestamp, UUID transactionId, String source) {
+        public static final Codec<ProgressionProvenance> CODEC = RecordCodecBuilder.<ProgressionProvenance>create(instance -> instance.group(
                 Kind.CODEC.fieldOf("kind").forGetter(ProgressionProvenance::kind),
                 Identifier.CODEC.fieldOf("target").forGetter(ProgressionProvenance::target),
                 XP_CODEC.fieldOf("amount").forGetter(ProgressionProvenance::amount),
                 TICK_CODEC.fieldOf("timestamp").forGetter(ProgressionProvenance::timestamp),
+                UUIDUtil.STRING_CODEC.fieldOf("transaction").forGetter(ProgressionProvenance::transactionId),
                 Codec.string(1, 160).fieldOf("source").forGetter(ProgressionProvenance::source)
-        ).apply(instance, ProgressionProvenance::new));
+        ).apply(instance, ProgressionProvenance::new)).validate(ProgressionProvenance::validate);
+
+        boolean isValid() {
+            return kind != null && target != null && amount >= 0 && amount <= MAX_XP && timestamp >= 0
+                    && transactionId != null && !ZERO_UUID.equals(transactionId)
+                    && source != null && !source.isBlank() && source.length() <= 160;
+        }
+
+        private static DataResult<ProgressionProvenance> validate(ProgressionProvenance provenance) {
+            return provenance.isValid()
+                    ? DataResult.success(provenance)
+                    : DataResult.error(() -> "Progression provenance is invalid");
+        }
 
         public enum Kind implements net.minecraft.util.StringRepresentable {
             ACTIVITY_XP("activity_xp"), CAREER_XP("career_xp"), SKILL_UNLOCK("skill_unlock"), CAREER_PROMOTION("career_promotion");

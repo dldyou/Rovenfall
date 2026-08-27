@@ -7,7 +7,8 @@ economy root so a future wilderness reset cannot remove progression.
 The root is schema version 1 and contains at most 100,000 UUID-keyed player
 records. Each record stores activity XP, learned career progress, the active
 career, four indexed active skill slots, skill cooldown deadlines, and a bounded
-provenance trail. IDs are namespaced resource IDs; player names are never keys.
+provenance trail with unique transaction UUIDs. IDs are namespaced resource IDs;
+player names are never keys.
 
 All persisted maps use sorted entry lists. This gives deterministic NBT output
 while enforcing limits during decoding. XP, ranks, points, cooldowns, source

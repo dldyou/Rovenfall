@@ -18,6 +18,7 @@ import org.dldyou.rovenfall.Rovenfall;
 
 /** Persistent RPG state, deliberately separate from the platform/economy root. */
 public final class RpgPlayerSavedData extends SavedData {
+    private static final UUID ZERO_UUID = new UUID(0L, 0L);
     public static final int CURRENT_SCHEMA_VERSION = 1;
     public static final int MAX_PLAYERS = 100_000;
 
@@ -102,7 +103,7 @@ public final class RpgPlayerSavedData extends SavedData {
     }
 
     boolean commit(UUID playerId, RpgPlayerState state) {
-        if (!writable || playerId == null || state == null) {
+        if (!writable || playerId == null || ZERO_UUID.equals(playerId) || state == null || !state.isValid()) {
             return false;
         }
         RpgPlayerState previous = players.get(playerId);
@@ -121,7 +122,7 @@ public final class RpgPlayerSavedData extends SavedData {
             java.util.List<PlayerEntry> entries) {
         Map<UUID, RpgPlayerState> result = new LinkedHashMap<>();
         for (PlayerEntry entry : entries) {
-            if (entry.id().equals(new UUID(0L, 0L)) || result.putIfAbsent(entry.id(), entry.state()) != null) {
+            if (entry.id().equals(ZERO_UUID) || result.putIfAbsent(entry.id(), entry.state()) != null) {
                 return DataResult.error(() -> "Duplicate or zero RPG player ID " + entry.id());
             }
         }
