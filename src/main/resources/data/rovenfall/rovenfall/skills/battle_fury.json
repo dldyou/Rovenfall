@@ -1,0 +1,10 @@
+{
+  "translation_key": "skill.rovenfall.battle_fury",
+  "career": "rovenfall:berserker",
+  "kind": "passive",
+  "max_rank": 3,
+  "point_cost": 3,
+  "prerequisites": [
+    {"skill": "rovenfall:power_strike", "rank": 2}
+  ]
+}

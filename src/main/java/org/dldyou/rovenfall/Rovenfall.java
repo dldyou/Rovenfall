@@ -71,11 +71,14 @@ import org.dldyou.rovenfall.claims.ClaimSettings;
 import org.dldyou.rovenfall.definition.TestDefinitionReloadListener;
 import org.dldyou.rovenfall.economy.ShopTemplateReloadListener;
 import org.dldyou.rovenfall.economy.ShopInstance;
+import org.dldyou.rovenfall.rpg.RpgDefinitionReloadListener;
+import org.dldyou.rovenfall.rpg.SkillDefinition;
 
 @Mod(Rovenfall.MOD_ID)
 public final class Rovenfall {
     public static final String MOD_ID = "rovenfall";
     private final ShopTemplateReloadListener shopTemplates = new ShopTemplateReloadListener();
+    private final RpgDefinitionReloadListener rpgDefinitions = new RpgDefinitionReloadListener();
 
     public Rovenfall(IEventBus modBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.SERVER, EconomyConfig.SPEC);
@@ -93,6 +96,25 @@ public final class Rovenfall {
         var environment = event.registerEnvironment(id("empty"), new TestEnvironmentDefinition.AllOf(List.of()));
         var testData = new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 1, 0, true);
         event.registerTest(id("foundation"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData));
+        event.registerTest(id("rpg_definitions"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var snapshot = RpgDefinitionReloadListener.snapshot(helper.getLevel().getServer());
+                helper.assertTrue(snapshot.activities().size() == 7,
+                        "All built-in activity definitions were not loaded");
+                helper.assertTrue(snapshot.careers().size() == 4,
+                        "All built-in career definitions were not loaded");
+                helper.assertTrue(snapshot.skills().size() == 4,
+                        "All built-in skill definitions were not loaded");
+                var guardian = snapshot.career(id("guardian")).orElseThrow();
+                helper.assertTrue(guardian.tier() == 3 && guardian.parents().equals(List.of(id("warrior"))),
+                        "N-tier career lineage was not preserved");
+                var active = snapshot.skill(id("power_strike")).orElseThrow();
+                helper.assertTrue(active.kind() == SkillDefinition.Kind.ACTIVE && active.cooldownTicks().isPresent(),
+                        "Active skill metadata was not preserved");
+                helper.succeed();
+            }
+        });
         event.registerTest(id("economy_account"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData) {
             @Override
             public void run(GameTestHelper helper) {
@@ -760,6 +782,7 @@ public final class Rovenfall {
     private void addServerReloadListeners(AddServerReloadListenersEvent event) {
         event.addRetainedListener(TestDefinitionReloadListener.KEY, new TestDefinitionReloadListener());
         event.addRetainedListener(ShopTemplateReloadListener.KEY, shopTemplates);
+        event.addRetainedListener(RpgDefinitionReloadListener.KEY, rpgDefinitions);
     }
 
     private static Identifier id(String path) {

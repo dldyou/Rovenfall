@@ -1,0 +1,7 @@
+{
+  "translation_key": "skill.rovenfall.sturdy_body",
+  "career": "rovenfall:novice",
+  "kind": "passive",
+  "max_rank": 3,
+  "point_cost": 1
+}
