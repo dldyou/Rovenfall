@@ -84,6 +84,10 @@ import org.dldyou.rovenfall.mobs.MobContentReloadListener;
 import org.dldyou.rovenfall.mobs.MobContentCatalog;
 import org.dldyou.rovenfall.mobs.MobContentSnapshot;
 import org.dldyou.rovenfall.rpg.RpgDefinitionReloadListener;
+import org.dldyou.rovenfall.rpg.ActivityXpConfig;
+import org.dldyou.rovenfall.rpg.ActivityXpAwardService;
+import org.dldyou.rovenfall.rpg.RpgActivityEvents;
+import org.dldyou.rovenfall.rpg.RpgPlayerSavedData;
 import org.dldyou.rovenfall.rpg.SkillDefinition;
 import org.dldyou.rovenfall.world.ProtectedRegion;
 import org.dldyou.rovenfall.world.PortalDefinition;
@@ -98,6 +102,7 @@ public final class Rovenfall {
 
     public Rovenfall(IEventBus modBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.SERVER, EconomyConfig.SPEC);
+        modContainer.registerConfig(ModConfig.Type.SERVER, ActivityXpConfig.SPEC, "rovenfall-rpg-server.toml");
         modContainer.registerConfig(ModConfig.Type.SERVER, ClaimConfig.SPEC, "rovenfall-claims-server.toml");
         modBus.addListener(this::registerGameTests);
         NeoForge.EVENT_BUS.addListener(RovenfallCommands::register);
@@ -107,6 +112,12 @@ public final class Rovenfall {
         ClaimProtectionEvents.register(NeoForge.EVENT_BUS);
         NeoForge.EVENT_BUS.addListener(this::addServerReloadListeners);
         NeoForge.EVENT_BUS.addListener(shopTemplates::onDefaultDataComponentsBound);
+        NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onDamage);
+        NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onDeath);
+        NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onCrafted);
+        NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onSmelted);
+        NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onAdvancement);
+        NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onPlace);
     }
 
     private void registerGameTests(RegisterGameTestsEvent event) {
@@ -164,6 +175,26 @@ public final class Rovenfall {
                 var active = snapshot.skill(id("power_strike")).orElseThrow();
                 helper.assertTrue(active.kind() == SkillDefinition.Kind.ACTIVE && active.cooldownTicks().isPresent(),
                         "Active skill metadata was not preserved");
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("rpg_activity_xp"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var state = RpgPlayerSavedData.get(server);
+                UUID player = UUID.randomUUID();
+                var result = ActivityXpAwardService.award(state,
+                        RpgDefinitionReloadListener.snapshot(server), player, id("combat"), 1,
+                        System.currentTimeMillis(), UUID.randomUUID(), "gametest:combat");
+                helper.assertTrue(result.status() == ActivityXpAwardService.Status.SUCCESS,
+                        "Activity XP was not committed");
+                helper.assertTrue(state.state(player).provenance().size() == 1,
+                        "Activity XP provenance was not recorded");
+                var roundTrip = RpgPlayerSavedData.CODEC.parse(NbtOps.INSTANCE,
+                        RpgPlayerSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow()).getOrThrow();
+                helper.assertTrue(roundTrip.state(player).activityXp().get(id("combat")) == 1,
+                        "Activity XP did not survive codec round-trip");
                 helper.succeed();
             }
         });
