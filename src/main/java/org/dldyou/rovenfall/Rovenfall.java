@@ -84,6 +84,8 @@ import org.dldyou.rovenfall.administration.ProtectedRegionService;
 import org.dldyou.rovenfall.administration.PortalEvents;
 import org.dldyou.rovenfall.administration.PortalService;
 import org.dldyou.rovenfall.administration.PortalTravelService;
+import org.dldyou.rovenfall.administration.WildernessResetEvents;
+import org.dldyou.rovenfall.administration.WildernessResetService;
 import org.dldyou.rovenfall.claims.ClaimConfig;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimRole;
@@ -121,6 +123,7 @@ public final class Rovenfall {
         NeoForge.EVENT_BUS.addListener(EconomyService::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(PlayerRecordService::onPlayerLoggedIn);
         PortalEvents.register(NeoForge.EVENT_BUS);
+        WildernessResetEvents.register(NeoForge.EVENT_BUS);
         ClaimProtectionEvents.register(NeoForge.EVENT_BUS);
         NeoForge.EVENT_BUS.addListener(this::addServerReloadListeners);
         NeoForge.EVENT_BUS.addListener(shopTemplates::onDefaultDataComponentsBound);
@@ -140,6 +143,41 @@ public final class Rovenfall {
         var environment = event.registerEnvironment(id("empty"), new TestEnvironmentDefinition.AllOf(List.of()));
         var testData = new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 1, 0, true);
         event.registerTest(id("foundation"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData));
+        event.registerTest(id("wilderness_reset_preflight"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                helper.assertTrue(WildernessResetService.findSafeHubArrival(server.overworld()).isPresent(),
+                        "Hub has no safe reset evacuation destination");
+                var state = PlatformSavedData.get(server);
+                var rpg = RpgPlayerSavedData.get(server);
+                UUID preservedPlayer = UUID.randomUUID();
+                UUID warningId = UUID.randomUUID();
+                long now = System.currentTimeMillis();
+                helper.assertTrue(ActivityXpAwardService.award(
+                                rpg, RpgDefinitionReloadListener.snapshot(server), preservedPlayer,
+                                id("combat"), 1, now, UUID.randomUUID(), "wilderness-preflight")
+                                .status() == ActivityXpAwardService.Status.SUCCESS,
+                        "Could not create isolated RPG preservation evidence");
+                var preservedRpgState = rpg.state(preservedPlayer);
+                helper.assertTrue(WildernessResetService.warn(
+                                state, AdministrationService.SYSTEM_ACTOR, true,
+                                "gametest unavailable topology", now, warningId).status()
+                                == WildernessResetService.Status.SUCCESS,
+                        "Wilderness reset warning preflight failed");
+                var rejected = WildernessResetService.reset(
+                        server, AdministrationService.SYSTEM_ACTOR, true, warningId,
+                        "gametest unavailable topology", now + 1, UUID.randomUUID());
+                helper.assertTrue(rejected.status() == WildernessResetService.Status.TOPOLOGY_UNAVAILABLE,
+                        "Missing Wilderness topology did not fail closed");
+                helper.assertTrue(!state.isWildernessOperationLocked(),
+                        "Failed Wilderness preflight left an operation lock");
+                helper.assertTrue(rpg.state(preservedPlayer).equals(preservedRpgState),
+                        "Failed Wilderness preflight changed global RPG state");
+                helper.succeed();
+            }
+        });
         event.registerTest(id("mob_content_definitions"), new FunctionGameTestInstance(
                 BuiltinTestFunctions.ALWAYS_PASS, testData) {
             @Override

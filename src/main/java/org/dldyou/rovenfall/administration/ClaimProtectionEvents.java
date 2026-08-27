@@ -38,6 +38,7 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.common.util.FakePlayer;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.EntityMountEvent;
 import net.neoforged.neoforge.event.entity.EntityInvulnerabilityCheckEvent;
 import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
@@ -86,8 +87,23 @@ public final class ClaimProtectionEvents {
         eventBus.addListener(handler::onNeighborNotify);
         eventBus.addListener(handler::onPistonPre);
         eventBus.addListener(handler::onExplosionDetonate);
+        eventBus.addListener(handler::onEntityJoinLevel);
         eventBus.addListener(handler::onPlayerTick);
         eventBus.addListener(handler::onPlayerLoggedOut);
+    }
+
+    private void onEntityJoinLevel(EntityJoinLevelEvent event) {
+        if (!(event.getLevel() instanceof ServerLevel level)) {
+            return;
+        }
+        boolean locked = PlatformSavedData.get(level.getServer()).isWildernessOperationLocked();
+        if (blocksEntityJoin(WorldTopology.isWilderness(level.dimension()), locked, event.loadedFromDisk())) {
+            event.setCanceled(true);
+        }
+    }
+
+    static boolean blocksEntityJoin(boolean wilderness, boolean operationLocked, boolean loadedFromDisk) {
+        return wilderness && operationLocked && !loadedFromDisk;
     }
 
     private void onBreakBlock(BreakBlockEvent event) {

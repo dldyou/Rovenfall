@@ -85,6 +85,34 @@ public final class RovenfallCommands {
                                                 UuidArgument.getUuid(context, "snapshot_id"),
                                                 StringArgumentType.getString(context, "reason"))))));
 
+        var wildernessCommand = Commands.literal("wilderness")
+                .requires(RovenfallCommands::canResetWilderness)
+                .then(Commands.literal("reset")
+                        .then(Commands.literal("warn")
+                                .then(Commands.argument("reason", StringArgumentType.greedyString())
+                                        .executes(context -> warnWildernessReset(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "reason")))))
+                        .then(Commands.literal("irreversible")
+                                .then(Commands.argument("warning_id", UuidArgument.uuid())
+                                        .then(Commands.argument("transaction_id", UuidArgument.uuid())
+                                                .then(Commands.argument("reason", StringArgumentType.greedyString())
+                                                        .executes(context -> resetWilderness(
+                                                                context.getSource(),
+                                                                UuidArgument.getUuid(context, "warning_id"),
+                                                                UuidArgument.getUuid(context, "transaction_id"),
+                                                                StringArgumentType.getString(context, "reason"))))))))
+                .then(Commands.literal("restore")
+                        .then(Commands.literal("irreversible")
+                                .then(Commands.argument("snapshot_id", UuidArgument.uuid())
+                                        .then(Commands.argument("transaction_id", UuidArgument.uuid())
+                                                .then(Commands.argument("reason", StringArgumentType.greedyString())
+                                                        .executes(context -> restoreWilderness(
+                                                                context.getSource(),
+                                                                UuidArgument.getUuid(context, "snapshot_id"),
+                                                                UuidArgument.getUuid(context, "transaction_id"),
+                                                                StringArgumentType.getString(context, "reason"))))))));
+
         var economyCommand = Commands.literal("economy")
                 .then(Commands.literal("grant")
                         .then(Commands.argument("player", EntityArgument.player())
@@ -405,7 +433,8 @@ public final class RovenfallCommands {
                         .then(adminClaimCommand)
                         .then(protectedRegionCommand)
                         .then(auditCommand)
-                        .then(snapshotCommand)));
+                        .then(snapshotCommand)
+                        .then(wildernessCommand)));
     }
 
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack>
@@ -1603,6 +1632,81 @@ public final class RovenfallCommands {
         };
     }
 
+    private static int warnWildernessReset(CommandSourceStack source, String reason) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        UUID warningId = UUID.randomUUID();
+        var result = WildernessResetService.warn(
+                state, actorId(source), hasNativeOwnerPermission(source), reason,
+                Instant.now().toEpochMilli(), warningId);
+        if (result.status() == WildernessResetService.Status.SUCCESS) {
+            source.getServer().getPlayerList().broadcastSystemMessage(
+                    Component.translatable("wilderness.rovenfall.reset.warning"), false);
+            source.sendSuccess(() -> Component.translatable(
+                    "command.rovenfall.admin.wilderness.reset.warning.success",
+                    warningId.toString(), WildernessResetService.WARNING_TTL_MILLIS / 1_000L), true);
+            return 1;
+        }
+        return wildernessFailure(source, state, result.status());
+    }
+
+    private static int resetWilderness(
+            CommandSourceStack source, UUID warningId, UUID transactionId, String reason) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = WildernessResetService.reset(
+                source.getServer(), actorId(source), hasNativeOwnerPermission(source), warningId, reason,
+                Instant.now().toEpochMilli(), transactionId);
+        if (result.status() == WildernessResetService.Status.SUCCESS) {
+            source.getServer().getPlayerList().broadcastSystemMessage(
+                    Component.translatable("wilderness.rovenfall.reset.shutdown"), false);
+            source.sendSuccess(() -> Component.translatable(
+                    "command.rovenfall.admin.wilderness.reset.staged",
+                    result.snapshotId().toString(), transactionId.toString()), true);
+            return 1;
+        }
+        return wildernessFailure(source, state, result.status());
+    }
+
+    private static int restoreWilderness(
+            CommandSourceStack source, UUID snapshotId, UUID transactionId, String reason) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = WildernessResetService.restore(
+                source.getServer(), actorId(source), hasNativeOwnerPermission(source), snapshotId, reason,
+                Instant.now().toEpochMilli(), transactionId);
+        if (result.status() == WildernessResetService.Status.SUCCESS) {
+            source.getServer().getPlayerList().broadcastSystemMessage(
+                    Component.translatable("wilderness.rovenfall.restore.shutdown"), false);
+            source.sendSuccess(() -> Component.translatable(
+                    "command.rovenfall.admin.wilderness.restore.staged",
+                    snapshotId.toString(), result.snapshotId().toString(), transactionId.toString()), true);
+            return 1;
+        }
+        return wildernessFailure(source, state, result.status());
+    }
+
+    private static int wildernessFailure(
+            CommandSourceStack source, PlatformSavedData state, WildernessResetService.Status status) {
+        return switch (status) {
+            case UNAUTHORIZED -> failure(source, "command.rovenfall.admin.wilderness.error.unauthorized");
+            case INVALID_REASON -> failure(source, "command.rovenfall.admin.error.invalid_reason",
+                    AdministrationService.MAX_REASON_LENGTH);
+            case READ_ONLY_SCHEMA -> failure(
+                    source, "command.rovenfall.admin.error.read_only_schema", state.schemaVersion());
+            case WARNING_REQUIRED -> failure(source, "command.rovenfall.admin.wilderness.error.warning_required");
+            case LOCKED -> failure(source, "command.rovenfall.admin.wilderness.error.locked");
+            case TOPOLOGY_UNAVAILABLE -> failure(source, "command.rovenfall.admin.wilderness.error.topology");
+            case SNAPSHOT_NOT_FOUND -> failure(source, "command.rovenfall.admin.wilderness.error.snapshot_not_found");
+            case SNAPSHOT_FAILED -> failure(source, "command.rovenfall.admin.wilderness.error.snapshot_failed");
+            case EVACUATION_FAILED -> failure(source, "command.rovenfall.admin.wilderness.error.evacuation_failed");
+            case EVACUATION_ROLLBACK_FAILED -> failure(
+                    source, "command.rovenfall.admin.wilderness.error.evacuation_rollback_failed");
+            case PRECOMMIT_FAILED -> failure(source, "command.rovenfall.admin.wilderness.error.precommit_failed");
+            case DUPLICATE_TRANSACTION -> failure(source, "command.rovenfall.admin.wilderness.error.duplicate");
+            case INVALID_REQUEST, INVALID_TRANSACTION ->
+                    failure(source, "command.rovenfall.admin.wilderness.error.invalid_request");
+            case SUCCESS -> 1;
+        };
+    }
+
     private static boolean canUseAdministration(CommandSourceStack source) {
         PlatformSavedData state = PlatformSavedData.get(source.getServer());
         var player = source.getPlayer();
@@ -1632,6 +1736,15 @@ public final class RovenfallCommands {
                 ? null
                 : PlatformSavedData.get(source.getServer()).roleOf(player.getUUID()).orElse(null);
         return role == AdminRole.CONTENT_MANAGER || role == AdminRole.OWNER;
+    }
+
+    private static boolean canResetWilderness(CommandSourceStack source) {
+        if (hasNativeOwnerPermission(source)) {
+            return true;
+        }
+        var player = source.getPlayer();
+        return player != null
+                && PlatformSavedData.get(source.getServer()).roleOf(player.getUUID()).orElse(null) == AdminRole.OWNER;
     }
 
     private static UUID actorId(CommandSourceStack source) {

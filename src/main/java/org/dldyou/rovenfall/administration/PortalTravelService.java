@@ -93,6 +93,10 @@ public final class PortalTravelService {
             return denied(state, playerId, currentDimension, BlockPos.containing(currentPosition), portalId,
                     Status.INVALID_TRANSACTION, "invalid_transaction", timestampEpochMillis, transactionId, 0L);
         }
+        if (state.isWildernessOperationLocked()) {
+            return denied(state, playerId, currentDimension, BlockPos.containing(currentPosition), portalId,
+                    Status.WILDERNESS_LOCKED, "wilderness_locked", timestampEpochMillis, transactionId, 0L);
+        }
         PortalDefinition definition = state.portalDefinition(portalId).orElse(null);
         if (definition == null) {
             return denied(state, playerId, currentDimension, BlockPos.containing(currentPosition), portalId,
@@ -355,6 +359,7 @@ public final class PortalTravelService {
         TOO_FAR,
         COOLDOWN,
         COMBAT_LOCKED,
+        WILDERNESS_LOCKED,
         EVIDENCE_FULL,
         TARGET_UNAVAILABLE,
         UNSAFE_DESTINATION,

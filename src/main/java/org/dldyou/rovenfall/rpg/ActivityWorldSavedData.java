@@ -109,6 +109,47 @@ public final class ActivityWorldSavedData extends SavedData {
         return syntheticResources.size();
     }
 
+    /** Captures the provenance markers that belong to one resettable dimension. */
+    public DimensionSnapshot snapshotDimension(ResourceKey<Level> dimension) {
+        if (dimension == null) {
+            throw new IllegalArgumentException("dimension");
+        }
+        Set<Long> positions = new LinkedHashSet<>();
+        syntheticResources.stream()
+                .filter(position -> position.dimension().equals(dimension))
+                .map(ResourcePosition::position)
+                .sorted()
+                .forEach(positions::add);
+        return new DimensionSnapshot(dimension, positions);
+    }
+
+    /** Replaces only one dimension's provenance after a verified world restore. */
+    public boolean replaceDimension(DimensionSnapshot snapshot) {
+        if (!writable || saturated || snapshot == null || !snapshot.isValid()) {
+            return false;
+        }
+        long retained = syntheticResources.stream()
+                .filter(position -> !position.dimension().equals(snapshot.dimension()))
+                .count();
+        if (retained + snapshot.positions().size() > MAX_SYNTHETIC_RESOURCES) {
+            saturated = true;
+            setDirty();
+            return false;
+        }
+        Set<ResourcePosition> replacements = new LinkedHashSet<>();
+        snapshot.positions().stream()
+                .map(BlockPos::of)
+                .map(position -> ResourcePosition.at(snapshot.dimension(), position))
+                .forEach(replacements::add);
+        boolean changed = syntheticResources.removeIf(position ->
+                position.dimension().equals(snapshot.dimension()));
+        changed |= syntheticResources.addAll(replacements);
+        if (changed) {
+            setDirty();
+        }
+        return true;
+    }
+
     /** Records an entity-placed resource. Saturation disables natural-resource awards fail-closed. */
     public boolean markSynthetic(ResourceKey<Level> dimension, BlockPos position) {
         if (!writable || dimension == null || position == null || saturated) {
@@ -206,6 +247,45 @@ public final class ActivityWorldSavedData extends SavedData {
             return position == null || position.dimension() == null
                     ? DataResult.error(() -> "Synthetic resource dimension is missing")
                     : DataResult.success(position);
+        }
+    }
+
+    public record DimensionSnapshot(ResourceKey<Level> dimension, Set<Long> positions) {
+        private static final Codec<Set<Long>> POSITIONS_CODEC = Codec.LONG.listOf(0, MAX_SYNTHETIC_RESOURCES)
+                .flatXmap(DimensionSnapshot::positionsFromEntries, DimensionSnapshot::positionsToEntries);
+
+        public static final Codec<DimensionSnapshot> CODEC = RecordCodecBuilder
+                .<DimensionSnapshot>create(instance -> instance.group(
+                        Level.RESOURCE_KEY_CODEC.fieldOf("dimension").forGetter(DimensionSnapshot::dimension),
+                        POSITIONS_CODEC.fieldOf("positions").forGetter(DimensionSnapshot::positions)
+                ).apply(instance, DimensionSnapshot::new)).validate(snapshot -> snapshot.isValid()
+                        ? DataResult.success(snapshot)
+                        : DataResult.error(() -> "Invalid activity dimension snapshot"));
+
+        public DimensionSnapshot {
+            positions = positions == null ? Set.of() : Set.copyOf(positions);
+        }
+
+        public static DimensionSnapshot empty(ResourceKey<Level> dimension) {
+            return new DimensionSnapshot(dimension, Set.of());
+        }
+
+        private boolean isValid() {
+            return dimension != null && positions.size() <= MAX_SYNTHETIC_RESOURCES;
+        }
+
+        private static DataResult<Set<Long>> positionsFromEntries(List<Long> entries) {
+            Set<Long> result = new LinkedHashSet<>();
+            for (Long entry : entries) {
+                if (entry == null || !result.add(entry)) {
+                    return DataResult.error(() -> "Duplicate or missing activity snapshot position");
+                }
+            }
+            return DataResult.success(Set.copyOf(result));
+        }
+
+        private static DataResult<List<Long>> positionsToEntries(Set<Long> positions) {
+            return DataResult.success(positions.stream().sorted().toList());
         }
     }
 
