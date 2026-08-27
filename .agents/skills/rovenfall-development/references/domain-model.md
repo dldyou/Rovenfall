@@ -107,7 +107,7 @@ Administrator roles are independent of claim roles:
 - `CONTENT_MANAGER`: career, skill, portal, and content reload operations; and
 - `OWNER`: backups, migrations, Wilderness reset, and recovery.
 
-The first admin interface combines permission-gated mutation commands with a read-only searchable GUI for player state, balances, transactions, claims, shops, denied actions, and alerts. External dashboards and automatic punishment are outside the initial scope.
+The first admin interface combines permission-gated mutation commands with read-only searchable views for player state, balances, transactions, claims, shops, denied actions, and alerts. Audit queries combine bounded time, actor, action, target-prefix, and transaction filters with AND semantics and deterministic newest-first pagination. Only `OWNER` may export the exact result as capped JSON Lines under the server-owned operations directory; callers never choose a filesystem path. External dashboards and automatic punishment are outside the initial scope.
 
 Boss operations use a caller-supplied transaction ID. They append an immutable request audit before changing state and a deterministic completion audit only after cleanup or recovery is verifiably complete. Exact retries resume an incomplete request or return duplicate after completion.
 
