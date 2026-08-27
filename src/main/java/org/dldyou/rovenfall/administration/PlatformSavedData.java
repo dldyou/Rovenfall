@@ -27,11 +27,12 @@ import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimMutationReceipt;
 import org.dldyou.rovenfall.economy.ShopInstance;
 import org.dldyou.rovenfall.world.ProtectedRegion;
+import org.dldyou.rovenfall.world.PortalDefinition;
 import org.dldyou.rovenfall.world.WorldTopology;
 
 public final class PlatformSavedData extends SavedData {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
-    public static final int CURRENT_SCHEMA_VERSION = 8;
+    public static final int CURRENT_SCHEMA_VERSION = 9;
     public static final int MAX_PROTECTED_REGIONS = 128;
     public static final int MAX_INDEXED_PROTECTED_CHUNKS = 131_072;
     public static final int MAX_AUDIT_PAGE_SIZE = 50;
@@ -83,7 +84,8 @@ public final class PlatformSavedData extends SavedData {
             CLAIMS_CODEC.optionalFieldOf("claims", Map.of()).forGetter(data -> data.claims),
             CLAIM_RECEIPTS_CODEC.optionalFieldOf("claim_receipts", Map.of()).forGetter(data -> data.claimReceipts),
             PROTECTED_REGIONS_CODEC.optionalFieldOf("protected_regions", Map.of())
-                    .forGetter(data -> data.protectedRegions)
+                    .forGetter(data -> data.protectedRegions),
+            PortalState.CODEC.optionalFieldOf("portal_state", PortalState.EMPTY).forGetter(PlatformSavedData::portalState)
     ).apply(instance, PlatformSavedData::decode));
 
     public static final SavedDataType<PlatformSavedData> TYPE = new SavedDataType<>(
@@ -105,6 +107,11 @@ public final class PlatformSavedData extends SavedData {
     private final Map<ClaimKey, Claim> claims;
     private final Map<UUID, ClaimMutationReceipt> claimReceipts;
     private final Map<Identifier, ProtectedRegion> protectedRegions;
+    private final Map<Identifier, PortalDefinition> portalDefinitions;
+    private final Map<UUID, Map<Identifier, Long>> portalCooldowns;
+    private final Map<UUID, PortalState.TravelReceipt> portalTravelReceipts;
+    private final Map<UUID, Long> portalCombatTimestamps;
+    private final Map<PortalDefinition.Endpoint, Identifier> portalOriginIndex = new HashMap<>();
     private final Map<ClaimKey, Set<Identifier>> protectedRegionIndex = new HashMap<>();
     private final Map<UUID, Integer> claimCountsByOwner = new HashMap<>();
     private final Map<UUID, ArrayDeque<Long>> recentTransactionsByPlayer = new HashMap<>();
@@ -118,7 +125,7 @@ public final class PlatformSavedData extends SavedData {
 
     public PlatformSavedData() {
         this(CURRENT_SCHEMA_VERSION, Map.of(), List.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), List.of(),
-                Map.of(), Map.of(), Map.of(), true);
+                Map.of(), Map.of(), Map.of(), PortalState.EMPTY, true);
     }
 
     private PlatformSavedData(
@@ -134,6 +141,7 @@ public final class PlatformSavedData extends SavedData {
             Map<ClaimKey, Claim> claims,
             Map<UUID, ClaimMutationReceipt> claimReceipts,
             Map<Identifier, ProtectedRegion> protectedRegions,
+            PortalState portalState,
             boolean writable) {
         this.schemaVersion = schemaVersion;
         this.writable = writable;
@@ -151,10 +159,17 @@ public final class PlatformSavedData extends SavedData {
         this.claims = new HashMap<>(claims);
         this.claimReceipts = new HashMap<>(claimReceipts);
         this.protectedRegions = new HashMap<>(protectedRegions);
+        this.portalDefinitions = new HashMap<>(portalState.definitions());
+        this.portalCooldowns = new HashMap<>();
+        portalState.cooldowns().forEach((player, cooldowns) ->
+                this.portalCooldowns.put(player, new HashMap<>(cooldowns)));
+        this.portalTravelReceipts = new HashMap<>(portalState.receipts());
+        this.portalCombatTimestamps = new HashMap<>(portalState.combatTimestamps());
         rebuildRecentTransactionIndex();
         rebuildReceiptExpiryIndex();
         rebuildClaimOwnerIndex();
         rebuildProtectedRegionIndex();
+        rebuildPortalOriginIndex();
     }
 
     private static PlatformSavedData decode(
@@ -169,7 +184,8 @@ public final class PlatformSavedData extends SavedData {
             List<EconomyAlert> economyAlerts,
             Map<ClaimKey, Claim> claims,
             Map<UUID, ClaimMutationReceipt> claimReceipts,
-            Map<Identifier, ProtectedRegion> protectedRegions) {
+            Map<Identifier, ProtectedRegion> protectedRegions,
+            PortalState portalState) {
         var migration = PlatformDataMigrations.migrate(
                 schemaVersion,
                 adminRoles,
@@ -183,6 +199,7 @@ public final class PlatformSavedData extends SavedData {
                 claims,
                 claimReceipts,
                 protectedRegions,
+                portalState,
                 CURRENT_SCHEMA_VERSION
         );
         var state = migration.state();
@@ -199,6 +216,7 @@ public final class PlatformSavedData extends SavedData {
                 state.claims(),
                 state.claimReceipts(),
                 state.protectedRegions(),
+                state.portalState(),
                 migration.writable()
         );
     }
@@ -291,6 +309,76 @@ public final class PlatformSavedData extends SavedData {
                 .toList();
     }
 
+    public Optional<PortalDefinition> portalDefinition(Identifier portalId) {
+        return Optional.ofNullable(portalDefinitions.get(portalId));
+    }
+
+    public Optional<Identifier> portalAt(PortalDefinition.Endpoint origin) {
+        return Optional.ofNullable(portalOriginIndex.get(origin));
+    }
+
+    public List<Map.Entry<Identifier, PortalDefinition>> portalDefinitions() {
+        return portalDefinitions.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
+    public long portalCooldownUntil(UUID playerId, Identifier portalId) {
+        return portalCooldowns.getOrDefault(playerId, Map.of()).getOrDefault(portalId, 0L);
+    }
+
+    Optional<PortalState.TravelReceipt> portalTravelReceipt(UUID transactionId) {
+        return Optional.ofNullable(portalTravelReceipts.get(transactionId));
+    }
+
+    public Optional<Long> portalCombatTimestamp(UUID playerId) {
+        return Optional.ofNullable(portalCombatTimestamps.get(playerId));
+    }
+
+    boolean isPortalProtectionRegion(Identifier regionId) {
+        return portalDefinitions.keySet().stream().anyMatch(portalId ->
+                PortalDefinition.originProtectionId(portalId).equals(regionId)
+                        || PortalDefinition.destinationProtectionId(portalId).equals(regionId));
+    }
+
+    boolean overlapsPortalProtection(Identifier regionId, ProtectedRegion region) {
+        if (region == null || isPortalProtectionRegion(regionId)) {
+            return isPortalProtectionRegion(regionId);
+        }
+        for (int chunkX = region.minChunkX(); chunkX <= region.maxChunkX(); chunkX++) {
+            for (int chunkZ = region.minChunkZ(); chunkZ <= region.maxChunkZ(); chunkZ++) {
+                for (Identifier indexedId : protectedRegionsAt(new ClaimKey(region.dimension(), chunkX, chunkZ))) {
+                    if (isPortalProtectionRegion(indexedId)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    boolean portalProtectionIntact(Identifier portalId, PortalDefinition definition) {
+        Identifier originId = PortalDefinition.originProtectionId(portalId);
+        Identifier destinationId = PortalDefinition.destinationProtectionId(portalId);
+        ProtectedRegion origin = definition.protectedRegion(definition.origin());
+        ProtectedRegion destination = definition.protectedRegion(definition.destination());
+        if (!origin.equals(protectedRegions.get(originId)) || !destination.equals(protectedRegions.get(destinationId))) {
+            return false;
+        }
+        Set<Identifier> owned = Set.of(originId, destinationId);
+        for (ProtectedRegion region : List.of(origin, destination)) {
+            for (int chunkX = region.minChunkX(); chunkX <= region.maxChunkX(); chunkX++) {
+                for (int chunkZ = region.minChunkZ(); chunkZ <= region.maxChunkZ(); chunkZ++) {
+                    if (!owned.containsAll(protectedRegionsAt(new ClaimKey(region.dimension(), chunkX, chunkZ)))) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
     boolean canStoreProtectedRegion(Identifier regionId, ProtectedRegion region) {
         if (regionId == null || region == null || !region.isValid()) {
             return false;
@@ -303,6 +391,10 @@ public final class PlatformSavedData extends SavedData {
                 .mapToLong(entry -> entry.getValue().areaChunks())
                 .sum();
         return indexed + region.areaChunks() <= MAX_INDEXED_PROTECTED_CHUNKS;
+    }
+
+    private PortalState portalState() {
+        return new PortalState(portalDefinitions, portalCooldowns, portalTravelReceipts, portalCombatTimestamps);
     }
 
     public Optional<EconomyTransactionReceipt> economyReceipt(UUID transactionId) {
@@ -482,10 +574,20 @@ public final class PlatformSavedData extends SavedData {
         claimReceipts.putAll(snapshot.claimReceipts);
         protectedRegions.clear();
         protectedRegions.putAll(snapshot.protectedRegions);
+        portalDefinitions.clear();
+        portalDefinitions.putAll(snapshot.portalDefinitions);
+        portalCooldowns.clear();
+        snapshot.portalCooldowns.forEach((player, cooldowns) ->
+                portalCooldowns.put(player, new HashMap<>(cooldowns)));
+        portalTravelReceipts.clear();
+        portalTravelReceipts.putAll(snapshot.portalTravelReceipts);
+        portalCombatTimestamps.clear();
+        portalCombatTimestamps.putAll(snapshot.portalCombatTimestamps);
         rebuildRecentTransactionIndex();
         rebuildReceiptExpiryIndex();
         rebuildClaimOwnerIndex();
         rebuildProtectedRegionIndex();
+        rebuildPortalOriginIndex();
         commitAudit(auditEntry);
     }
 
@@ -619,6 +721,83 @@ public final class PlatformSavedData extends SavedData {
         }
         rebuildProtectedRegionIndex();
         commitAudit(auditEntry);
+    }
+
+    void commitPortalMutation(
+            Identifier portalId,
+            Optional<PortalDefinition> definition,
+            AuditEntry auditEntry) {
+        Identifier originId = PortalDefinition.originProtectionId(portalId);
+        Identifier destinationId = PortalDefinition.destinationProtectionId(portalId);
+        if (definition.isPresent()) {
+            PortalDefinition retained = definition.orElseThrow();
+            portalDefinitions.put(portalId, retained);
+            protectedRegions.put(originId, retained.protectedRegion(retained.origin()));
+            protectedRegions.put(destinationId, retained.protectedRegion(retained.destination()));
+        } else {
+            portalDefinitions.remove(portalId);
+            protectedRegions.remove(originId);
+            protectedRegions.remove(destinationId);
+        }
+        rebuildPortalOriginIndex();
+        rebuildProtectedRegionIndex();
+        commitAudit(auditEntry);
+    }
+
+    boolean canCommitPortalTravel(UUID transactionId, long timestampEpochMillis) {
+        if (transactionId == null || portalTravelReceipts.containsKey(transactionId)) {
+            return false;
+        }
+        long receiptCutoff = timestampEpochMillis - ECONOMY_TRANSACTION_RETENTION_MILLIS;
+        long retainedReceipts = portalTravelReceipts.values().stream()
+                .filter(receipt -> receipt.completedAtEpochMillis() >= receiptCutoff)
+                .count();
+        long retainedCooldowns = portalCooldowns.values().stream()
+                .flatMap(cooldowns -> cooldowns.values().stream())
+                .filter(deadline -> deadline > timestampEpochMillis)
+                .count();
+        return retainedReceipts < PortalState.MAX_RUNTIME_ENTRIES
+                && retainedCooldowns < PortalState.MAX_RUNTIME_ENTRIES;
+    }
+
+    void commitPortalTravel(
+            UUID playerId,
+            Identifier portalId,
+            long cooldownUntil,
+            UUID transactionId,
+            long timestampEpochMillis,
+            PortalDefinition.Endpoint destination,
+            AuditEntry auditEntry) {
+        if (!canCommitPortalTravel(transactionId, timestampEpochMillis)) {
+            throw new IllegalStateException("Portal travel evidence cannot be committed");
+        }
+        long receiptCutoff = timestampEpochMillis - ECONOMY_TRANSACTION_RETENTION_MILLIS;
+        portalTravelReceipts.entrySet().removeIf(entry -> entry.getValue().completedAtEpochMillis() < receiptCutoff);
+        portalCooldowns.values().forEach(cooldowns ->
+                cooldowns.entrySet().removeIf(entry -> entry.getValue() <= timestampEpochMillis));
+        portalCooldowns.entrySet().removeIf(entry -> entry.getValue().isEmpty());
+        if (cooldownUntil > timestampEpochMillis) {
+            portalCooldowns.computeIfAbsent(playerId, ignored -> new HashMap<>()).put(portalId, cooldownUntil);
+        }
+        portalTravelReceipts.put(transactionId,
+                new PortalState.TravelReceipt(playerId, portalId, timestampEpochMillis, destination));
+        commitAudit(auditEntry);
+    }
+
+    void recordPortalCombat(UUID playerId, long timestampEpochMillis) {
+        if (playerId == null || timestampEpochMillis < 0) {
+            return;
+        }
+        if (!portalCombatTimestamps.containsKey(playerId)
+                && portalCombatTimestamps.size() >= PortalState.MAX_COMBAT_ENTRIES) {
+            UUID oldest = portalCombatTimestamps.entrySet().stream()
+                    .min(Map.Entry.comparingByValue())
+                    .map(Map.Entry::getKey)
+                    .orElse(null);
+            portalCombatTimestamps.remove(oldest);
+        }
+        portalCombatTimestamps.put(playerId, timestampEpochMillis);
+        setDirty();
     }
 
     void commitClaimSale(
@@ -1276,6 +1455,11 @@ public final class PlatformSavedData extends SavedData {
                 }
             }
         });
+    }
+
+    private void rebuildPortalOriginIndex() {
+        portalOriginIndex.clear();
+        portalDefinitions.forEach((portalId, definition) -> portalOriginIndex.put(definition.origin(), portalId));
     }
 
     boolean commitPlayerLogin(UUID playerId, long timestampEpochMillis) {

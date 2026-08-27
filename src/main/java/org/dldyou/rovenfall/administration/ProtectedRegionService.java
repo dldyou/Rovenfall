@@ -98,6 +98,11 @@ public final class ProtectedRegionService {
         if (state.hasAuditTransaction(transactionId)) {
             return new MutationResult(Status.DUPLICATE_TRANSACTION, transactionId, false);
         }
+        if (state.isPortalProtectionRegion(regionId)
+                || requested.isPresent() && state.overlapsPortalProtection(regionId, requested.orElseThrow())) {
+            return denied(state, actorId, regionId, requested, Status.DEPENDENCY_LOCKED, "portal_dependency_locked",
+                    timestampEpochMillis, transactionId);
+        }
 
         Optional<ProtectedRegion> previous = state.protectedRegion(regionId);
         if (create && previous.isPresent()) {
@@ -180,7 +185,8 @@ public final class ProtectedRegionService {
         UNAUTHORIZED,
         ALREADY_EXISTS,
         NOT_FOUND,
-        LIMIT_EXCEEDED
+        LIMIT_EXCEEDED,
+        DEPENDENCY_LOCKED
     }
 
     public record MutationResult(Status status, UUID transactionId, boolean auditRecorded) {

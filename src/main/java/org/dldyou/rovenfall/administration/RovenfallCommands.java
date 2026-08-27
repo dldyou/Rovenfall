@@ -33,11 +33,13 @@ import org.dldyou.rovenfall.claims.ClaimRegionPolicy;
 import org.dldyou.rovenfall.claims.ClaimRole;
 import org.dldyou.rovenfall.claims.ClaimSettings;
 import org.dldyou.rovenfall.world.ProtectedRegion;
+import org.dldyou.rovenfall.world.PortalDefinition;
 import org.dldyou.rovenfall.world.WorldTopology;
 
 public final class RovenfallCommands {
     private static final int AUDIT_PAGE_SIZE = 10;
     private static final int PROTECTED_REGION_PAGE_SIZE = 10;
+    private static final int PORTAL_PAGE_SIZE = 10;
 
     private RovenfallCommands() {
     }
@@ -366,9 +368,35 @@ public final class RovenfallCommands {
                                         context.getSource(),
                                         IntegerArgumentType.getInteger(context, "page") - 1))));
 
+        var portalCommand = Commands.literal("portal")
+                .then(Commands.literal("use")
+                        .then(Commands.argument("portal_id", IdentifierArgument.id())
+                                .executes(context -> usePortal(
+                                        context.getSource(), IdentifierArgument.getId(context, "portal_id")))))
+                .then(portalMutationCommand("create", true))
+                .then(portalMutationCommand("edit", false))
+                .then(Commands.literal("delete")
+                        .requires(RovenfallCommands::canManagePortals)
+                        .then(Commands.argument("portal_id", IdentifierArgument.id())
+                                .then(Commands.argument("reason", StringArgumentType.greedyString())
+                                        .executes(context -> deletePortal(
+                                                context.getSource(),
+                                                IdentifierArgument.getId(context, "portal_id"),
+                                                StringArgumentType.getString(context, "reason"))))))
+                .then(Commands.literal("info")
+                        .then(Commands.argument("portal_id", IdentifierArgument.id())
+                                .executes(context -> viewPortal(
+                                        context.getSource(), IdentifierArgument.getId(context, "portal_id")))))
+                .then(Commands.literal("list")
+                        .executes(context -> listPortals(context.getSource(), 0))
+                        .then(Commands.argument("page", IntegerArgumentType.integer(1))
+                                .executes(context -> listPortals(
+                                        context.getSource(), IntegerArgumentType.getInteger(context, "page") - 1))));
+
         event.getDispatcher().register(Commands.literal("rovenfall")
                 .then(playerShopCommand)
                 .then(playerClaimCommand)
+                .then(portalCommand)
                 .then(Commands.literal("admin")
                         .requires(RovenfallCommands::canUseAdministration)
                         .then(roleCommand)
@@ -378,6 +406,43 @@ public final class RovenfallCommands {
                         .then(protectedRegionCommand)
                         .then(auditCommand)
                         .then(snapshotCommand)));
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack>
+            portalMutationCommand(String literal, boolean create) {
+        return Commands.literal(literal)
+                .requires(RovenfallCommands::canManagePortals)
+                .then(Commands.argument("portal_id", IdentifierArgument.id())
+                        .then(Commands.argument("origin_dimension", DimensionArgument.dimension())
+                                .then(Commands.argument("origin_position", BlockPosArgument.blockPos())
+                                        .then(Commands.argument("destination_dimension", DimensionArgument.dimension())
+                                                .then(Commands.argument("destination_position", BlockPosArgument.blockPos())
+                                                        .then(Commands.argument("radius_chunks", IntegerArgumentType.integer(
+                                                                        0, PortalDefinition.MAX_PROTECTION_RADIUS_CHUNKS))
+                                                                .then(Commands.argument("cooldown_seconds", LongArgumentType.longArg(
+                                                                                0, PortalDefinition.MAX_COOLDOWN_MILLIS / 1_000L))
+                                                                        .then(Commands.argument("safe_policy", StringArgumentType.word())
+                                                                                .suggests((context, builder) -> SharedSuggestionProvider.suggest(
+                                                                                        java.util.Arrays.stream(PortalDefinition.SafeArrivalPolicy.values())
+                                                                                                .map(PortalDefinition.SafeArrivalPolicy::getSerializedName),
+                                                                                        builder))
+                                                                                .then(Commands.argument("allow_combat", BoolArgumentType.bool())
+                                                                                        .then(Commands.argument("reason", StringArgumentType.greedyString())
+                                                                                                .executes(context -> mutatePortal(
+                                                                                                        context.getSource(),
+                                                                                                        IdentifierArgument.getId(context, "portal_id"),
+                                                                                                        new PortalDefinition.Endpoint(
+                                                                                                                DimensionArgument.getDimension(context, "origin_dimension").dimension(),
+                                                                                                                BlockPosArgument.getBlockPos(context, "origin_position")),
+                                                                                                        new PortalDefinition.Endpoint(
+                                                                                                                DimensionArgument.getDimension(context, "destination_dimension").dimension(),
+                                                                                                                BlockPosArgument.getBlockPos(context, "destination_position")),
+                                                                                                        IntegerArgumentType.getInteger(context, "radius_chunks"),
+                                                                                                        LongArgumentType.getLong(context, "cooldown_seconds") * 1_000L,
+                                                                                                        StringArgumentType.getString(context, "safe_policy"),
+                                                                                                        BoolArgumentType.getBool(context, "allow_combat"),
+                                                                                                        StringArgumentType.getString(context, "reason"),
+                                                                                                        create))))))))))));
     }
 
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack>
@@ -774,6 +839,137 @@ public final class RovenfallCommands {
         };
     }
 
+    private static int mutatePortal(
+            CommandSourceStack source,
+            Identifier portalId,
+            PortalDefinition.Endpoint origin,
+            PortalDefinition.Endpoint destination,
+            int protectionRadiusChunks,
+            long cooldownMillis,
+            String requestedPolicy,
+            boolean allowCombat,
+            String reason,
+            boolean create) {
+        PortalDefinition.SafeArrivalPolicy policy = java.util.Arrays.stream(
+                        PortalDefinition.SafeArrivalPolicy.values())
+                .filter(candidate -> candidate.getSerializedName().equals(requestedPolicy))
+                .findFirst().orElse(null);
+        if (policy == null) {
+            return failure(source, "command.rovenfall.portal.error.invalid_policy");
+        }
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        UUID actor = actorId(source);
+        PortalDefinition definition = new PortalDefinition(
+                actor, origin, destination, protectionRadiusChunks, cooldownMillis, policy, allowCombat);
+        java.util.function.Predicate<PortalDefinition.Endpoint> available = endpoint -> {
+            var level = source.getServer().getLevel(endpoint.dimension());
+            return level != null && level.isInWorldBounds(endpoint.position())
+                    && level.getWorldBorder().isWithinBounds(endpoint.position());
+        };
+        PortalService.MutationResult result = create
+                ? PortalService.create(
+                        state, actor, hasNativeOwnerPermission(source), portalId, definition, available,
+                        reason, Instant.now().toEpochMilli(), UUID.randomUUID())
+                : PortalService.edit(
+                        state, actor, hasNativeOwnerPermission(source), portalId, definition, available,
+                        reason, Instant.now().toEpochMilli(), UUID.randomUUID());
+        if (result.status() == PortalService.Status.SUCCESS) {
+            source.sendSuccess(() -> Component.translatable(
+                    create ? "command.rovenfall.portal.create.success" : "command.rovenfall.portal.edit.success",
+                    portalId.toString()), true);
+            return 1;
+        }
+        return portalMutationFailure(source, result.status(), portalId);
+    }
+
+    private static int deletePortal(CommandSourceStack source, Identifier portalId, String reason) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        PortalService.MutationResult result = PortalService.delete(
+                state, actorId(source), hasNativeOwnerPermission(source), portalId, reason,
+                Instant.now().toEpochMilli(), UUID.randomUUID());
+        if (result.status() == PortalService.Status.SUCCESS) {
+            source.sendSuccess(() -> Component.translatable(
+                    "command.rovenfall.portal.delete.success", portalId.toString()), true);
+            return 1;
+        }
+        return portalMutationFailure(source, result.status(), portalId);
+    }
+
+    private static int viewPortal(CommandSourceStack source, Identifier portalId) {
+        PortalDefinition definition = PlatformSavedData.get(source.getServer()).portalDefinition(portalId).orElse(null);
+        if (definition == null) {
+            return failure(source, "command.rovenfall.portal.error.not_found", portalId.toString());
+        }
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.portal.info",
+                portalId.toString(),
+                definition.origin().auditSummary(),
+                definition.destination().auditSummary(),
+                definition.protectionRadiusChunks(),
+                definition.cooldownMillis() / 1_000L,
+                definition.safeArrivalPolicy().getSerializedName(),
+                definition.allowCombat()), false);
+        return 1;
+    }
+
+    private static int listPortals(CommandSourceStack source, int page) {
+        var portals = PlatformSavedData.get(source.getServer()).portalDefinitions();
+        int totalPages = Math.max(1, (portals.size() + PORTAL_PAGE_SIZE - 1) / PORTAL_PAGE_SIZE);
+        if (page < 0 || page >= totalPages) {
+            return failure(source, "command.rovenfall.portal.error.page", totalPages);
+        }
+        if (portals.isEmpty()) {
+            source.sendSuccess(() -> Component.translatable("command.rovenfall.portal.list.empty"), false);
+            return 1;
+        }
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.portal.list.header", page + 1, totalPages, portals.size()), false);
+        int start = page * PORTAL_PAGE_SIZE;
+        portals.subList(start, Math.min(start + PORTAL_PAGE_SIZE, portals.size())).forEach(entry ->
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.portal.list.entry",
+                        entry.getKey().toString(),
+                        entry.getValue().origin().auditSummary(),
+                        entry.getValue().destination().auditSummary()), false));
+        return 1;
+    }
+
+    private static int usePortal(CommandSourceStack source, Identifier portalId) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        long now = Instant.now().toEpochMilli();
+        PortalTravelService.TravelResult result = PortalTravelService.travel(
+                PlatformSavedData.get(source.getServer()), player, portalId, now, UUID.randomUUID());
+        if (result.status() == PortalTravelService.Status.SUCCESS) {
+            source.sendSuccess(() -> Component.translatable(
+                    "portal.rovenfall.travel.success", portalId.toString()), false);
+            return 1;
+        }
+        if (result.status() == PortalTravelService.Status.COOLDOWN
+                || result.status() == PortalTravelService.Status.COMBAT_LOCKED) {
+            long seconds = Math.max(1L, (result.retryAtEpochMillis() - now + 999L) / 1_000L);
+            return failure(source,
+                    "portal.rovenfall.travel.error." + result.status().name().toLowerCase(java.util.Locale.ROOT),
+                    seconds);
+        }
+        return failure(source,
+                "portal.rovenfall.travel.error." + result.status().name().toLowerCase(java.util.Locale.ROOT));
+    }
+
+    private static int portalMutationFailure(
+            CommandSourceStack source, PortalService.Status status, Identifier portalId) {
+        return switch (status) {
+            case INVALID_REASON -> failure(
+                    source, "command.rovenfall.admin.error.invalid_reason", AdministrationService.MAX_REASON_LENGTH);
+            case READ_ONLY_SCHEMA -> failure(
+                    source, "command.rovenfall.admin.error.read_only_schema",
+                    PlatformSavedData.get(source.getServer()).schemaVersion());
+            case NOT_FOUND -> failure(source, "command.rovenfall.portal.error.not_found", portalId.toString());
+            case SUCCESS -> throw new IllegalStateException("Successful portal result reached failure handling");
+            default -> failure(source,
+                    "command.rovenfall.portal.error." + status.name().toLowerCase(java.util.Locale.ROOT));
+        };
+    }
+
     private static int mutateProtectedRegion(
             CommandSourceStack source,
             Identifier regionId,
@@ -879,6 +1075,7 @@ public final class RovenfallCommands {
             case ALREADY_EXISTS -> failure(source, "command.rovenfall.admin.region.error.already_exists");
             case NOT_FOUND -> failure(source, "command.rovenfall.admin.region.error.not_found");
             case LIMIT_EXCEEDED -> failure(source, "command.rovenfall.admin.region.error.limit");
+            case DEPENDENCY_LOCKED -> failure(source, "command.rovenfall.admin.region.error.dependency_locked");
             case SUCCESS -> throw new IllegalStateException("Successful protected region result reached failure handling");
         };
     }
@@ -1424,6 +1621,17 @@ public final class RovenfallCommands {
 
     private static boolean hasNativeOwnerPermission(CommandSourceStack source) {
         return source.permissions().hasPermission(Permissions.COMMANDS_OWNER);
+    }
+
+    private static boolean canManagePortals(CommandSourceStack source) {
+        if (hasNativeOwnerPermission(source)) {
+            return true;
+        }
+        var player = source.getPlayer();
+        AdminRole role = player == null
+                ? null
+                : PlatformSavedData.get(source.getServer()).roleOf(player.getUUID()).orElse(null);
+        return role == AdminRole.CONTENT_MANAGER || role == AdminRole.OWNER;
     }
 
     private static UUID actorId(CommandSourceStack source) {
