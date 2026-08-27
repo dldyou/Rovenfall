@@ -192,7 +192,8 @@ public final class CareerProgressionService {
 
     static List<RpgPlayerState.ProgressionProvenance> activityEvidence(RpgPlayerState state) {
         return state.provenance().stream()
-                .filter(entry -> entry.kind() == RpgPlayerState.ProgressionProvenance.Kind.ACTIVITY_XP)
+                .filter(entry -> entry.kind() == RpgPlayerState.ProgressionProvenance.Kind.ACTIVITY_XP
+                        || entry.kind() == RpgPlayerState.ProgressionProvenance.Kind.ADMIN_ACTIVITY_XP)
                 .toList();
     }
 
@@ -201,7 +202,8 @@ public final class CareerProgressionService {
             RpgPlayerState.ProgressionProvenance... entries) {
         List<RpgPlayerState.ProgressionProvenance> result = new ArrayList<>();
         state.provenance().stream()
-                .filter(entry -> entry.kind() != RpgPlayerState.ProgressionProvenance.Kind.ACTIVITY_XP)
+                .filter(entry -> entry.kind() != RpgPlayerState.ProgressionProvenance.Kind.ACTIVITY_XP
+                        && entry.kind() != RpgPlayerState.ProgressionProvenance.Kind.ADMIN_ACTIVITY_XP)
                 .forEach(result::add);
         result.addAll(state.careerProvenance());
         result.addAll(List.of(entries));
@@ -226,7 +228,8 @@ public final class CareerProgressionService {
         List<RpgPlayerState.ProgressionProvenance> matches = java.util.stream.Stream.concat(
                         player.provenance().stream(), player.careerProvenance().stream())
                 .filter(entry -> entry.kind() == RpgPlayerState.ProgressionProvenance.Kind.CAREER_PROMOTION
-                        || entry.kind() == RpgPlayerState.ProgressionProvenance.Kind.CAREER_SWITCH)
+                        || entry.kind() == RpgPlayerState.ProgressionProvenance.Kind.CAREER_SWITCH
+                        || entry.kind() == RpgPlayerState.ProgressionProvenance.Kind.ADMIN_PROMOTION)
                 .filter(entry -> careerId.map(entry.target()::equals).orElse(true))
                 .sorted(Comparator.comparingLong(RpgPlayerState.ProgressionProvenance::timestamp).reversed()
                         .thenComparing(RpgPlayerState.ProgressionProvenance::transactionId))

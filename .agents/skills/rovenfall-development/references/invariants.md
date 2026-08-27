@@ -27,12 +27,15 @@ Required atomic operations include:
 - promotion: active lineage, prerequisites, inventory/currency costs, branch conflict, mutation, audit;
 - skill unlock/reset: tree version, prerequisites, points/currency, mutation, audit;
 - active skill: protocol/session, monotonic request, definition revision, learned active slot, current career lineage, persistent world-time cooldown, server-resolved target/dimension/range/line of sight/protection, effect, and request/cooldown commit; discard armed effects on logout, career change, skill reset, or definition reload;
+- RPG administration: viewer-or-higher read authorization; moderator/owner activity XP adjustment; content-manager/owner career recovery and support skill reset; actor, offline target UUID, bounded reason, transaction UUID, canonical before/after or exact reset plan, pending platform journal, idempotent RPG mutation and provenance, completed platform journal plus audit; recover pending operations before accepting another mutation for that player;
 - portal travel: portal link, cooldown, combat rule, safe destination, teleport, audit where required; and
 - administrative mutation: role, reason, target snapshot, mutation, audit.
 
 Use `long` for currency and experience totals. Check addition, multiplication, conversion, negative values, and configured upper bounds before mutation. Assign a unique transaction ID to retryable or multi-domain operations so a retry cannot charge or reward twice.
 
 Paid skill resets cross the Platform and RPG persistence roots. Persist the exact validated reset plan with a non-reversible `RPG_SKILL_PAYMENT` receipt as `PENDING`, commit the RPG reset with the same transaction UUID, then mark the operation `COMPLETED`. Login recovery must handle either root reaching disk first without charging or refunding twice. Before applying a persisted plan, regenerate it from the current definitions and player state and require an exact match. Missing/mismatched receipts make Platform persistence read-only; a pending receipt never expires before completion.
+
+Administrative RPG mutations use the same cross-root ordering without an economy receipt: persist a canonical `RpgAdminOperation` as `PENDING`, apply the RPG change and admin provenance idempotently, then complete the journal and platform audit together. Support resets never debit player currency. Promotion recovery may bypass activity thresholds, but every parent career must already be at its configured maximum rank. Activity XP reductions never cascade into implicit career or skill revocation.
 
 ## Persistence and migration
 

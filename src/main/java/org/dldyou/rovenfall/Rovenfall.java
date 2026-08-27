@@ -75,6 +75,7 @@ import org.dldyou.rovenfall.administration.EconomyTransactionReceipt;
 import org.dldyou.rovenfall.administration.AdministrationService;
 import org.dldyou.rovenfall.administration.PlatformSavedData;
 import org.dldyou.rovenfall.administration.PlayerRecordService;
+import org.dldyou.rovenfall.administration.RpgAdministrationService;
 import org.dldyou.rovenfall.administration.RovenfallCommands;
 import org.dldyou.rovenfall.administration.ShopInstanceService;
 import org.dldyou.rovenfall.administration.ShopTradeService;
@@ -136,6 +137,7 @@ public final class Rovenfall {
         NeoForge.EVENT_BUS.addListener(RovenfallCommands::register);
         NeoForge.EVENT_BUS.addListener(EconomyService::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(RpgSkillResetCoordinator::onPlayerLoggedIn);
+        NeoForge.EVENT_BUS.addListener(RpgAdministrationService::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(RpgSkillNetwork::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(RpgSkillNetwork::onPlayerLoggedOut);
         NeoForge.EVENT_BUS.addListener(PlayerRecordService::onPlayerLoggedIn);

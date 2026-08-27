@@ -435,6 +435,7 @@ public final class RovenfallCommands {
                         .then(adminShopCommand)
                         .then(adminClaimCommand)
                         .then(protectedRegionCommand)
+                        .then(RpgAdminCommands.command())
                         .then(auditCommand)
                         .then(snapshotCommand)
                         .then(wildernessCommand)));
@@ -1750,12 +1751,12 @@ public final class RovenfallCommands {
                 && PlatformSavedData.get(source.getServer()).roleOf(player.getUUID()).orElse(null) == AdminRole.OWNER;
     }
 
-    private static UUID actorId(CommandSourceStack source) {
+    static UUID actorId(CommandSourceStack source) {
         var actor = source.getPlayer();
         return actor == null ? AdministrationService.SYSTEM_ACTOR : actor.getUUID();
     }
 
-    private static boolean authorizationOverride(CommandSourceStack source, PlatformSavedData state) {
+    static boolean authorizationOverride(CommandSourceStack source, PlatformSavedData state) {
         return hasNativeOwnerPermission(source) && (source.getPlayer() == null || !state.hasAnyAdminRoles());
     }
 
