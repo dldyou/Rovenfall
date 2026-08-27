@@ -75,6 +75,7 @@ import org.dldyou.rovenfall.administration.EconomyReversalService;
 import org.dldyou.rovenfall.administration.EconomyTransactionReceipt;
 import org.dldyou.rovenfall.administration.AdministrationService;
 import org.dldyou.rovenfall.administration.BossRewardService;
+import org.dldyou.rovenfall.administration.BossAdministrationService;
 import org.dldyou.rovenfall.administration.PlatformSavedData;
 import org.dldyou.rovenfall.administration.PlayerRecordService;
 import org.dldyou.rovenfall.administration.RpgAdministrationService;
@@ -387,12 +388,20 @@ public final class Rovenfall {
                         center, protectedRegion, timestamp, level.getGameTime());
                 helper.assertTrue(BossEncounterSavedData.get(server).put(encounter),
                         "Could not persist boss lifecycle fixture");
-                helper.assertTrue(BossEncounterRuntime.reset(server, encounterId, timestamp + 2)
+                UUID adminTransaction = UUID.randomUUID();
+                var adminReset = BossAdministrationService.reset(
+                        server, AdministrationService.SYSTEM_ACTOR, true, encounterId,
+                        "gametest safe boss reset", timestamp + 2, adminTransaction);
+                var adminReplay = BossAdministrationService.reset(
+                        server, AdministrationService.SYSTEM_ACTOR, true, encounterId,
+                        "gametest safe boss reset", timestamp + 3, adminTransaction);
+                helper.assertTrue(adminReset.status() == BossAdministrationService.Status.SUCCESS
+                                && adminReplay.status() == BossAdministrationService.Status.DUPLICATE
                                 && !boss.isAlive()
                                 && BossEncounterSavedData.get(server).encounter(encounterId).isEmpty()
                                 && PlatformSavedData.get(server).protectedRegion(
                                         BossEncounterRuntime.regionId(encounterId)).isEmpty(),
-                        "Boss reset stranded entity, encounter, or arena protection state");
+                        "Audited boss reset was not safe and idempotent");
 
                 UUID completionId = UUID.randomUUID();
                 var completedBoss = EntityTypes.IRON_GOLEM.create(level, EntitySpawnReason.COMMAND);
@@ -431,10 +440,21 @@ public final class Rovenfall {
                         timestamp + 5, orphanId);
                 helper.assertTrue(orphan.status() == ProtectedRegionService.Status.SUCCESS,
                         "Could not construct orphan arena recovery fixture");
-                BossEncounterRuntime.recover(server, timestamp + 6);
+                UUID recoveryTransaction = UUID.randomUUID();
+                var adminRecovery = BossAdministrationService.recover(
+                        server, AdministrationService.SYSTEM_ACTOR, true,
+                        "gametest stuck encounter recovery", timestamp + 6, recoveryTransaction);
+                var recoveryReplay = BossAdministrationService.recover(
+                        server, AdministrationService.SYSTEM_ACTOR, true,
+                        "gametest stuck encounter recovery", timestamp + 7, recoveryTransaction);
                 helper.assertTrue(PlatformSavedData.get(server).protectedRegion(
-                                BossEncounterRuntime.regionId(orphanId)).isEmpty(),
-                        "Restart recovery did not remove an orphan arena region");
+                                BossEncounterRuntime.regionId(orphanId)).isEmpty()
+                                && (adminRecovery.status() == BossAdministrationService.Status.SUCCESS
+                                        && recoveryReplay.status() == BossAdministrationService.Status.DUPLICATE
+                                    || adminRecovery.status() == BossAdministrationService.Status.RECOVERY_PENDING
+                                        && recoveryReplay.status()
+                                            == BossAdministrationService.Status.RECOVERY_PENDING),
+                        "Audited recovery did not remove an orphan arena idempotently");
 
                 UUID unrelatedId = UUID.randomUUID();
                 UUID unrelatedTransaction = UUID.randomUUID();
@@ -558,12 +578,15 @@ public final class Rovenfall {
                 helper.assertTrue(BossEncounterSavedData.get(server).put(recoveryEncounter),
                         "Could not persist the pending boss reward recovery fixture");
 
-                BossEncounterRuntime.recover(server, timestamp + 8);
+                var safePendingReset = BossAdministrationService.reset(
+                        server, AdministrationService.SYSTEM_ACTOR, true, recoveryEncounterId,
+                        "gametest pending reward reset", timestamp + 8, UUID.randomUUID());
 
-                helper.assertTrue(BossEncounterSavedData.get(server).encounter(recoveryEncounterId).isEmpty()
+                helper.assertTrue(safePendingReset.status() == BossAdministrationService.Status.SUCCESS
+                                && BossEncounterSavedData.get(server).encounter(recoveryEncounterId).isEmpty()
                                 && BossRewardSavedData.get(server).operation(BossRewardService.transactionId(
                                         recoveryEncounterId, recoveryPlayer.getUUID())).isPresent(),
-                        "Restart recovery lost a death-complete encounter after its boss entity disappeared");
+                        "Administrator reset lost reward intent before durable reward evidence existed");
                 recoveryPlayer.discard();
                 player.discard();
                 helper.succeed();

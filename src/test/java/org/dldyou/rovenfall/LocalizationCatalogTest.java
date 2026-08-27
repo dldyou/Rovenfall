@@ -92,7 +92,18 @@ final class LocalizationCatalogTest {
             "message.rovenfall.boss.phase",
             "message.rovenfall.boss.telegraph",
             "message.rovenfall.boss.ended",
-            "message.rovenfall.boss.reward_received"
+            "message.rovenfall.boss.reward_received",
+            "command.rovenfall.admin.boss.list.header",
+            "command.rovenfall.admin.boss.info",
+            "command.rovenfall.admin.boss.participants.header",
+            "command.rovenfall.admin.boss.rewards.header",
+            "command.rovenfall.admin.boss.cooldowns.header",
+            "command.rovenfall.admin.boss.mutations.header",
+            "command.rovenfall.admin.boss.mutations.truncated",
+            "command.rovenfall.admin.boss.mutation.success",
+            "command.rovenfall.admin.boss.error.rewards_pending",
+            "command.rovenfall.admin.boss.error.recovery_pending",
+            "command.rovenfall.admin.boss.error.transaction_conflict"
     );
 
     @Test

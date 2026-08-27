@@ -153,8 +153,7 @@ public final class BossEncounterRuntime {
     }
 
     public static boolean reset(MinecraftServer server, UUID encounterId, long timestampEpochMillis) {
-        if (server == null || encounterId == null || timestampEpochMillis < 0
-                || BossEncounterSavedData.get(server).encounter(encounterId).isEmpty()) {
+        if (server == null || encounterId == null || timestampEpochMillis < 0) {
             return false;
         }
         finish(server, encounterId, "manual_reset", timestampEpochMillis, true);
@@ -792,7 +791,8 @@ public final class BossEncounterRuntime {
                         .isPresent());
     }
 
-    private static boolean isOwnedArenaRegion(
+    /** Exact ownership predicate shared by arena cleanup and administrator recovery evidence. */
+    public static boolean isOwnedArenaRegion(
             MinecraftServer server, Identifier regionId, ProtectedRegion region) {
         UUID encounterId = arenaEncounterId(regionId).orElse(null);
         if (encounterId == null

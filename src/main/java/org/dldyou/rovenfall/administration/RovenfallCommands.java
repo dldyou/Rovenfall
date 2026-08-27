@@ -436,6 +436,7 @@ public final class RovenfallCommands {
                         .then(adminClaimCommand)
                         .then(protectedRegionCommand)
                         .then(RpgAdminCommands.command())
+                        .then(BossAdminCommands.command())
                         .then(auditCommand)
                         .then(snapshotCommand)
                         .then(wildernessCommand)));

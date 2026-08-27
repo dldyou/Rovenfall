@@ -97,6 +97,14 @@ public final class BossRewardSavedData extends SavedData {
         return Optional.ofNullable(operations.get(transactionId));
     }
 
+    /** Immutable, deterministically ordered evidence for bounded administrator views. */
+    public List<Map.Entry<UUID, BossRewardOperation>> operations() {
+        return operations.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
     public List<Map.Entry<UUID, BossRewardOperation>> pendingOperations() {
         return operations.entrySet().stream()
                 .filter(entry -> entry.getValue().phase() == BossRewardOperation.Phase.PENDING

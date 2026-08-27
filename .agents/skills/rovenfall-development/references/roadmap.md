@@ -61,8 +61,9 @@ Exit: progression, promotion, branch switching, skill use, restart, malformed pa
 - Data-composed Wilderness mutations for eligible existing mobs.
 - One protected-arena boss with multiple observable patterns.
 - Contribution-based personal rewards, reward cooldowns, and lifecycle audit.
+- Role-gated mutation/encounter/reward/cooldown views plus audited, idempotent safe reset and recovery.
 
-Exit: spawn boundaries, mutation composition, boss state transitions, reward eligibility, restart behavior, and no-Hub-spawn rules pass.
+Exit: spawn boundaries, mutation composition, boss state transitions, reward eligibility, administrator recovery, restart behavior, and no-Hub-spawn rules pass.
 
 ## Milestone 6: operations hardening
 
