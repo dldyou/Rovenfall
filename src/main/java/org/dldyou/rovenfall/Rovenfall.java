@@ -100,6 +100,7 @@ import org.dldyou.rovenfall.economy.ShopInstance;
 import org.dldyou.rovenfall.mobs.MobContentReloadListener;
 import org.dldyou.rovenfall.mobs.MobContentCatalog;
 import org.dldyou.rovenfall.mobs.MobContentSnapshot;
+import org.dldyou.rovenfall.mobs.MobMutationRuntime;
 import org.dldyou.rovenfall.mobs.RovenfallMobClient;
 import org.dldyou.rovenfall.mobs.RovenfallMobEntities;
 import org.dldyou.rovenfall.mobs.RovenfallMobRuntime;
@@ -152,6 +153,7 @@ public final class Rovenfall {
         ClaimProtectionEvents.register(NeoForge.EVENT_BUS);
         RpgSkillEvents.register(NeoForge.EVENT_BUS);
         RovenfallMobRuntime.register(NeoForge.EVENT_BUS);
+        MobMutationRuntime.register(NeoForge.EVENT_BUS);
         NeoForge.EVENT_BUS.addListener(this::addServerReloadListeners);
         NeoForge.EVENT_BUS.addListener(shopTemplates::onDefaultDataComponentsBound);
         NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onDamage);
@@ -214,7 +216,7 @@ public final class Rovenfall {
                 helper.assertTrue(snapshot.mob(id("grove_stalker")).orElseThrow().loot()
                                 .equals(id("grove_stalker_loot")),
                         "Custom mob reward reference was not preserved");
-                helper.assertTrue(snapshot.mutation(id("volatile")).orElseThrow().eligibleEntityTypes().size() == 3,
+                helper.assertTrue(snapshot.mutation(id("volatile")).orElseThrow().eligibleEntityTypes().size() == 5,
                         "Mutation eligibility definition was not loaded");
                 var boss = snapshot.boss(id("rift_warden")).orElseThrow();
                 helper.assertTrue(boss.phases().size() == 2 && boss.phases().get(1).patterns().size() == 2,
@@ -294,6 +296,53 @@ public final class Rovenfall {
                 beetle.discard();
                 groveTarget.discard();
                 beetleTarget.discard();
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("mutation_modifiers"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var level = helper.getLevel();
+                var mutation = MobContentReloadListener.snapshot(level.getServer())
+                        .mutation(id("volatile")).orElseThrow();
+                var stacked = new MobContentCatalog.MutationDefinition(
+                        id("volatile_stacked"), mutation.translationKey(), mutation.eligibleEntityTypes(),
+                        mutation.attributes(), mutation.behaviorModifiers(), mutation.markerTranslationKey(),
+                        mutation.spawn(), 125, mutation.bonusLoot());
+                var zombie = EntityTypes.ZOMBIE.create(level, EntitySpawnReason.COMMAND);
+                helper.assertTrue(zombie != null, "Could not create mutation test mob");
+
+                var maxHealth = zombie.getAttribute(Attributes.MAX_HEALTH);
+                helper.assertTrue(maxHealth != null, "Mutation test mob has no max-health attribute");
+                double originalMaximum = zombie.getMaxHealth();
+                int originalModifiers = maxHealth.getModifiers().size();
+                MobMutationRuntime.applyMutations(zombie, List.of(mutation, stacked), false);
+                helper.assertTrue(MobMutationRuntime.mutationIds(zombie).size() == 2
+                                && maxHealth.getModifiers().size() == originalModifiers + 2
+                                && zombie.getMaxHealth() > originalMaximum
+                                && zombie.getHealth() == zombie.getMaxHealth()
+                                && zombie.hasGlowingTag()
+                                && zombie.getCustomName() != null
+                                && zombie.isCustomNameVisible(),
+                        "Stacked mutation identity or attributes were not applied");
+
+                zombie.setHealth(13.0F);
+                MobMutationRuntime.applyMutations(zombie, List.of(mutation, stacked), true);
+                helper.assertTrue(zombie.getHealth() == 13.0F
+                                && maxHealth.getModifiers().size() == originalModifiers + 2,
+                        "Persisted mutation reload healed the mob or duplicated modifiers");
+
+                BlockPos hubPosition = helper.absolutePos(new BlockPos(1, 2, 1));
+                zombie.snapTo(hubPosition.getX() + 0.5, hubPosition.getY(), hubPosition.getZ() + 0.5, 0, 0);
+                helper.assertTrue(level.addFreshEntity(zombie), "Could not add mutation fixture to the Hub");
+                helper.assertTrue(MobMutationRuntime.mutationIds(zombie).isEmpty()
+                                && maxHealth.getModifiers().size() == originalModifiers
+                                && zombie.getMaxHealth() == originalMaximum
+                                && !zombie.hasGlowingTag()
+                                && zombie.getCustomName() == null,
+                        "Hub admission did not clean persisted mutation state");
+                zombie.discard();
                 helper.succeed();
             }
         });

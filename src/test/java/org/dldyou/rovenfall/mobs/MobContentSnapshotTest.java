@@ -111,6 +111,28 @@ final class MobContentSnapshotTest {
     }
 
     @Test
+    void rejectsMutationMultipliersThatCanEraseOrExplodeAttributes() {
+        MobContentCatalog valid = builtIn();
+        var mutation = valid.mutations().getFirst();
+        var modifier = mutation.attributes().getFirst();
+        var invalidMutation = new MobContentCatalog.MutationDefinition(
+                mutation.id(), mutation.translationKey(), mutation.eligibleEntityTypes(),
+                List.of(new MobContentCatalog.AttributeModifier(
+                        modifier.attribute(), modifier.operation(), -1.0)),
+                mutation.behaviorModifiers(), mutation.markerTranslationKey(), mutation.spawn(),
+                mutation.rewardMultiplierPercent(), mutation.bonusLoot());
+        var invalid = new MobContentCatalog(
+                valid.mobs(), List.of(invalidMutation), valid.arenas(), valid.contributionRules(),
+                valid.loot(), valid.bosses());
+
+        var error = assertThrows(MobContentSnapshot.ValidationException.class,
+                () -> MobContentSnapshot.compile(List.of(source("invalid_multiplier", invalid))));
+
+        assertTrue(error.problems().stream().anyMatch(
+                problem -> problem.cause().contains("attribute multiplier")));
+    }
+
+    @Test
     void failedReplacementPreservesTheLastBoundSnapshot() {
         var store = new MobContentStore();
         MobContentCatalog valid = builtIn();

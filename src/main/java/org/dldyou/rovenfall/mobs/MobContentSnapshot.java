@@ -215,7 +215,13 @@ public final class MobContentSnapshot {
             if (!attributes.add(key)) {
                 problems.add(problem(source, mutation.id(), "duplicate attribute operation: " + key));
             }
-            finiteRange(source, mutation.id(), "attribute amount", modifier.amount(), -1_000_000, 1_000_000, problems);
+            if (modifier.operation() == MobContentCatalog.Operation.ADD) {
+                finiteRange(source, mutation.id(), "attribute amount", modifier.amount(),
+                        -1_000_000, 1_000_000, problems);
+            } else {
+                finiteRange(source, mutation.id(), "attribute multiplier", modifier.amount(),
+                        -0.95, 10, problems);
+            }
         }
         validateSpawn(source, mutation.id(), mutation.spawn(), problems);
         range(source, mutation.id(), "reward multiplier percent", mutation.rewardMultiplierPercent(), 1, 10_000, problems);

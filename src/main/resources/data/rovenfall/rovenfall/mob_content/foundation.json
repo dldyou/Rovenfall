@@ -47,7 +47,13 @@
     {
       "id": "rovenfall:volatile",
       "translation_key": "mutation.rovenfall.volatile",
-      "eligible_entity_types": ["minecraft:wolf", "minecraft:silverfish", "minecraft:zombie"],
+      "eligible_entity_types": [
+        "minecraft:wolf",
+        "minecraft:silverfish",
+        "minecraft:zombie",
+        "rovenfall:grove_stalker",
+        "rovenfall:orebound_beetle"
+      ],
       "attributes": [
         {
           "attribute": "minecraft:max_health",
