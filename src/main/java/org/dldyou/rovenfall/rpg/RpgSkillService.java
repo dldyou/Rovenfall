@@ -246,7 +246,7 @@ public final class RpgSkillService {
                 0, 0, 0, 0, committed);
     }
 
-    private static Optional<RpgPlayerState> applyPlan(RpgPlayerState current, SkillResetPlan plan) {
+    static Optional<RpgPlayerState> applyPlan(RpgPlayerState current, SkillResetPlan plan) {
         Map<Identifier, RpgPlayerState.CareerProgress> careers = new HashMap<>(current.careers());
         Map<Identifier, Integer> refunds = new HashMap<>();
         for (SkillResetPlan.RemovedSkill removed : plan.removedSkills()) {

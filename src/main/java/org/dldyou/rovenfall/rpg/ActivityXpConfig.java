@@ -112,6 +112,32 @@ public final class ActivityXpConfig {
         }
     }
 
+    public static ConfigSnapshot snapshot() {
+        Limits limits = limits();
+        return new ConfigSnapshot(
+                limits.maxAward(),
+                limits.maxWindowAwards(),
+                limits.windowMillis(),
+                limits.cooldownMillis(),
+                limits.combatTargetXpCap(),
+                skillResetCost(SkillResetPlan.Mode.BRANCH),
+                skillResetCost(SkillResetPlan.Mode.FULL),
+                activeSkillSlots(),
+                explorationAdvancements().size());
+    }
+
+    public record ConfigSnapshot(
+            int maxAward,
+            int maxWindowAwards,
+            long windowMillis,
+            long cooldownMillis,
+            int combatTargetXpCap,
+            long branchResetCost,
+            long fullResetCost,
+            int activeSkillSlots,
+            int explorationAdvancementCount) {
+    }
+
     private static boolean validIdentifier(Object value) {
         if (!(value instanceof String text)) {
             return false;

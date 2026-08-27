@@ -73,6 +73,31 @@ finishes either save-order interruption using the same transaction UUID. The
 dedicated `rpg_skill_payment` receipt is never accepted by generic economy reversal.
 Branch and full prices are configurable in `rovenfall-rpg-server.toml`.
 
+RPG administration uses `/rovenfall admin rpg`. Every administrator role may
+page through an offline UUID's progression, recent award evidence, suspicious
+award-only evidence, and the effective configuration/definition revision.
+`MODERATOR` and `OWNER` may adjust activity XP. `CONTENT_MANAGER` and `OWNER`
+may recover a promotion whose activity progress evidence was lost and perform a
+no-charge support skill reset. Promotion recovery still requires every parent
+career at its configured maximum rank, and lowering activity XP
+does not silently revoke career XP, ranks, points, or learned skills.
+The concrete subcommands are `view <player_uuid> [page]`,
+`history <player_uuid> [page]`, `history suspicious <player_uuid> [page]`,
+`history activity <player_uuid> <activity> [page]`, `config`,
+`xp add|remove <player_uuid> <activity> <amount> <transaction_uuid> <reason>`,
+`promotion recover <player_uuid> <career> <transaction_uuid> <reason>`, and
+`skill reset branch|full <player_uuid> <target> <transaction_uuid> <reason>`.
+
+Every administrative mutation requires an explicit reason and transaction UUID.
+The platform schema 12 `RpgAdminOperation` journal first stores the canonical
+actor, player, action, target, expected value/delta or exact reset plan as
+`PENDING`. The RPG root then applies the same transaction idempotently and writes
+admin provenance. Finally the platform changes the operation to `COMPLETED` and
+appends an `AuditEntry` containing actor, target, before/after, reason, and
+transaction UUID in one platform commit. Login recovery completes either save
+ordering without repeating the mutation. A player cannot start another admin RPG
+mutation while a prior one is pending.
+
 Player commands are `/rovenfall skill learn <skill>`,
 `/rovenfall skill bind <1..4> <skill>`, `/rovenfall skill unbind <1..4>`,
 `/rovenfall skill reset branch <skill>`, and

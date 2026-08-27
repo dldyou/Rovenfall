@@ -23,7 +23,8 @@ final class PlatformDataMigrations {
             Map.entry(7, state -> state.atVersion(8)),
             Map.entry(8, state -> state.atVersion(9)),
             Map.entry(9, state -> state.atVersion(10)),
-            Map.entry(10, state -> state.atVersion(11))
+            Map.entry(10, state -> state.atVersion(11)),
+            Map.entry(11, state -> state.atVersion(12))
     );
 
     private PlatformDataMigrations() {
@@ -56,7 +57,7 @@ final class PlatformDataMigrations {
                 7, state.adminRoles(), state.auditEntries(), state.playerRecords(), state.economyBalances(),
                 state.economyTransactions(), state.shopInstances(), state.economyReceipts(), state.economyAlerts(),
                 migratedClaims, state.claimReceipts(), state.protectedRegions(), state.portalState(),
-                state.wildernessResetState(), state.rpgSkillOperations());
+                state.wildernessResetState(), state.rpgSkillOperations(), state.rpgAdminOperations());
     }
 
     static MigrationResult migrate(
@@ -75,11 +76,12 @@ final class PlatformDataMigrations {
             PortalState portalState,
             WildernessResetState wildernessResetState,
             Map<UUID, RpgSkillOperation> rpgSkillOperations,
+            Map<UUID, RpgAdminOperation> rpgAdminOperations,
             int targetVersion) {
         PersistedState original = new PersistedState(
                 schemaVersion, adminRoles, auditEntries, playerRecords, economyBalances, economyTransactions,
                 shopInstances, economyReceipts, economyAlerts, claims, claimReceipts, protectedRegions, portalState,
-                wildernessResetState, rpgSkillOperations);
+                wildernessResetState, rpgSkillOperations, rpgAdminOperations);
         if (schemaVersion < 0 || schemaVersion > targetVersion) {
             return MigrationResult.readOnly(original);
         }
@@ -115,7 +117,8 @@ final class PlatformDataMigrations {
             Map<Identifier, ProtectedRegion> protectedRegions,
             PortalState portalState,
             WildernessResetState wildernessResetState,
-            Map<UUID, RpgSkillOperation> rpgSkillOperations) {
+            Map<UUID, RpgSkillOperation> rpgSkillOperations,
+            Map<UUID, RpgAdminOperation> rpgAdminOperations) {
         PersistedState {
             adminRoles = Map.copyOf(adminRoles);
             auditEntries = List.copyOf(auditEntries);
@@ -131,13 +134,14 @@ final class PlatformDataMigrations {
             portalState = portalState == null ? PortalState.EMPTY : portalState;
             wildernessResetState = wildernessResetState == null ? WildernessResetState.EMPTY : wildernessResetState;
             rpgSkillOperations = Map.copyOf(rpgSkillOperations);
+            rpgAdminOperations = Map.copyOf(rpgAdminOperations);
         }
 
         PersistedState atVersion(int version) {
             return new PersistedState(
                     version, adminRoles, auditEntries, playerRecords, economyBalances, economyTransactions,
                     shopInstances, economyReceipts, economyAlerts, claims, claimReceipts, protectedRegions, portalState,
-                    wildernessResetState, rpgSkillOperations);
+                    wildernessResetState, rpgSkillOperations, rpgAdminOperations);
         }
     }
 
