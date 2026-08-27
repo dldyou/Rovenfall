@@ -9,6 +9,16 @@ Before opening a pull request, run:
 ./gradlew runGameTestServer
 ```
 
+## Code coverage
+
+Generate the JUnit coverage reports before changing tested Java code:
+
+```shell
+./gradlew test jacocoTestReport
+```
+
+Open `build/reports/jacoco/test/html/index.html` for the HTML report; tooling can consume `build/reports/jacoco/test/jacocoTestReport.xml`. The Code coverage workflow runs this command for pull requests and pushes to `main`, writes line and branch percentages to its job summary, and uploads both reports as an artifact.
+
 Keep gameplay state and mutations server-authoritative. Validate permissions and inputs before mutation, make multi-step mutations atomic, and record privileged or economic changes in the audit log. Version persistent data and provide migrations. User-facing text must keep matching keys in Korean, English, and Japanese.
 
 Use the pull request template to document validation, compatibility, and rollback risks.
