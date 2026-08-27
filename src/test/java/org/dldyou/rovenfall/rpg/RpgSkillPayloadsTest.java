@@ -24,7 +24,7 @@ final class RpgSkillPayloadsTest {
         var buffer = new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
         try {
             RpgSkillPayloads.Activate.STREAM_CODEC.encode(buffer, payload);
-            assertTrue(buffer.readableBytes() <= 128);
+            assertTrue(buffer.readableBytes() <= RpgSkillPayloads.MAX_ACTIVATE_PACKET_BYTES);
             assertEquals(payload, RpgSkillPayloads.Activate.STREAM_CODEC.decode(buffer));
             assertEquals(0, buffer.readableBytes());
         } finally {
@@ -43,7 +43,7 @@ final class RpgSkillPayloadsTest {
         var buffer = new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
         try {
             RpgSkillPayloads.StateSync.STREAM_CODEC.encode(buffer, payload);
-            assertTrue(buffer.readableBytes() <= 64);
+            assertTrue(buffer.readableBytes() <= RpgSkillPayloads.MAX_STATE_SYNC_PACKET_BYTES);
             assertEquals(payload, RpgSkillPayloads.StateSync.STREAM_CODEC.decode(buffer));
             assertEquals(0, buffer.readableBytes());
         } finally {

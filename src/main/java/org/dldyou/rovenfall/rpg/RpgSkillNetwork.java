@@ -17,7 +17,7 @@ import org.slf4j.Logger;
 /** Versioned active-skill payload registration and replay/rate-limit adapter. */
 public final class RpgSkillNetwork {
     private static final String NETWORK_VERSION = "1";
-    private static final int MAX_REQUESTS_PER_SECOND = 20;
+    public static final int MAX_REQUESTS_PER_SECOND = 20;
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final Map<UUID, Session> SESSIONS = new HashMap<>();
 

@@ -11,6 +11,8 @@ import org.dldyou.rovenfall.Rovenfall;
 
 public final class RpgSkillPayloads {
     public static final int PACKET_REVISION = 1;
+    public static final int MAX_ACTIVATE_PACKET_BYTES = 128;
+    public static final int MAX_STATE_SYNC_PACKET_BYTES = 64;
 
     private RpgSkillPayloads() {
     }

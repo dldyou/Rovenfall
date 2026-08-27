@@ -98,6 +98,11 @@ Boss administration is `OWNER`-only for mutation. Persist the reset/recovery req
 - Paginate admin queries and compute expensive aggregates outside hot event paths from immutable snapshots.
 - Avoid per-tick work when an event, scheduled batch, or cached deadline provides the same behavior.
 - Bound packet collections, search radii, mutation candidates, audit query windows, and definition counts.
+- Keep the deterministic 20- and 50-player performance fixture green across economy, claims, RPG,
+  portals, mobs/bosses, and administration. Structural caps fail the build; runner wall-clock values
+  are diagnostic only.
+- Change a performance budget only with its production constant, fixture assertion, CI report, and
+  `docs/performance-budget.md` updated together.
 
 ## Localization
 
