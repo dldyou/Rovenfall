@@ -461,6 +461,8 @@ public final class RovenfallCommands {
                                         context.getSource(), IntegerArgumentType.getInteger(context, "page") - 1))));
 
         event.getDispatcher().register(Commands.literal("rovenfall")
+                .then(Commands.literal("menu")
+                        .executes(context -> openPlayerMenu(context.getSource())))
                 .then(playerShopCommand)
                 .then(playerClaimCommand)
                 .then(RpgCommands.careerCommand())
@@ -480,6 +482,11 @@ public final class RovenfallCommands {
                         .then(auditCommand)
                         .then(snapshotCommand)
                         .then(wildernessCommand)));
+    }
+
+    private static int openPlayerMenu(CommandSourceStack source) throws CommandSyntaxException {
+        PlayerDashboardMenu.open(source.getPlayerOrException());
+        return 1;
     }
 
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack>
