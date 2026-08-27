@@ -12,11 +12,13 @@ public record CareerDefinition(
         List<Identifier> parents,
         List<Long> levelXp,
         long promotionCost,
-        List<ActivityRequirement> requiredActivities) {
+        List<ActivityRequirement> requiredActivities,
+        int careerXpMultiplier) {
     public static final int MAX_TIER = 1_000;
     public static final int MAX_LEVELS = 1_000;
     public static final int MAX_PARENTS = 16;
     public static final int MAX_REQUIREMENTS = 32;
+    public static final int MAX_CAREER_XP_MULTIPLIER = 100;
     public static final long MAX_XP = ActivityDefinition.MAX_XP;
     public static final long MAX_PROMOTION_COST = 1_000_000_000_000L;
     private static final Codec<Long> PROMOTION_COST_CODEC = Codec.LONG.validate(value ->
@@ -31,8 +33,20 @@ public record CareerDefinition(
             ActivityDefinition.XP_CODEC.listOf(1, MAX_LEVELS).fieldOf("level_xp").forGetter(CareerDefinition::levelXp),
             PROMOTION_COST_CODEC.optionalFieldOf("promotion_cost", 0L).forGetter(CareerDefinition::promotionCost),
             ActivityRequirement.CODEC.listOf(0, MAX_REQUIREMENTS).optionalFieldOf("required_activities", List.of())
-                    .forGetter(CareerDefinition::requiredActivities)
+                    .forGetter(CareerDefinition::requiredActivities),
+            Codec.intRange(1, MAX_CAREER_XP_MULTIPLIER).optionalFieldOf("career_xp_multiplier", 1)
+                    .forGetter(CareerDefinition::careerXpMultiplier)
     ).apply(instance, CareerDefinition::new));
+
+    public CareerDefinition(
+            String translationKey,
+            int tier,
+            List<Identifier> parents,
+            List<Long> levelXp,
+            long promotionCost,
+            List<ActivityRequirement> requiredActivities) {
+        this(translationKey, tier, parents, levelXp, promotionCost, requiredActivities, 1);
+    }
 
     public CareerDefinition {
         parents = List.copyOf(parents);

@@ -143,8 +143,18 @@ public final class RpgDefinitionSnapshot {
             if (definition.tier() < 1 || definition.tier() > CareerDefinition.MAX_TIER) {
                 problems.add(problem(source, "tier must be between 1 and " + CareerDefinition.MAX_TIER));
             }
+            if (definition.tier() == 1 && !definition.parents().isEmpty()) {
+                problems.add(problem(source, "tier 1 career cannot have a parent"));
+            } else if (definition.tier() > 1 && definition.parents().isEmpty()) {
+                problems.add(problem(source, "tier greater than 1 career requires at least one parent"));
+            }
             if (definition.promotionCost() < 0 || definition.promotionCost() > CareerDefinition.MAX_PROMOTION_COST) {
                 problems.add(problem(source, "promotion cost must be between 0 and " + CareerDefinition.MAX_PROMOTION_COST));
+            }
+            if (definition.careerXpMultiplier() < 1
+                    || definition.careerXpMultiplier() > CareerDefinition.MAX_CAREER_XP_MULTIPLIER) {
+                problems.add(problem(source, "career XP multiplier must be between 1 and "
+                        + CareerDefinition.MAX_CAREER_XP_MULTIPLIER));
             }
             if (definition.parents().size() > CareerDefinition.MAX_PARENTS) {
                 problems.add(problem(source, "parent count exceeds " + CareerDefinition.MAX_PARENTS));

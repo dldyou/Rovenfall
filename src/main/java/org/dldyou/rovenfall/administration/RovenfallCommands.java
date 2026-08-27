@@ -32,6 +32,7 @@ import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimRegionPolicy;
 import org.dldyou.rovenfall.claims.ClaimRole;
 import org.dldyou.rovenfall.claims.ClaimSettings;
+import org.dldyou.rovenfall.rpg.RpgCommands;
 import org.dldyou.rovenfall.world.ProtectedRegion;
 import org.dldyou.rovenfall.world.PortalDefinition;
 import org.dldyou.rovenfall.world.WorldTopology;
@@ -424,6 +425,7 @@ public final class RovenfallCommands {
         event.getDispatcher().register(Commands.literal("rovenfall")
                 .then(playerShopCommand)
                 .then(playerClaimCommand)
+                .then(RpgCommands.careerCommand())
                 .then(portalCommand)
                 .then(Commands.literal("admin")
                         .requires(RovenfallCommands::canUseAdministration)

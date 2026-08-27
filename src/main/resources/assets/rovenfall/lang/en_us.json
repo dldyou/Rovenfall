@@ -267,5 +267,18 @@
   "wilderness.rovenfall.restore.shutdown": "Wilderness restore committed. The server is shutting down; restart it to apply the snapshot.",
   "wilderness.rovenfall.reset.completed": "The Wilderness reset completed. A new Wilderness is available.",
   "wilderness.rovenfall.restore.completed": "The Wilderness restore completed from its verified snapshot.",
-  "wilderness.rovenfall.operation.failed": "The Wilderness operation failed safely; the previous Wilderness remains authoritative. Check the audit log."
+  "wilderness.rovenfall.operation.failed": "The Wilderness operation failed safely; the previous Wilderness remains authoritative. Check the audit log.",
+  "command.rovenfall.career.promote.success": "Promoted to %1$s. Audit transaction: %2$s",
+  "command.rovenfall.career.switch.success": "Switched the active career to %1$s. Audit transaction: %2$s",
+  "command.rovenfall.career.promote.error.missing_parent": "Promote into the prerequisite career %s first.",
+  "command.rovenfall.career.promote.error.parent_rank": "Prerequisite career %1$s needs rank %2$s; current rank is %3$s.",
+  "command.rovenfall.career.promote.error.activity_level": "Activity %1$s needs level %2$s; current level is %3$s.",
+  "command.rovenfall.career.promote.error.already": "The %s career is already promoted.",
+  "command.rovenfall.career.switch.error.not_promoted": "Promote the %s career before switching to it.",
+  "command.rovenfall.career.switch.error.already": "The %s career is already active.",
+  "command.rovenfall.career.error.unknown": "Unknown career: %s",
+  "command.rovenfall.career.error.read_only": "Career changes are disabled because RPG persistence is read-only.",
+  "command.rovenfall.career.error.state_full": "No more RPG progression or audit evidence can be stored.",
+  "command.rovenfall.career.error.duplicate": "That career transaction was already processed.",
+  "command.rovenfall.career.error.failed": "Career operation failed: %s"
 }

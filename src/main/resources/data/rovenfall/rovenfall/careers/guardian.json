@@ -3,6 +3,7 @@
   "tier": 3,
   "parents": ["rovenfall:warrior"],
   "level_xp": [300, 900, 1800, 3000],
+  "career_xp_multiplier": 3,
   "promotion_cost": 250,
   "required_activities": [
     {"activity": "rovenfall:combat", "level": 3}

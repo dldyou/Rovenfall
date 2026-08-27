@@ -19,6 +19,13 @@ rolling-window, source cooldown, and per-target combat limits; then commits XP
 and provenance atomically. Provenance contains a unique transaction UUID and is
 available through the bounded, reverse-chronological `evidence` query.
 
+When a player has an active promoted career, the same accepted award also grants
+career XP using that career's data-driven `career_xp_multiplier`. Activity XP,
+career XP, rank advancement, and their two distinct provenance transactions are
+committed together; activity evidence and career evidence use separate bounded
+ledgers so career progress cannot shorten activity duplicate/rate-limit history.
+Overflow or a missing active-career definition rejects the entire award.
+
 The server configuration lives in `rovenfall-rpg-server.toml`. Operators can
 change the maximum XP per result, maximum results per window, window duration,
 source cooldown, combat XP cap per player and target, and exploration advancement
