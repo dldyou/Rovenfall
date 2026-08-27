@@ -361,5 +361,9 @@
   "command.rovenfall.admin.rpg.error.state_full": "The player's RPG state has reached its storage limit.",
   "command.rovenfall.admin.rpg.error.journal_full": "The RPG administration journal is full.",
   "command.rovenfall.admin.rpg.error.rpg_failed": "The RPG mutation could not be applied.",
-  "command.rovenfall.admin.rpg.error.completion_failed": "The RPG mutation applied but audit completion must be recovered."
+  "command.rovenfall.admin.rpg.error.completion_failed": "The RPG mutation applied but audit completion must be recovered.",
+  "message.rovenfall.boss.started": "%s has awakened. The arena is now protected.",
+  "message.rovenfall.boss.phase": "Boss phase changed: %s",
+  "message.rovenfall.boss.telegraph": "Incoming boss pattern: %s",
+  "message.rovenfall.boss.ended": "The boss encounter ended (%s)."
 }

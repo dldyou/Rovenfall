@@ -361,5 +361,9 @@
   "command.rovenfall.admin.rpg.error.state_full": "プレイヤーのRPG状態が保存上限に達しました。",
   "command.rovenfall.admin.rpg.error.journal_full": "RPG管理ジャーナルが満杯です。",
   "command.rovenfall.admin.rpg.error.rpg_failed": "RPG変更を適用できませんでした。",
-  "command.rovenfall.admin.rpg.error.completion_failed": "RPG変更は適用されましたが、監査完了の復旧が必要です。"
+  "command.rovenfall.admin.rpg.error.completion_failed": "RPG変更は適用されましたが、監査完了の復旧が必要です。",
+  "message.rovenfall.boss.started": "%s が目覚めました。アリーナは保護されています。",
+  "message.rovenfall.boss.phase": "ボスフェーズ変更: %s",
+  "message.rovenfall.boss.telegraph": "ボスパターン予告: %s",
+  "message.rovenfall.boss.ended": "ボスエンカウンターが終了しました（%s）。"
 }

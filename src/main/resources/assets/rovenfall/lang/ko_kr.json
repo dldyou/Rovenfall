@@ -361,5 +361,9 @@
   "command.rovenfall.admin.rpg.error.state_full": "플레이어 RPG 상태가 저장 한도에 도달했습니다.",
   "command.rovenfall.admin.rpg.error.journal_full": "RPG 관리 저널이 가득 찼습니다.",
   "command.rovenfall.admin.rpg.error.rpg_failed": "RPG 변경을 적용하지 못했습니다.",
-  "command.rovenfall.admin.rpg.error.completion_failed": "RPG 변경은 적용됐지만 감사 완료 복구가 필요합니다."
+  "command.rovenfall.admin.rpg.error.completion_failed": "RPG 변경은 적용됐지만 감사 완료 복구가 필요합니다.",
+  "message.rovenfall.boss.started": "%s이(가) 깨어났습니다. 아레나가 보호됩니다.",
+  "message.rovenfall.boss.phase": "보스 페이즈 변경: %s",
+  "message.rovenfall.boss.telegraph": "보스 패턴 예고: %s",
+  "message.rovenfall.boss.ended": "보스 인카운터가 종료되었습니다(%s)."
 }

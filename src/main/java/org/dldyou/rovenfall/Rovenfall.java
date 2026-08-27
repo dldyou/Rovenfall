@@ -100,6 +100,9 @@ import org.dldyou.rovenfall.economy.ShopInstance;
 import org.dldyou.rovenfall.mobs.MobContentReloadListener;
 import org.dldyou.rovenfall.mobs.MobContentCatalog;
 import org.dldyou.rovenfall.mobs.MobContentSnapshot;
+import org.dldyou.rovenfall.mobs.BossEncounterRuntime;
+import org.dldyou.rovenfall.mobs.BossEncounterSavedData;
+import org.dldyou.rovenfall.mobs.BossEncounterState;
 import org.dldyou.rovenfall.mobs.MobMutationRuntime;
 import org.dldyou.rovenfall.mobs.RovenfallMobClient;
 import org.dldyou.rovenfall.mobs.RovenfallMobEntities;
@@ -154,6 +157,7 @@ public final class Rovenfall {
         RpgSkillEvents.register(NeoForge.EVENT_BUS);
         RovenfallMobRuntime.register(NeoForge.EVENT_BUS);
         MobMutationRuntime.register(NeoForge.EVENT_BUS);
+        BossEncounterRuntime.register(NeoForge.EVENT_BUS);
         NeoForge.EVENT_BUS.addListener(this::addServerReloadListeners);
         NeoForge.EVENT_BUS.addListener(shopTemplates::onDefaultDataComponentsBound);
         NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onDamage);
@@ -343,6 +347,108 @@ public final class Rovenfall {
                                 && zombie.getCustomName() == null,
                         "Hub admission did not clean persisted mutation state");
                 zombie.discard();
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("boss_encounter_lifecycle"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var level = helper.getLevel();
+                var snapshot = MobContentReloadListener.snapshot(server);
+                var bossDefinition = snapshot.boss(id("rift_warden")).orElseThrow();
+                long timestamp = System.currentTimeMillis();
+                UUID encounterId = UUID.randomUUID();
+
+                var started = BossEncounterRuntime.start(server, bossDefinition.id(), timestamp, encounterId);
+                helper.assertTrue(started.status() == BossEncounterRuntime.StartStatus.TOPOLOGY_UNAVAILABLE,
+                        "Boss encounter bypassed the missing Wilderness topology");
+
+                BlockPos center = helper.absolutePos(new BlockPos(1, 2, 1));
+                var boss = EntityTypes.IRON_GOLEM.create(level, EntitySpawnReason.COMMAND);
+                helper.assertTrue(boss != null, "Could not construct boss lifecycle fixture");
+                boss.snapTo(center.getX() + 0.5D, center.getY(), center.getZ() + 0.5D, 0, 0);
+                helper.assertTrue(level.addFreshEntity(boss), "Could not register boss lifecycle fixture");
+                var protectedRegion = new ProtectedRegion(
+                        AdministrationService.SYSTEM_ACTOR, level.dimension(), center.getX() >> 4,
+                        center.getZ() >> 4, center.getX() >> 4, center.getZ() >> 4);
+                var reserved = ProtectedRegionService.create(
+                        PlatformSavedData.get(server), AdministrationService.SYSTEM_ACTOR, true,
+                        BossEncounterRuntime.regionId(encounterId), protectedRegion, "gametest boss arena",
+                        timestamp + 1, encounterId);
+                helper.assertTrue(reserved.status() == ProtectedRegionService.Status.SUCCESS,
+                        "Could not reserve boss lifecycle arena fixture");
+                var encounter = BossEncounterState.start(
+                        encounterId, bossDefinition.id(), UUID.randomUUID(), boss.getUUID(), level.dimension(),
+                        center, protectedRegion, timestamp, level.getGameTime());
+                helper.assertTrue(BossEncounterSavedData.get(server).put(encounter),
+                        "Could not persist boss lifecycle fixture");
+                helper.assertTrue(BossEncounterRuntime.reset(server, encounterId, timestamp + 2)
+                                && !boss.isAlive()
+                                && BossEncounterSavedData.get(server).encounter(encounterId).isEmpty()
+                                && PlatformSavedData.get(server).protectedRegion(
+                                        BossEncounterRuntime.regionId(encounterId)).isEmpty(),
+                        "Boss reset stranded entity, encounter, or arena protection state");
+
+                UUID completionId = UUID.randomUUID();
+                var completedBoss = EntityTypes.IRON_GOLEM.create(level, EntitySpawnReason.COMMAND);
+                helper.assertTrue(completedBoss != null, "Could not construct boss completion fixture");
+                completedBoss.snapTo(center.getX() + 0.5D, center.getY(), center.getZ() + 0.5D, 0, 0);
+                helper.assertTrue(level.addFreshEntity(completedBoss), "Could not register boss completion fixture");
+                completedBoss.getPersistentData().putString("rovenfall:boss_encounter", completionId.toString());
+                var completionReservation = ProtectedRegionService.create(
+                        PlatformSavedData.get(server), AdministrationService.SYSTEM_ACTOR, true,
+                        BossEncounterRuntime.regionId(completionId), protectedRegion, "gametest boss completion",
+                        timestamp + 3, completionId);
+                helper.assertTrue(completionReservation.status() == ProtectedRegionService.Status.SUCCESS,
+                        "Could not reserve boss completion arena fixture");
+                var completionState = BossEncounterState.start(
+                        completionId, bossDefinition.id(), UUID.randomUUID(), completedBoss.getUUID(),
+                        level.dimension(), center, protectedRegion, timestamp, level.getGameTime());
+                helper.assertTrue(BossEncounterSavedData.get(server).put(completionState),
+                        "Could not persist boss completion fixture");
+                var decoy = EntityTypes.IRON_GOLEM.create(level, EntitySpawnReason.COMMAND);
+                helper.assertTrue(decoy != null, "Could not construct deceptive boss fixture");
+                decoy.snapTo(center.getX() + 1.5D, center.getY(), center.getZ() + 0.5D, 0, 0);
+                helper.assertTrue(level.addFreshEntity(decoy), "Could not register deceptive boss fixture");
+                decoy.getPersistentData().putString("rovenfall:boss_encounter", completionId.toString());
+                decoy.hurtServer(level, level.damageSources().genericKill(), Float.MAX_VALUE);
+                helper.assertTrue(BossEncounterSavedData.get(server).encounter(completionId).isPresent()
+                                && PlatformSavedData.get(server).protectedRegion(
+                                        BossEncounterRuntime.regionId(completionId)).isPresent(),
+                        "A deceptive tagged death completed the real boss encounter");
+                helper.assertTrue(BossEncounterRuntime.reset(server, completionId, timestamp + 4),
+                        "Could not clean the deceptive death fixture");
+
+                UUID orphanId = UUID.randomUUID();
+                var orphan = ProtectedRegionService.create(
+                        PlatformSavedData.get(server), AdministrationService.SYSTEM_ACTOR, true,
+                        BossEncounterRuntime.regionId(orphanId), protectedRegion, "gametest orphan arena",
+                        timestamp + 5, orphanId);
+                helper.assertTrue(orphan.status() == ProtectedRegionService.Status.SUCCESS,
+                        "Could not construct orphan arena recovery fixture");
+                BossEncounterRuntime.recover(server, timestamp + 6);
+                helper.assertTrue(PlatformSavedData.get(server).protectedRegion(
+                                BossEncounterRuntime.regionId(orphanId)).isEmpty(),
+                        "Restart recovery did not remove an orphan arena region");
+
+                UUID unrelatedId = UUID.randomUUID();
+                UUID unrelatedTransaction = UUID.randomUUID();
+                var unrelated = ProtectedRegionService.create(
+                        PlatformSavedData.get(server), AdministrationService.SYSTEM_ACTOR, true,
+                        BossEncounterRuntime.regionId(unrelatedId), protectedRegion, "gametest unrelated arena",
+                        timestamp + 7, unrelatedTransaction);
+                helper.assertTrue(unrelated.status() == ProtectedRegionService.Status.SUCCESS,
+                        "Could not construct unrelated protected-region fixture");
+                BossEncounterRuntime.recover(server, timestamp + 8);
+                helper.assertTrue(PlatformSavedData.get(server).protectedRegion(
+                                BossEncounterRuntime.regionId(unrelatedId)).isPresent(),
+                        "Recovery removed a protected region without a matching encounter reservation");
+                ProtectedRegionService.delete(
+                        PlatformSavedData.get(server), AdministrationService.SYSTEM_ACTOR, true,
+                        BossEncounterRuntime.regionId(unrelatedId), "gametest fixture cleanup",
+                        timestamp + 9, UUID.randomUUID());
                 helper.succeed();
             }
         });

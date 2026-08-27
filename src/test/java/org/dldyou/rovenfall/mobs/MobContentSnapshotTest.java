@@ -133,6 +133,29 @@ final class MobContentSnapshotTest {
     }
 
     @Test
+    void rejectsBossArenaDimensionsAndRadiiOutsideProtectionBounds() {
+        var wrongDimension = JsonParser.parseString(builtInJson()).getAsJsonObject();
+        wrongDimension.getAsJsonArray("arenas").get(0).getAsJsonObject()
+                .addProperty("dimension", "minecraft:the_nether");
+        var wrongDimensionError = assertThrows(MobContentSnapshot.ValidationException.class,
+                () -> MobContentSnapshot.compile(List.of(source(
+                        "wrong_arena_dimension",
+                        MobContentCatalog.CODEC.parse(JsonOps.INSTANCE, wrongDimension).getOrThrow()))));
+        assertTrue(wrongDimensionError.problems().stream().anyMatch(
+                problem -> problem.cause().contains("boss arena dimension must be rovenfall:wilderness")));
+
+        var oversized = JsonParser.parseString(builtInJson()).getAsJsonObject();
+        oversized.getAsJsonArray("arenas").get(0).getAsJsonObject()
+                .addProperty("protection_radius", 1_024);
+        var oversizedError = assertThrows(MobContentSnapshot.ValidationException.class,
+                () -> MobContentSnapshot.compile(List.of(source(
+                        "oversized_arena",
+                        MobContentCatalog.CODEC.parse(JsonOps.INSTANCE, oversized).getOrThrow()))));
+        assertTrue(oversizedError.problems().stream().anyMatch(
+                problem -> problem.cause().contains("boss arena protection exceeds protected-region bounds")));
+    }
+
+    @Test
     void failedReplacementPreservesTheLastBoundSnapshot() {
         var store = new MobContentStore();
         MobContentCatalog valid = builtIn();
@@ -167,16 +190,12 @@ final class MobContentSnapshotTest {
         assertEquals(11, previous.size());
 
         var unboundJson = JsonParser.parseString(builtInJson()).getAsJsonObject();
-        unboundJson.getAsJsonArray("arenas").get(0).getAsJsonObject()
-                .addProperty("dimension", "rovenfall:missing_dimension");
         unboundJson.getAsJsonArray("loot").get(0).getAsJsonObject()
                 .addProperty("loot_table", "rovenfall:missing_loot_table");
         ResourceManager unboundManager = resourceManager(unboundJson.toString());
         MobContentSnapshot unbound = listener.prepare(unboundManager, null);
         var bindingError = assertThrows(MobContentSnapshot.ValidationException.class,
                 () -> unbound.validateRuntimeBindings(bindings));
-        assertTrue(bindingError.problems().stream().anyMatch(
-                problem -> problem.cause().contains("unknown dimension: rovenfall:missing_dimension")));
         assertTrue(bindingError.problems().stream().anyMatch(
                 problem -> problem.cause().contains("unknown loot table: rovenfall:missing_loot_table")));
         listener.apply(unbound, unboundManager, null);
@@ -192,7 +211,7 @@ final class MobContentSnapshotTest {
         assertTrue(hubError.problems().stream().anyMatch(
                 problem -> problem.cause().contains("spawn dimension must be rovenfall:wilderness")));
         assertTrue(hubError.problems().stream().anyMatch(
-                problem -> problem.cause().contains("boss arena cannot target the Hub dimension")));
+                problem -> problem.cause().contains("boss arena dimension must be rovenfall:wilderness")));
         assertSame(previous, listener.snapshot());
     }
 

@@ -21,6 +21,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import org.dldyou.rovenfall.Rovenfall;
 import org.dldyou.rovenfall.rpg.ActivityWorldSavedData;
+import org.dldyou.rovenfall.mobs.BossEncounterSavedData;
 import org.dldyou.rovenfall.world.WorldTopology;
 
 public final class WildernessResetService {
@@ -128,6 +129,9 @@ public final class WildernessResetService {
         if (wilderness == null || hub == null || hubDestination.isEmpty()) {
             return denied(state, actorId, Status.TOPOLOGY_UNAVAILABLE, normalizedReason,
                     timestampEpochMillis, transactionId);
+        }
+        if (BossEncounterSavedData.get(server).activeCount() > 0) {
+            return denied(state, actorId, Status.LOCKED, normalizedReason, timestampEpochMillis, transactionId);
         }
         WildernessResetStore store = WildernessResetStore.forServer(server);
         if (store.hasPending()) {
