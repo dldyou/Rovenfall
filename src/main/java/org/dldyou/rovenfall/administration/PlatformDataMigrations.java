@@ -21,7 +21,8 @@ final class PlatformDataMigrations {
             5, state -> state.atVersion(6),
             6, PlatformDataMigrations::migrateClaimsToSeven,
             7, state -> state.atVersion(8),
-            8, state -> state.atVersion(9)
+            8, state -> state.atVersion(9),
+            9, state -> state.atVersion(10)
     );
 
     private PlatformDataMigrations() {
@@ -53,7 +54,8 @@ final class PlatformDataMigrations {
         return new PersistedState(
                 7, state.adminRoles(), state.auditEntries(), state.playerRecords(), state.economyBalances(),
                 state.economyTransactions(), state.shopInstances(), state.economyReceipts(), state.economyAlerts(),
-                migratedClaims, state.claimReceipts(), state.protectedRegions(), state.portalState());
+                migratedClaims, state.claimReceipts(), state.protectedRegions(), state.portalState(),
+                state.wildernessResetState());
     }
 
     static MigrationResult migrate(
@@ -70,10 +72,12 @@ final class PlatformDataMigrations {
             Map<UUID, ClaimMutationReceipt> claimReceipts,
             Map<Identifier, ProtectedRegion> protectedRegions,
             PortalState portalState,
+            WildernessResetState wildernessResetState,
             int targetVersion) {
         PersistedState original = new PersistedState(
                 schemaVersion, adminRoles, auditEntries, playerRecords, economyBalances, economyTransactions,
-                shopInstances, economyReceipts, economyAlerts, claims, claimReceipts, protectedRegions, portalState);
+                shopInstances, economyReceipts, economyAlerts, claims, claimReceipts, protectedRegions, portalState,
+                wildernessResetState);
         if (schemaVersion < 0 || schemaVersion > targetVersion) {
             return MigrationResult.readOnly(original);
         }
@@ -107,7 +111,8 @@ final class PlatformDataMigrations {
             Map<ClaimKey, Claim> claims,
             Map<UUID, ClaimMutationReceipt> claimReceipts,
             Map<Identifier, ProtectedRegion> protectedRegions,
-            PortalState portalState) {
+            PortalState portalState,
+            WildernessResetState wildernessResetState) {
         PersistedState {
             adminRoles = Map.copyOf(adminRoles);
             auditEntries = List.copyOf(auditEntries);
@@ -121,12 +126,14 @@ final class PlatformDataMigrations {
             claimReceipts = Map.copyOf(claimReceipts);
             protectedRegions = Map.copyOf(protectedRegions);
             portalState = portalState == null ? PortalState.EMPTY : portalState;
+            wildernessResetState = wildernessResetState == null ? WildernessResetState.EMPTY : wildernessResetState;
         }
 
         PersistedState atVersion(int version) {
             return new PersistedState(
                     version, adminRoles, auditEntries, playerRecords, economyBalances, economyTransactions,
-                    shopInstances, economyReceipts, economyAlerts, claims, claimReceipts, protectedRegions, portalState);
+                    shopInstances, economyReceipts, economyAlerts, claims, claimReceipts, protectedRegions, portalState,
+                    wildernessResetState);
         }
     }
 

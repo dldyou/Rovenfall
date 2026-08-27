@@ -11,6 +11,7 @@ import org.dldyou.rovenfall.claims.Claim;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimRegionPolicy;
 import org.dldyou.rovenfall.claims.ClaimRole;
+import org.dldyou.rovenfall.world.WorldTopology;
 
 public final class ClaimProtectionService {
     private static final long DENIED_AUDIT_INTERVAL_MILLIS = 1_000L;
@@ -33,6 +34,9 @@ public final class ClaimProtectionService {
         }
         Optional<Claim> retained = state.claim(key);
         ClaimRole role = retained.map(claim -> claim.roleOf(actorId)).orElse(ClaimRole.VISITOR);
+        if (state.isWildernessOperationLocked() && WorldTopology.isWilderness(key.dimension())) {
+            return new Decision(false, Reason.WILDERNESS_LOCKED, role, retained);
+        }
         if (administratorOverride || hasClaimAdministratorRole(state, actorId)) {
             return new Decision(true, Reason.ADMINISTRATOR_OVERRIDE, role, retained);
         }
@@ -85,6 +89,9 @@ public final class ClaimProtectionService {
             return false;
         }
         if (state.isProtectedRegion(target)) {
+            return false;
+        }
+        if (state.isWildernessOperationLocked() && WorldTopology.isWilderness(target.dimension())) {
             return false;
         }
         if (!target.dimension().equals(hubDimension)) {
@@ -164,6 +171,7 @@ public final class ClaimProtectionService {
         PUBLIC_INTERACTION("public_interaction"),
         PUBLIC_ENTRY("public_entry"),
         ENTRY_RESTRICTED("entry_restricted"),
+        WILDERNESS_LOCKED("wilderness_locked"),
         ENVIRONMENT_BOUNDARY("environment_boundary");
 
         private final String id;

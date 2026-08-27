@@ -1,10 +1,14 @@
 package org.dldyou.rovenfall.world;
 
+import java.nio.file.Path;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.dimension.LevelStem;
+import net.minecraft.world.level.dimension.DimensionType;
+import net.minecraft.world.level.storage.LevelResource;
 import org.dldyou.rovenfall.Rovenfall;
 
 public final class WorldTopology {
@@ -34,5 +38,9 @@ public final class WorldTopology {
 
     public static boolean allowsOrdinaryBuilding(ResourceKey<Level> dimension) {
         return isWilderness(dimension);
+    }
+
+    public static Path wildernessPath(MinecraftServer server) {
+        return DimensionType.getStorageFolder(WILDERNESS, server.getWorldPath(LevelResource.ROOT));
     }
 }

@@ -32,7 +32,7 @@ import org.dldyou.rovenfall.world.WorldTopology;
 
 public final class PlatformSavedData extends SavedData {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
-    public static final int CURRENT_SCHEMA_VERSION = 9;
+    public static final int CURRENT_SCHEMA_VERSION = 10;
     public static final int MAX_PROTECTED_REGIONS = 128;
     public static final int MAX_INDEXED_PROTECTED_CHUNKS = 131_072;
     public static final int MAX_AUDIT_PAGE_SIZE = 50;
@@ -85,7 +85,9 @@ public final class PlatformSavedData extends SavedData {
             CLAIM_RECEIPTS_CODEC.optionalFieldOf("claim_receipts", Map.of()).forGetter(data -> data.claimReceipts),
             PROTECTED_REGIONS_CODEC.optionalFieldOf("protected_regions", Map.of())
                     .forGetter(data -> data.protectedRegions),
-            PortalState.CODEC.optionalFieldOf("portal_state", PortalState.EMPTY).forGetter(PlatformSavedData::portalState)
+            PortalState.CODEC.optionalFieldOf("portal_state", PortalState.EMPTY).forGetter(PlatformSavedData::portalState),
+            WildernessResetState.CODEC.optionalFieldOf("wilderness_reset", WildernessResetState.EMPTY)
+                    .forGetter(PlatformSavedData::wildernessResetState)
     ).apply(instance, PlatformSavedData::decode));
 
     public static final SavedDataType<PlatformSavedData> TYPE = new SavedDataType<>(
@@ -111,6 +113,7 @@ public final class PlatformSavedData extends SavedData {
     private final Map<UUID, Map<Identifier, Long>> portalCooldowns;
     private final Map<UUID, PortalState.TravelReceipt> portalTravelReceipts;
     private final Map<UUID, Long> portalCombatTimestamps;
+    private WildernessResetState wildernessResetState;
     private final Map<PortalDefinition.Endpoint, Identifier> portalOriginIndex = new HashMap<>();
     private final Map<ClaimKey, Set<Identifier>> protectedRegionIndex = new HashMap<>();
     private final Map<UUID, Integer> claimCountsByOwner = new HashMap<>();
@@ -133,7 +136,7 @@ public final class PlatformSavedData extends SavedData {
 
     public PlatformSavedData() {
         this(CURRENT_SCHEMA_VERSION, Map.of(), List.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), List.of(),
-                Map.of(), Map.of(), Map.of(), PortalState.EMPTY, true);
+                Map.of(), Map.of(), Map.of(), PortalState.EMPTY, WildernessResetState.EMPTY, true);
     }
 
     private PlatformSavedData(
@@ -150,6 +153,7 @@ public final class PlatformSavedData extends SavedData {
             Map<UUID, ClaimMutationReceipt> claimReceipts,
             Map<Identifier, ProtectedRegion> protectedRegions,
             PortalState portalState,
+            WildernessResetState wildernessResetState,
             boolean writable) {
         this.schemaVersion = schemaVersion;
         this.writable = writable;
@@ -173,6 +177,7 @@ public final class PlatformSavedData extends SavedData {
                 this.portalCooldowns.put(player, new HashMap<>(cooldowns)));
         this.portalTravelReceipts = new HashMap<>(portalState.receipts());
         this.portalCombatTimestamps = new HashMap<>(portalState.combatTimestamps());
+        this.wildernessResetState = wildernessResetState == null ? WildernessResetState.EMPTY : wildernessResetState;
         rebuildRecentTransactionIndex();
         rebuildReceiptExpiryIndex();
         rebuildClaimOwnerIndex();
@@ -194,7 +199,8 @@ public final class PlatformSavedData extends SavedData {
             Map<ClaimKey, Claim> claims,
             Map<UUID, ClaimMutationReceipt> claimReceipts,
             Map<Identifier, ProtectedRegion> protectedRegions,
-            PortalState portalState) {
+            PortalState portalState,
+            WildernessResetState wildernessResetState) {
         var migration = PlatformDataMigrations.migrate(
                 schemaVersion,
                 adminRoles,
@@ -209,6 +215,7 @@ public final class PlatformSavedData extends SavedData {
                 claimReceipts,
                 protectedRegions,
                 portalState,
+                wildernessResetState,
                 CURRENT_SCHEMA_VERSION
         );
         var state = migration.state();
@@ -226,6 +233,7 @@ public final class PlatformSavedData extends SavedData {
                 state.claimReceipts(),
                 state.protectedRegions(),
                 state.portalState(),
+                state.wildernessResetState(),
                 migration.writable()
         );
     }
@@ -343,6 +351,14 @@ public final class PlatformSavedData extends SavedData {
 
     public Optional<Long> portalCombatTimestamp(UUID playerId) {
         return Optional.ofNullable(portalCombatTimestamps.get(playerId));
+    }
+
+    public WildernessResetState wildernessResetState() {
+        return wildernessResetState;
+    }
+
+    public boolean isWildernessOperationLocked() {
+        return wildernessResetState.activeOperation().isPresent();
     }
 
     boolean isPortalProtectionRegion(Identifier regionId) {
@@ -751,6 +767,26 @@ public final class PlatformSavedData extends SavedData {
         }
         rebuildPortalOriginIndex();
         rebuildProtectedRegionIndex();
+        commitAudit(auditEntry);
+    }
+
+    void commitWildernessWarning(WildernessResetState.Warning warning, AuditEntry auditEntry) {
+        wildernessResetState = wildernessResetState.withWarning(warning);
+        commitAudit(auditEntry);
+    }
+
+    void commitWildernessOperation(WildernessResetState.Operation operation, AuditEntry auditEntry) {
+        wildernessResetState = wildernessResetState.withOperation(operation);
+        commitAudit(auditEntry);
+    }
+
+    void completeWildernessOperation(WildernessResetState.Evidence evidence, AuditEntry auditEntry) {
+        wildernessResetState = wildernessResetState.complete(evidence);
+        commitAudit(auditEntry);
+    }
+
+    void abortWildernessOperation(AuditEntry auditEntry) {
+        wildernessResetState = wildernessResetState.clearActive();
         commitAudit(auditEntry);
     }
 
