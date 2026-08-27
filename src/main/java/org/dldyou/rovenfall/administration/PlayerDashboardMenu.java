@@ -1,6 +1,7 @@
 package org.dldyou.rovenfall.administration;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.ChatFormatting;
@@ -54,25 +55,32 @@ public final class PlayerDashboardMenu extends ChestMenu {
     private final ServerPlayer viewer;
     private final UUID viewerId;
     private final SimpleContainer dashboard;
-    private Page page = Page.HOME;
+    private Page page;
     private long lastHandledGameTime = Long.MIN_VALUE;
 
     private PlayerDashboardMenu(
             int containerId,
             Inventory inventory,
             ServerPlayer viewer,
-            SimpleContainer dashboard) {
+            SimpleContainer dashboard,
+            Page initialPage) {
         super(MenuType.GENERIC_9x3, containerId, inventory, dashboard, 3);
         this.viewer = viewer;
         this.viewerId = viewer.getUUID();
         this.dashboard = dashboard;
+        this.page = Objects.requireNonNull(initialPage);
         render();
     }
 
     public static void open(ServerPlayer player) {
+        open(player, Page.HOME);
+    }
+
+    static void open(ServerPlayer player, Page initialPage) {
         player.openMenu(new SimpleMenuProvider(
                 (containerId, inventory, viewer) -> new PlayerDashboardMenu(
-                        containerId, inventory, (ServerPlayer) viewer, new SimpleContainer(MENU_SIZE)),
+                        containerId, inventory, (ServerPlayer) viewer,
+                        new SimpleContainer(MENU_SIZE), initialPage),
                 Component.translatable("gui.rovenfall.player.title")));
     }
 

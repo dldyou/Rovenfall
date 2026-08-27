@@ -481,5 +481,10 @@
   "gui.rovenfall.shop.direction.sell": "売却",
   "gui.rovenfall.shop.confirm_title": "取引確認",
   "gui.rovenfall.shop.confirm": "確認",
-  "gui.rovenfall.shop.cancel": "キャンセル"
+  "gui.rovenfall.shop.cancel": "キャンセル",
+  "gui.rovenfall.inventory.inventory": "持ち物",
+  "gui.rovenfall.inventory.overview": "情報",
+  "gui.rovenfall.inventory.claims": "土地",
+  "gui.rovenfall.inventory.skills": "スキル",
+  "gui.rovenfall.inventory.shops": "ショップ"
 }
