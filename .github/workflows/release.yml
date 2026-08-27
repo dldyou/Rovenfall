@@ -1,6 +1,12 @@
 name: Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "SemVer release-candidate version without the v prefix"
+        required: true
+        type: string
   push:
     tags:
       - "v*"
@@ -9,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.ref }}-${{ inputs.version || 'tag' }}
   cancel-in-progress: false
 
 jobs:
@@ -25,23 +31,31 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Validate release tag
+      - name: Validate release version
         id: version
         shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          tag="${GITHUB_REF_NAME}"
           semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(\.(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?$'
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            tag="${GITHUB_REF_NAME}"
+          else
+            tag="v${INPUT_VERSION}"
+          fi
           if [[ ! "${tag}" =~ ${semver} ]]; then
             echo "Release tag must be SemVer in the form vMAJOR.MINOR.PATCH[-PRERELEASE]." >&2
             exit 1
           fi
-          if [[ "$(git cat-file -t "${tag}")" != "tag" ]]; then
-            echo "Release tag must be annotated." >&2
-            exit 1
-          fi
-          if ! git merge-base --is-ancestor "$(git rev-parse HEAD)" origin/main; then
-            echo "Release tag must point to a commit contained in main." >&2
-            exit 1
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            if [[ "$(git cat-file -t "${tag}")" != "tag" ]]; then
+              echo "Release tag must be annotated." >&2
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "$(git rev-parse HEAD)" origin/main; then
+              echo "Release tag must point to a commit contained in main." >&2
+              exit 1
+            fi
           fi
           echo "version=${tag#v}" >> "${GITHUB_OUTPUT}"
 
@@ -58,7 +72,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build and run required tests
-        run: ./gradlew clean build runGameTestServer --warning-mode all -Pmod_version="${{ steps.version.outputs.version }}"
+        run: ./gradlew clean build recoveryRehearsal --warning-mode all -Pmod_version="${{ steps.version.outputs.version }}"
 
       - name: Prepare release assets
         id: assets
@@ -66,11 +80,25 @@ jobs:
         run: |
           jar="build/libs/rovenfall-${{ steps.version.outputs.version }}.jar"
           test -f "${jar}"
-          sha256sum "${jar}" > "${jar}.sha256"
+          jar_name="$(basename "${jar}")"
+          (cd "$(dirname "${jar}")" && sha256sum "${jar_name}" > "${jar_name}.sha256")
           echo "jar=${jar}" >> "${GITHUB_OUTPUT}"
           echo "checksum=${jar}.sha256" >> "${GITHUB_OUTPUT}"
 
+      - name: Upload release-candidate assets
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: rovenfall-${{ steps.version.outputs.version }}-release-candidate
+          path: |
+            ${{ steps.assets.outputs.jar }}
+            ${{ steps.assets.outputs.checksum }}
+            build/reports/performance-budget.md
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Create or update GitHub Release
+        if: github.event_name == 'push'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}

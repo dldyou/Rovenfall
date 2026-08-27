@@ -3,6 +3,7 @@ package org.dldyou.rovenfall;
 import com.mojang.authlib.GameProfile;
 import com.google.gson.JsonParser;
 import com.mojang.serialization.JsonOps;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -107,6 +108,7 @@ import org.dldyou.rovenfall.mobs.MobContentSnapshot;
 import org.dldyou.rovenfall.mobs.BossEncounterRuntime;
 import org.dldyou.rovenfall.mobs.BossEncounterSavedData;
 import org.dldyou.rovenfall.mobs.BossEncounterState;
+import org.dldyou.rovenfall.mobs.BossRewardOperation;
 import org.dldyou.rovenfall.mobs.BossRewardSavedData;
 import org.dldyou.rovenfall.mobs.MobMutationRuntime;
 import org.dldyou.rovenfall.mobs.RovenfallMobClient;
@@ -572,6 +574,112 @@ public final class Rovenfall {
                                                 && entry.reason().equals("personal_cooldown")),
                         "Personal boss cooldown did not deny and audit the replay: status="
                                 + cooldown.status() + ", audit=" + cooldownAudit);
+
+                var restartPlayer = helper.makeMockServerPlayerInLevel();
+                restartPlayer.snapTo(center.getX() + 1.5D, center.getY(), center.getZ() + 0.5D, 0, 0);
+                UUID restartEncounterId = UUID.randomUUID();
+                UUID restartTransactionId = BossRewardService.transactionId(
+                        restartEncounterId, restartPlayer.getUUID());
+                Identifier restartBossId = id("boss_reward_restart_fixture");
+                long restartCreatedAt = timestamp + 100;
+                long restartCooldownUntil = restartCreatedAt + 60_000;
+                var restartPending = new BossRewardOperation(
+                        restartEncounterId, restartBossId, UUID.randomUUID(), restartPlayer.getUUID(),
+                        level.dimension(), center, 25, 100, 10, 2_500,
+                        40, 30, restartCooldownUntil, restartCreatedAt,
+                        List.of(new ItemStack(Items.BREAD, 2)), BossRewardOperation.Phase.PENDING);
+                var rewards = BossRewardSavedData.get(server);
+                helper.assertTrue(rewards.putBatch(
+                                java.util.Map.of(restartTransactionId, restartPending), restartCreatedAt)
+                                == BossRewardSavedData.BatchStatus.SUCCESS,
+                        "Could not persist the restart recovery reward fixture");
+                var registryOps = RegistryOps.create(NbtOps.INSTANCE, level.registryAccess());
+                var persistedRewards = BossRewardSavedData.CODEC.parse(
+                        registryOps,
+                        BossRewardSavedData.CODEC.encodeStart(registryOps, rewards).getOrThrow()).getOrThrow();
+                var persistedPending = persistedRewards.operation(restartTransactionId).orElseThrow();
+                helper.assertTrue(persistedPending.phase() == BossRewardOperation.Phase.PENDING
+                                && persistedPending.items().size() == 1
+                                && persistedPending.items().getFirst().getCount() == 2
+                                && persistedRewards.cooldownUntil(
+                                        restartBossId, restartPlayer.getUUID(), null, restartCreatedAt)
+                                        == restartCooldownUntil,
+                        "Pending boss reward evidence did not survive the simulated restart");
+                server.overworld().getDataStorage().set(BossRewardSavedData.TYPE, persistedRewards);
+                rewards = persistedRewards;
+
+                long restartBalanceBefore = PlatformSavedData.get(server)
+                        .economyBalance(restartPlayer.getUUID()).orElse(0L);
+                long restartXpBefore = RpgPlayerSavedData.get(server).state(restartPlayer.getUUID())
+                        .activityXp().getOrDefault(id("hunting"), 0L);
+                String restartAuditEvidence = "currency=" + restartPending.currency()
+                        + ",xp=" + restartPending.experience() + ",items=" + restartPending.items().size();
+                long restartAuditBefore = PlatformSavedData.get(server).auditPage(0, 50).entries().stream()
+                        .filter(entry -> entry.actionType().equals(id("boss_reward_completed"))
+                                && entry.target().equals(restartPlayer.getUUID().toString())
+                                && entry.afterValue().equals(restartAuditEvidence))
+                        .count();
+                UUID itemEntityId = UUID.nameUUIDFromBytes(
+                        ("boss_reward_item:" + restartTransactionId + ":0")
+                                .getBytes(StandardCharsets.UTF_8));
+
+                BossRewardService.recover(server, restartCreatedAt + 1);
+                var completedRestart = rewards.operation(restartTransactionId).orElseThrow();
+                var deliveredItem = level.getEntity(itemEntityId);
+                long restartBalanceAfter = PlatformSavedData.get(server)
+                        .economyBalance(restartPlayer.getUUID()).orElse(0L);
+                long restartXpAfter = RpgPlayerSavedData.get(server).state(restartPlayer.getUUID())
+                        .activityXp().getOrDefault(id("hunting"), 0L);
+                long restartAuditAfter = PlatformSavedData.get(server).auditPage(0, 50).entries().stream()
+                        .filter(entry -> entry.actionType().equals(id("boss_reward_completed"))
+                                && entry.target().equals(restartPlayer.getUUID().toString())
+                                && entry.afterValue().equals(restartAuditEvidence))
+                        .count();
+                helper.assertTrue(completedRestart.phase() == BossRewardOperation.Phase.COMPLETED
+                                && restartBalanceAfter == restartBalanceBefore + restartPending.currency()
+                                && restartXpAfter == restartXpBefore + restartPending.experience()
+                                && deliveredItem instanceof net.minecraft.world.entity.item.ItemEntity item
+                                && item.getItem().is(Items.BREAD) && item.getItem().getCount() == 2
+                                && rewards.cooldownUntil(
+                                        restartBossId, restartPlayer.getUUID(), null, restartCreatedAt + 1)
+                                        == restartCooldownUntil
+                                && restartAuditAfter == restartAuditBefore + 1
+                                && rewards.pendingOperations().stream()
+                                        .noneMatch(entry -> entry.getKey().equals(restartTransactionId)),
+                        "Restart recovery did not complete every durable boss reward leg exactly once: phase="
+                                + completedRestart.phase() + ",balance=" + restartBalanceAfter + "/"
+                                + (restartBalanceBefore + restartPending.currency()) + ",xp=" + restartXpAfter + "/"
+                                + (restartXpBefore + restartPending.experience()) + ",item=" + deliveredItem
+                                + ",cooldown=" + rewards.cooldownUntil(
+                                        restartBossId, restartPlayer.getUUID(), null, restartCreatedAt + 1)
+                                + "/" + restartCooldownUntil + ",audit=" + restartAuditAfter + "/"
+                                + (restartAuditBefore + 1) + ",pending=" + rewards.pendingOperations().size());
+                server.getPlayerList().remove(restartPlayer);
+
+                helper.assertTrue(rewards.putBatch(
+                                java.util.Map.of(restartTransactionId, restartPending), restartCreatedAt + 2)
+                                == BossRewardSavedData.BatchStatus.DUPLICATE,
+                        "Exact boss reward retry did not retain its transaction identity");
+                BossRewardService.recover(server, restartCreatedAt + 3);
+                helper.assertTrue(rewards.operation(restartTransactionId).orElseThrow().phase()
+                                        == BossRewardOperation.Phase.COMPLETED
+                                && PlatformSavedData.get(server).economyBalance(restartPlayer.getUUID()).orElse(0L)
+                                        == restartBalanceAfter
+                                && RpgPlayerSavedData.get(server).state(restartPlayer.getUUID())
+                                        .activityXp().getOrDefault(id("hunting"), 0L) == restartXpAfter
+                                && level.getEntity(itemEntityId) == deliveredItem
+                                && rewards.cooldownUntil(
+                                        restartBossId, restartPlayer.getUUID(), null, restartCreatedAt + 3)
+                                        == restartCooldownUntil
+                                && PlatformSavedData.get(server).auditPage(0, 50).entries().stream()
+                                        .filter(entry -> entry.actionType().equals(id("boss_reward_completed"))
+                                                && entry.target().equals(restartPlayer.getUUID().toString())
+                                                && entry.afterValue().equals(restartAuditEvidence))
+                                        .count() == restartAuditAfter
+                                && rewards.pendingOperations().stream()
+                                        .noneMatch(entry -> entry.getKey().equals(restartTransactionId)),
+                        "Boss reward retry duplicated currency, XP, item, cooldown, audit, or cleanup");
+                deliveredItem.discard();
 
                 var recoveryPlayer = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
                         net.minecraft.world.level.GameType.SURVIVAL);

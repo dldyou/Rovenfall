@@ -161,6 +161,26 @@ final class EconomyReversalServiceTest {
     }
 
     @Test
+    void bossRewardFailsClosedBecauseItsOtherDomainRewardsCannotBeReversedHere() {
+        PlatformSavedData state = state();
+        UUID rewardId = uuid(355);
+        UUID reversalId = uuid(356);
+        assertEquals(EconomyService.TransactionStatus.SUCCESS,
+                EconomyService.awardBossReward(
+                        state, PLAYER, 25, "boss reward", 2_500, rewardId, 0, Long.MAX_VALUE).status());
+
+        assertEquals(EconomyReversalService.Status.ORIGINAL_NOT_REVERSIBLE,
+                reverse(state, emptyInventory(), rewardId, reversalId,
+                        EconomyTransactionReceipt.CompensationDecision.NONE, 3_000).status());
+
+        assertEquals(125, state.economyBalance(PLAYER).orElseThrow());
+        assertTrue(state.economyReceipt(rewardId).orElseThrow().reversedBy().isEmpty());
+        assertTrue(state.economyReceipt(reversalId).isEmpty());
+        assertFalse(state.hasTransaction(reversalId, 3_000));
+        assertEquals("original_not_reversible", state.auditPage(0, 1).entries().getFirst().reason());
+    }
+
+    @Test
     void unrelatedExistingTransactionIdIsConflictAndDoesNotReverseOriginal() {
         PlatformSavedData state = state();
         NonNullList<ItemStack> inventory = emptyInventory();
