@@ -23,6 +23,10 @@ public final class WildernessResetEvents {
     }
 
     private static void onServerStarted(ServerStartedEvent event) {
-        WildernessResetService.finishLifecycle(event.getServer(), Instant.now().toEpochMilli());
+        try {
+            WildernessResetService.finishLifecycle(event.getServer(), Instant.now().toEpochMilli());
+        } catch (WildernessResetStore.StoreException exception) {
+            throw new IllegalStateException("Wilderness reset completion requires operator intervention", exception);
+        }
     }
 }

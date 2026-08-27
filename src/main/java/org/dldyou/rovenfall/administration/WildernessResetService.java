@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -138,7 +139,9 @@ public final class WildernessResetService {
         UUID targetSnapshotId;
         boolean recoverySnapshotCreated = false;
         try {
-            server.saveEverything(false, true, true);
+            if (!server.saveEverything(false, true, true)) {
+                throw new WildernessResetStore.StoreException("server_save_failed");
+            }
             recoveryEvidence = store.createSnapshot(recoverySnapshotId, WorldTopology.wildernessPath(server));
             recoverySnapshotCreated = true;
             if (kind == WildernessResetState.Kind.RESET) {
@@ -176,13 +179,14 @@ public final class WildernessResetService {
                 store.prepareRestore(operation);
             }
             evacuate(server, hub, hubDestination.orElseThrow(), evacuated);
-            store.writePending(operation);
         } catch (WildernessResetStore.StoreException | EvacuationException exception) {
-            rollbackEvacuation(evacuated);
+            boolean rollbackSucceeded = rollbackEvacuation(evacuated);
             store.cleanupStaging(transactionId);
             store.discardSnapshot(recoverySnapshotId);
-            return denied(state, actorId, exception instanceof EvacuationException
-                            ? Status.EVACUATION_FAILED : Status.PRECOMMIT_FAILED,
+            return denied(state, actorId, !rollbackSucceeded
+                            ? Status.EVACUATION_ROLLBACK_FAILED
+                            : exception instanceof EvacuationException
+                                    ? Status.EVACUATION_FAILED : Status.PRECOMMIT_FAILED,
                     normalizedReason, timestampEpochMillis, transactionId);
         }
 
@@ -190,69 +194,91 @@ public final class WildernessResetService {
                 transactionId, actorId, STAGED, "wilderness", "unlocked",
                 kind.getSerializedName() + ":locked:snapshot=" + recoverySnapshotId,
                 normalizedReason, timestampEpochMillis));
+        Status commitStatus = persistStateThenArmPending(
+                () -> server.saveEverything(false, true, true),
+                () -> store.writePending(operation));
+        server.halt(false);
+        return new Result(commitStatus, transactionId, recoverySnapshotId, true);
+    }
+
+    static Status persistStateThenArmPending(BooleanSupplier persistState, PendingWriter armPending) {
         try {
-            server.saveEverything(false, true, true);
-        } finally {
-            server.halt(false);
+            if (!persistState.getAsBoolean()) {
+                return Status.PRECOMMIT_FAILED;
+            }
+            armPending.write();
+            return Status.SUCCESS;
+        } catch (WildernessResetStore.StoreException | RuntimeException exception) {
+            return Status.PRECOMMIT_FAILED;
         }
-        return new Result(Status.SUCCESS, transactionId, recoverySnapshotId, true);
     }
 
     static void applyPendingBeforeLevels(MinecraftServer server) throws WildernessResetStore.StoreException {
         WildernessResetStore.forServer(server).applyPending(WorldTopology.wildernessPath(server));
     }
 
-    static void finishLifecycle(MinecraftServer server, long timestampEpochMillis) {
+    static void finishLifecycle(MinecraftServer server, long timestampEpochMillis)
+            throws WildernessResetStore.StoreException {
         PlatformSavedData state = PlatformSavedData.get(server);
         WildernessResetStore store = WildernessResetStore.forServer(server);
-        try {
-            Optional<WildernessResetStore.LifecycleResult> retained = store.lifecycleResult();
-            if (retained.isPresent()) {
-                WildernessResetStore.LifecycleResult result = retained.orElseThrow();
-                WildernessResetState.Operation operation = result.operation();
-                if (state.wildernessResetState().evidence().stream().anyMatch(entry ->
-                        entry.operation().transactionId().equals(operation.transactionId()))) {
-                    if (result.succeeded()) {
-                        store.cleanupCommittedSwap(operation.transactionId());
-                    }
-                    store.acknowledgeLifecycleResult(result.succeeded());
-                    return;
+        Optional<WildernessResetStore.LifecycleResult> retained = store.lifecycleResult();
+        if (retained.isPresent()) {
+            WildernessResetStore.LifecycleResult result = retained.orElseThrow();
+            WildernessResetState.Operation operation = result.operation();
+            Optional<WildernessResetState.Operation> active = state.wildernessResetState().activeOperation();
+            boolean evidenceRecorded = state.wildernessResetState().evidence().stream().anyMatch(entry ->
+                    entry.operation().transactionId().equals(operation.transactionId()));
+            if (evidenceRecorded) {
+                if (active.isPresent()) {
+                    throw new WildernessResetStore.StoreException("lifecycle_operation_mismatch");
                 }
-                WildernessResetState.Result evidenceResult = result.succeeded()
-                        ? WildernessResetState.Result.COMPLETED : WildernessResetState.Result.FAILED;
-                var evidence = new WildernessResetState.Evidence(
-                        operation, evidenceResult, timestampEpochMillis, result.detail());
-                Identifier action = result.succeeded()
-                        ? operation.kind() == WildernessResetState.Kind.RESET ? RESET : RESTORE
-                        : DENIED;
-                state.completeWildernessOperation(evidence, audit(
-                        operation.transactionId(), operation.actorId(), action, "wilderness",
-                        operation.kind().getSerializedName() + ":locked",
-                        operation.kind().getSerializedName() + ":" + result.detail()
-                                + ":snapshot=" + operation.snapshotId()
-                                + ":recovery=" + operation.recoverySnapshotId(),
-                        operation.reason(), timestampEpochMillis));
-                server.getPlayerList().broadcastSystemMessage(Component.translatable(
-                        result.succeeded()
-                                ? operation.kind() == WildernessResetState.Kind.RESET
-                                        ? "wilderness.rovenfall.reset.completed"
-                                        : "wilderness.rovenfall.restore.completed"
-                                : "wilderness.rovenfall.operation.failed"), false);
-                server.saveEverything(true, true, true);
                 if (result.succeeded()) {
                     store.cleanupCommittedSwap(operation.transactionId());
                 }
                 store.acknowledgeLifecycleResult(result.succeeded());
+                store.discardUnrecordedSnapshots(recordedSnapshotIds(state));
                 return;
             }
-        } catch (WildernessResetStore.StoreException ignored) {
-        }
-        if (state.isWildernessOperationLocked()) {
-            WildernessResetState.Operation operation = state.wildernessResetState().activeOperation().orElseThrow();
-            state.abortWildernessOperation(audit(
-                    operation.transactionId(), operation.actorId(), DENIED, "wilderness",
-                    operation.kind().getSerializedName() + ":locked", "unlocked:recovery_evidence_missing",
+            if (active.isEmpty() || !active.orElseThrow().equals(operation)) {
+                throw new WildernessResetStore.StoreException("lifecycle_operation_mismatch");
+            }
+            WildernessResetState.Result evidenceResult = result.succeeded()
+                    ? WildernessResetState.Result.COMPLETED : WildernessResetState.Result.FAILED;
+            var evidence = new WildernessResetState.Evidence(
+                    operation, evidenceResult, timestampEpochMillis, result.detail());
+            Identifier action = result.succeeded()
+                    ? operation.kind() == WildernessResetState.Kind.RESET ? RESET : RESTORE
+                    : DENIED;
+            state.completeWildernessOperation(evidence, audit(
+                    operation.transactionId(), operation.actorId(), action, "wilderness",
+                    operation.kind().getSerializedName() + ":locked",
+                    operation.kind().getSerializedName() + ":" + result.detail()
+                            + ":snapshot=" + operation.snapshotId()
+                            + ":recovery=" + operation.recoverySnapshotId(),
                     operation.reason(), timestampEpochMillis));
+            server.getPlayerList().broadcastSystemMessage(Component.translatable(
+                    result.succeeded()
+                            ? operation.kind() == WildernessResetState.Kind.RESET
+                                    ? "wilderness.rovenfall.reset.completed"
+                                    : "wilderness.rovenfall.restore.completed"
+                            : "wilderness.rovenfall.operation.failed"), false);
+            if (!server.saveEverything(true, true, true)) {
+                throw new WildernessResetStore.StoreException("lifecycle_evidence_save_failed");
+            }
+            if (result.succeeded()) {
+                store.cleanupCommittedSwap(operation.transactionId());
+            }
+            store.acknowledgeLifecycleResult(result.succeeded());
+            store.discardUnrecordedSnapshots(recordedSnapshotIds(state));
+            return;
+        }
+        requireLifecycleResult(state.isWildernessOperationLocked());
+        store.discardUnrecordedSnapshots(recordedSnapshotIds(state));
+    }
+
+    static void requireLifecycleResult(boolean operationLocked) throws WildernessResetStore.StoreException {
+        if (operationLocked) {
+            throw new WildernessResetStore.StoreException("lifecycle_result_missing");
         }
     }
 
@@ -328,12 +354,27 @@ public final class WildernessResetService {
         }
     }
 
-    private static void rollbackEvacuation(List<Evacuation> evacuated) {
+    private static boolean rollbackEvacuation(List<Evacuation> evacuated) {
+        boolean succeeded = true;
         for (int index = evacuated.size() - 1; index >= 0; index--) {
             Evacuation prior = evacuated.get(index);
-            prior.player.teleportTo(prior.level, prior.x, prior.y, prior.z, Set.<Relative>of(),
+            succeeded &= prior.player.teleportTo(prior.level, prior.x, prior.y, prior.z, Set.<Relative>of(),
                     prior.yRot, prior.xRot, false);
         }
+        return succeeded;
+    }
+
+    private static Set<UUID> recordedSnapshotIds(PlatformSavedData state) {
+        Set<UUID> result = new java.util.HashSet<>();
+        state.wildernessResetState().activeOperation().ifPresent(operation -> {
+            result.add(operation.snapshotId());
+            result.add(operation.recoverySnapshotId());
+        });
+        for (WildernessResetState.Evidence evidence : state.wildernessResetState().evidence()) {
+            result.add(evidence.operation().snapshotId());
+            result.add(evidence.operation().recoverySnapshotId());
+        }
+        return Set.copyOf(result);
     }
 
     private static Optional<WildernessResetStore.SnapshotEvidence> recordedSnapshot(
@@ -441,6 +482,7 @@ public final class WildernessResetService {
         SNAPSHOT_NOT_FOUND,
         SNAPSHOT_FAILED,
         EVACUATION_FAILED,
+        EVACUATION_ROLLBACK_FAILED,
         PRECOMMIT_FAILED
     }
 
@@ -452,5 +494,10 @@ public final class WildernessResetService {
     }
 
     private static final class EvacuationException extends Exception {
+    }
+
+    @FunctionalInterface
+    interface PendingWriter {
+        void write() throws WildernessResetStore.StoreException;
     }
 }

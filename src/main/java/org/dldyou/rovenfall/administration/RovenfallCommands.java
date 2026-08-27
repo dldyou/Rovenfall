@@ -1697,6 +1697,8 @@ public final class RovenfallCommands {
             case SNAPSHOT_NOT_FOUND -> failure(source, "command.rovenfall.admin.wilderness.error.snapshot_not_found");
             case SNAPSHOT_FAILED -> failure(source, "command.rovenfall.admin.wilderness.error.snapshot_failed");
             case EVACUATION_FAILED -> failure(source, "command.rovenfall.admin.wilderness.error.evacuation_failed");
+            case EVACUATION_ROLLBACK_FAILED -> failure(
+                    source, "command.rovenfall.admin.wilderness.error.evacuation_rollback_failed");
             case PRECOMMIT_FAILED -> failure(source, "command.rovenfall.admin.wilderness.error.precommit_failed");
             case DUPLICATE_TRANSACTION -> failure(source, "command.rovenfall.admin.wilderness.error.duplicate");
             case INVALID_REQUEST, INVALID_TRANSACTION ->

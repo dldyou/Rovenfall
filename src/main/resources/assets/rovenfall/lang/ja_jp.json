@@ -257,6 +257,7 @@
   "command.rovenfall.admin.wilderness.error.snapshot_not_found": "記録された Wilderness スナップショットを利用できないか、検証に失敗しました。",
   "command.rovenfall.admin.wilderness.error.snapshot_failed": "リセット前の Wilderness スナップショットに失敗しました。現在の Wilderness は維持されます。",
   "command.rovenfall.admin.wilderness.error.evacuation_failed": "プレイヤー避難に失敗してロールバックしました。現在の Wilderness は維持されます。",
+  "command.rovenfall.admin.wilderness.error.evacuation_rollback_failed": "プレイヤー避難の失敗後、1 人以上を元の位置へ戻せませんでした。現在の Wilderness は置き換えられていません。",
   "command.rovenfall.admin.wilderness.error.precommit_failed": "リセットを準備できませんでした。現在の Wilderness は維持されます。",
   "command.rovenfall.admin.wilderness.error.duplicate": "その Wilderness 操作トランザクションはすでに記録されています。",
   "command.rovenfall.admin.wilderness.error.invalid_request": "Wilderness 操作リクエストが無効です。",

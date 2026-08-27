@@ -2,11 +2,19 @@ package org.dldyou.rovenfall.administration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.Set;
 import java.util.UUID;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtIo;
+import net.minecraft.nbt.NbtOps;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -69,6 +77,107 @@ final class WildernessResetStoreTest {
         assertFalse(failed.succeeded());
         assertEquals("keep", Files.readString(marker));
         assertTrue(store.lifecycleResult().orElseThrow().detail().contains("failed"));
+    }
+
+    @Test
+    void lifecycleResultAndPendingManifestAreCrashIdempotent() throws Exception {
+        Path wilderness = temporaryDirectory.resolve("dimensions/rovenfall/wilderness");
+        Files.createDirectories(wilderness);
+        Files.writeString(wilderness.resolve("authoritative.txt"), "old");
+        Path operations = temporaryDirectory.resolve("operations");
+        WildernessResetStore store = new WildernessResetStore(operations);
+        UUID snapshotId = UUID.randomUUID();
+        var snapshot = store.createSnapshot(snapshotId, wilderness);
+        var operation = operation(
+                WildernessResetState.Kind.RESET, snapshotId, snapshotId, UUID.randomUUID(), snapshot, snapshot);
+        store.prepareReset(operation);
+        store.writePending(operation);
+        assertTrue(store.applyPending(wilderness).orElseThrow().succeeded());
+
+        Files.copy(operations.resolve("applied.nbt"), operations.resolve("pending.nbt"),
+                StandardCopyOption.COPY_ATTRIBUTES);
+        var retried = store.applyPending(wilderness).orElseThrow();
+
+        assertEquals(operation, retried.operation());
+        assertTrue(retried.succeeded());
+        assertFalse(Files.exists(operations.resolve("pending.nbt")));
+        assertFalse(Files.exists(wilderness.resolve("authoritative.txt")));
+    }
+
+    @Test
+    void startupCleanupRemovesOnlyUnrecordedUuidSnapshots() throws Exception {
+        Path wilderness = temporaryDirectory.resolve("dimensions/rovenfall/wilderness");
+        Files.createDirectories(wilderness);
+        Files.writeString(wilderness.resolve("marker.txt"), "world");
+        Path operations = temporaryDirectory.resolve("operations");
+        WildernessResetStore store = new WildernessResetStore(operations);
+        UUID retained = UUID.randomUUID();
+        UUID orphan = UUID.randomUUID();
+        store.createSnapshot(retained, wilderness);
+        store.createSnapshot(orphan, wilderness);
+
+        store.discardUnrecordedSnapshots(Set.of(retained));
+
+        assertEquals("world", Files.readString(
+                operations.resolve("snapshots").resolve(retained.toString()).resolve("world/marker.txt")));
+        assertFalse(Files.exists(operations.resolve("snapshots").resolve(orphan.toString())));
+    }
+
+    @Test
+    void corruptOrConflictingLifecycleManifestsFailClosed() throws Exception {
+        Path operations = temporaryDirectory.resolve("operations");
+        Files.createDirectories(operations);
+        WildernessResetStore store = new WildernessResetStore(operations);
+        Files.writeString(operations.resolve("applied.nbt"), "not-nbt");
+        assertThrows(WildernessResetStore.StoreException.class, store::lifecycleResult);
+
+        Files.delete(operations.resolve("applied.nbt"));
+        Files.writeString(operations.resolve("applied.nbt"), "not-nbt");
+        Files.writeString(operations.resolve("failed.nbt"), "not-nbt");
+        assertThrows(WildernessResetStore.StoreException.class, store::lifecycleResult);
+    }
+
+    @Test
+    void semanticallyInvalidPendingManifestFailsClosed() throws Exception {
+        Path wilderness = temporaryDirectory.resolve("dimensions/rovenfall/wilderness");
+        Files.createDirectories(wilderness);
+        Path operations = temporaryDirectory.resolve("operations");
+        Files.createDirectories(operations);
+        WildernessResetStore store = new WildernessResetStore(operations);
+        UUID snapshotId = UUID.randomUUID();
+        var snapshot = store.createSnapshot(snapshotId, wilderness);
+        var operation = operation(
+                WildernessResetState.Kind.RESET, snapshotId, snapshotId, UUID.randomUUID(), snapshot, snapshot);
+        CompoundTag manifest = (CompoundTag) WildernessResetState.Operation.CODEC
+                .encodeStart(NbtOps.INSTANCE, operation).getOrThrow();
+        manifest.putLong("file_count", -1L);
+        NbtIo.writeCompressed(manifest, operations.resolve("pending.nbt"));
+
+        assertThrows(WildernessResetStore.StoreException.class, () -> store.applyPending(wilderness));
+    }
+
+    @Test
+    void symlinkedWorldAncestorIsRejectedBeforeSnapshotIO() throws Exception {
+        Path outside = temporaryDirectory.resolve("outside");
+        Files.createDirectories(outside.resolve("wilderness"));
+        Path linkedDimensions = temporaryDirectory.resolve("dimensions");
+        try {
+            if (System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT).contains("windows")) {
+                Process junction = new ProcessBuilder(
+                        System.getenv().getOrDefault("ComSpec", "cmd.exe"), "/c", "mklink", "/J",
+                        linkedDimensions.toString(), outside.toString()).start();
+                int exitCode = junction.waitFor();
+                Assumptions.assumeTrue(exitCode == 0, "Windows junction creation failed");
+            } else {
+                Files.createSymbolicLink(linkedDimensions, outside);
+            }
+        } catch (IOException | UnsupportedOperationException exception) {
+            Assumptions.assumeTrue(false, "Symbolic links are unavailable: " + exception.getMessage());
+        }
+        WildernessResetStore store = new WildernessResetStore(temporaryDirectory.resolve("operations"));
+
+        assertThrows(WildernessResetStore.StoreException.class,
+                () -> store.createSnapshot(UUID.randomUUID(), linkedDimensions.resolve("wilderness")));
     }
 
     private static WildernessResetState.Operation operation(

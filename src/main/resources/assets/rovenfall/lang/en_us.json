@@ -257,6 +257,7 @@
   "command.rovenfall.admin.wilderness.error.snapshot_not_found": "That recorded Wilderness snapshot is unavailable or failed verification.",
   "command.rovenfall.admin.wilderness.error.snapshot_failed": "The pre-reset Wilderness snapshot failed; the current Wilderness remains authoritative.",
   "command.rovenfall.admin.wilderness.error.evacuation_failed": "Player evacuation failed and was rolled back; the current Wilderness remains authoritative.",
+  "command.rovenfall.admin.wilderness.error.evacuation_rollback_failed": "Player evacuation failed and at least one player could not be returned; the current Wilderness was not replaced.",
   "command.rovenfall.admin.wilderness.error.precommit_failed": "The reset could not be staged; the current Wilderness remains authoritative.",
   "command.rovenfall.admin.wilderness.error.duplicate": "That Wilderness operation transaction was already recorded.",
   "command.rovenfall.admin.wilderness.error.invalid_request": "The Wilderness operation request is invalid.",

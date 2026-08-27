@@ -2,11 +2,15 @@ package org.dldyou.rovenfall.administration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.mojang.serialization.JsonOps;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.phys.Vec3;
@@ -16,6 +20,46 @@ import org.dldyou.rovenfall.world.WorldTopology;
 import org.junit.jupiter.api.Test;
 
 final class WildernessResetServiceTest {
+    @Test
+    void failedFinalSaveNeverArmsPendingSwap() {
+        AtomicBoolean armed = new AtomicBoolean();
+
+        var status = WildernessResetService.persistStateThenArmPending(
+                () -> false, () -> armed.set(true));
+
+        assertEquals(WildernessResetService.Status.PRECOMMIT_FAILED, status);
+        assertFalse(armed.get());
+    }
+
+    @Test
+    void pendingSwapIsArmedOnlyAfterStatePersistence() {
+        List<String> order = new ArrayList<>();
+
+        var status = WildernessResetService.persistStateThenArmPending(
+                () -> {
+                    order.add("save");
+                    return true;
+                },
+                () -> order.add("pending"));
+
+        assertEquals(WildernessResetService.Status.SUCCESS, status);
+        assertEquals(List.of("save", "pending"), order);
+    }
+
+    @Test
+    void activeOperationWithoutLifecycleEvidenceFailsClosed() {
+        assertThrows(WildernessResetStore.StoreException.class,
+                () -> WildernessResetService.requireLifecycleResult(true));
+    }
+
+    @Test
+    void resetLockBlocksOnlyFreshWildernessEntityJoins() {
+        assertTrue(ClaimProtectionEvents.blocksEntityJoin(true, true, false));
+        assertFalse(ClaimProtectionEvents.blocksEntityJoin(true, true, true));
+        assertFalse(ClaimProtectionEvents.blocksEntityJoin(true, false, false));
+        assertFalse(ClaimProtectionEvents.blocksEntityJoin(false, true, false));
+    }
+
     @Test
     void warningIsOwnerOnlyAuditedAndPersistent() {
         PlatformSavedData state = new PlatformSavedData();

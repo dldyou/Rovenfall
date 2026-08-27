@@ -6,14 +6,17 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
 import net.minecraft.nbt.CompoundTag;
@@ -29,20 +32,31 @@ final class WildernessResetStore {
     private static final long MAX_FILES = 1_000_000L;
     private static final long MAX_MANIFEST_BYTES = 1L * 1024L * 1024L;
     private final Path root;
+    private final Path trustedWorldRoot;
 
     WildernessResetStore(Path root) {
+        this(root, root.toAbsolutePath().normalize().getParent());
+    }
+
+    private WildernessResetStore(Path root, Path trustedWorldRoot) {
         this.root = root.toAbsolutePath().normalize();
+        this.trustedWorldRoot = trustedWorldRoot.toAbsolutePath().normalize();
     }
 
     static WildernessResetStore forServer(MinecraftServer server) {
-        return new WildernessResetStore(server.getWorldPath(LevelResource.ROOT)
-                .resolve("rovenfall").resolve("wilderness-resets"));
+        Path worldRoot = server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize();
+        return new WildernessResetStore(
+                worldRoot.resolve("rovenfall").resolve("wilderness-resets"), worldRoot);
     }
 
     SnapshotEvidence createSnapshot(UUID snapshotId, Path wildernessPath) throws StoreException {
         Path target = snapshotWorld(snapshotId);
         Path temporary = snapshotDirectory(snapshotId).resolveSibling(snapshotId + ".tmp");
         try {
+            requireManagedPath(root);
+            requireManagedPath(wildernessPath);
+            requireManagedPath(target);
+            requireManagedPath(temporary);
             requireWorldDirectory(wildernessPath);
             Files.createDirectories(root.resolve("snapshots"));
             if (Files.exists(target) || Files.exists(temporary) || snapshotCount() >= MAX_SNAPSHOTS) {
@@ -63,6 +77,7 @@ final class WildernessResetStore {
     }
 
     SnapshotEvidence snapshotEvidence(UUID snapshotId) throws StoreException {
+        requireManagedPath(snapshotWorld(snapshotId));
         return inspectTree(snapshotWorld(snapshotId));
     }
 
@@ -73,6 +88,8 @@ final class WildernessResetStore {
     void prepareRestore(WildernessResetState.Operation operation) throws StoreException {
         Path source = snapshotWorld(operation.snapshotId());
         try {
+            requireManagedPath(source);
+            requireManagedPath(stagingDirectory(operation.transactionId()));
             SnapshotEvidence evidence = inspectTree(source);
             if (!evidence.matches(operation)) {
                 throw new StoreException("snapshot_evidence_mismatch");
@@ -93,6 +110,9 @@ final class WildernessResetStore {
     }
 
     void writePending(WildernessResetState.Operation operation) throws StoreException {
+        requireManagedPath(stagingWorld(operation.transactionId()));
+        requireManagedPath(retiredWorld(operation.transactionId()));
+        requireManagedPath(pendingPath());
         if (!Files.isDirectory(stagingWorld(operation.transactionId()))
                 || Files.exists(retiredWorld(operation.transactionId()))) {
             throw new StoreException("staging_missing");
@@ -101,6 +121,7 @@ final class WildernessResetStore {
     }
 
     Optional<LifecycleResult> applyPending(Path wildernessPath) throws StoreException {
+        requireManagedPath(pendingPath());
         if (!Files.isRegularFile(pendingPath())) {
             return Optional.empty();
         }
@@ -108,7 +129,18 @@ final class WildernessResetStore {
         Path target = wildernessPath.toAbsolutePath().normalize();
         Path staging = stagingWorld(operation.transactionId());
         Path retired = retiredWorld(operation.transactionId());
-        ensureUnder(target, target.getParent());
+        requireManagedPath(target);
+        requireManagedPath(staging);
+        requireManagedPath(retired);
+        Optional<LifecycleResult> existing = lifecycleResult();
+        if (existing.isPresent()) {
+            LifecycleResult result = existing.orElseThrow();
+            if (!result.operation().equals(operation)) {
+                throw new StoreException("lifecycle_operation_mismatch");
+            }
+            deleteFile(pendingPath());
+            return existing;
+        }
         try {
             Files.createDirectories(retired.getParent());
             if (Files.exists(retired) && Files.exists(target) && !Files.exists(staging)) {
@@ -143,6 +175,12 @@ final class WildernessResetStore {
     Optional<LifecycleResult> lifecycleResult() throws StoreException {
         Path applied = appliedPath();
         Path failed = failedPath();
+        requireManagedPath(applied);
+        requireManagedPath(failed);
+        if (Files.exists(applied, LinkOption.NOFOLLOW_LINKS)
+                && Files.exists(failed, LinkOption.NOFOLLOW_LINKS)) {
+            throw new StoreException("conflicting_lifecycle_results");
+        }
         if (Files.isRegularFile(applied)) {
             WildernessResetState.Operation operation = read(applied, WildernessResetState.Operation.CODEC);
             return Optional.of(new LifecycleResult(operation, true, "completed"));
@@ -159,7 +197,14 @@ final class WildernessResetStore {
     }
 
     boolean hasPending() {
-        return Files.isRegularFile(pendingPath()) || Files.isRegularFile(appliedPath()) || Files.isRegularFile(failedPath());
+        try {
+            requireManagedPath(root);
+            return Files.isRegularFile(pendingPath())
+                    || Files.isRegularFile(appliedPath())
+                    || Files.isRegularFile(failedPath());
+        } catch (StoreException exception) {
+            return true;
+        }
     }
 
     void cleanupStaging(UUID transactionId) {
@@ -171,9 +216,40 @@ final class WildernessResetStore {
         deleteQuietly(root.resolve("retired").resolve(transactionId.toString()).normalize());
     }
 
+    void discardUnrecordedSnapshots(Set<UUID> retainedSnapshotIds) throws StoreException {
+        if (retainedSnapshotIds == null) {
+            throw new StoreException("retained_snapshot_ids_missing");
+        }
+        Path snapshots = root.resolve("snapshots").normalize();
+        requireManagedPath(snapshots);
+        if (!Files.isDirectory(snapshots)) {
+            return;
+        }
+        try (Stream<Path> entries = Files.list(snapshots)) {
+            for (Path entry : entries.toList()) {
+                requireManagedPath(entry);
+                String name = entry.getFileName().toString();
+                boolean temporary = name.endsWith(".tmp");
+                String identifier = temporary ? name.substring(0, name.length() - 4) : name;
+                UUID snapshotId;
+                try {
+                    snapshotId = UUID.fromString(identifier);
+                } catch (IllegalArgumentException ignored) {
+                    continue;
+                }
+                if (temporary || !retainedSnapshotIds.contains(snapshotId)) {
+                    deleteQuietly(entry);
+                }
+            }
+        } catch (IOException exception) {
+            throw new StoreException(exception);
+        }
+    }
+
     private void prepareEmptyStaging(UUID transactionId) throws StoreException {
         Path directory = stagingDirectory(transactionId);
         try {
+            requireManagedPath(directory);
             if (Files.exists(directory)) {
                 throw new StoreException("staging_exists");
             }
@@ -186,6 +262,11 @@ final class WildernessResetStore {
 
     private long snapshotCount() throws IOException {
         Path snapshots = root.resolve("snapshots");
+        try {
+            requireManagedPath(snapshots);
+        } catch (StoreException exception) {
+            throw new IOException(exception);
+        }
         if (!Files.isDirectory(snapshots)) {
             return 0;
         }
@@ -195,13 +276,25 @@ final class WildernessResetStore {
     }
 
     private void markApplied(WildernessResetState.Operation operation) throws StoreException {
-        writeAtomic(appliedPath(), WildernessResetState.Operation.CODEC, operation);
+        writeLifecycleResult(appliedPath(), operation);
         deleteFile(pendingPath());
     }
 
     private void markFailed(WildernessResetState.Operation operation, String detail) throws StoreException {
-        writeAtomic(failedPath(), WildernessResetState.Operation.CODEC, operation);
+        writeLifecycleResult(failedPath(), operation);
         deleteFile(pendingPath());
+    }
+
+    private void writeLifecycleResult(Path target, WildernessResetState.Operation operation) throws StoreException {
+        requireManagedPath(target);
+        if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
+            WildernessResetState.Operation retained = read(target, WildernessResetState.Operation.CODEC);
+            if (!retained.equals(operation)) {
+                throw new StoreException("lifecycle_operation_mismatch");
+            }
+            return;
+        }
+        writeAtomic(target, WildernessResetState.Operation.CODEC, operation);
     }
 
     private static void requireWorldDirectory(Path path) throws StoreException {
@@ -269,6 +362,7 @@ final class WildernessResetStore {
     private <T> void writeAtomic(Path target, Codec<T> codec, T value) throws StoreException {
         Path temporary = null;
         try {
+            requireManagedPath(target);
             Files.createDirectories(target.getParent());
             if (Files.exists(target)) {
                 throw new StoreException("operation_already_pending");
@@ -305,7 +399,13 @@ final class WildernessResetStore {
         }
     }
 
-    private static void moveAtomic(Path source, Path target) throws IOException {
+    private void moveAtomic(Path source, Path target) throws IOException {
+        try {
+            requireManagedPath(source);
+            requireManagedPath(target);
+        } catch (StoreException exception) {
+            throw new IOException(exception);
+        }
         Files.createDirectories(target.getParent());
         try {
             Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
@@ -321,7 +421,8 @@ final class WildernessResetStore {
         }
     }
 
-    private static void deleteFile(Path path) throws StoreException {
+    private void deleteFile(Path path) throws StoreException {
+        requireManagedPath(path);
         try {
             Files.deleteIfExists(path);
         } catch (IOException exception) {
@@ -329,8 +430,13 @@ final class WildernessResetStore {
         }
     }
 
-    private static void deleteQuietly(Path directory) {
+    private void deleteQuietly(Path directory) {
         if (directory == null || !Files.exists(directory)) {
+            return;
+        }
+        try {
+            requireManagedPath(directory);
+        } catch (StoreException exception) {
             return;
         }
         try (Stream<Path> paths = Files.walk(directory)) {
@@ -338,6 +444,40 @@ final class WildernessResetStore {
                 Files.deleteIfExists(path);
             }
         } catch (IOException ignored) {
+        }
+    }
+
+    private void requireManagedPath(Path candidate) throws StoreException {
+        if (candidate == null) {
+            throw new StoreException("managed_path_missing");
+        }
+        Path normalized = candidate.toAbsolutePath().normalize();
+        if (!normalized.startsWith(trustedWorldRoot)) {
+            throw new StoreException("path_escape");
+        }
+        Path current = trustedWorldRoot;
+        try {
+            if (Files.exists(current, LinkOption.NOFOLLOW_LINKS)) {
+                rejectLinkOrReparsePoint(current);
+            }
+            for (Path component : trustedWorldRoot.relativize(normalized)) {
+                current = current.resolve(component);
+                if (Files.exists(current, LinkOption.NOFOLLOW_LINKS)) {
+                    rejectLinkOrReparsePoint(current);
+                }
+            }
+        } catch (IOException exception) {
+            throw new StoreException(exception);
+        }
+    }
+
+    private static void rejectLinkOrReparsePoint(Path path) throws IOException, StoreException {
+        BasicFileAttributes attributes = Files.readAttributes(
+                path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        Path followed = path.toRealPath();
+        Path notFollowed = path.toRealPath(LinkOption.NOFOLLOW_LINKS);
+        if (attributes.isSymbolicLink() || attributes.isOther() || !followed.equals(notFollowed)) {
+            throw new StoreException("managed_path_link_rejected");
         }
     }
 
