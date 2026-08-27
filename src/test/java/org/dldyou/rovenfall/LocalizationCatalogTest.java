@@ -87,7 +87,11 @@ final class LocalizationCatalogTest {
             "boss_pattern.rovenfall.rift_warden.sweep",
             "boss_pattern.rovenfall.rift_warden.barrage",
             "boss_pattern.rovenfall.rift_warden.shockwave",
-            "boss_pattern.rovenfall.rift_warden.summon"
+            "boss_pattern.rovenfall.rift_warden.summon",
+            "message.rovenfall.boss.started",
+            "message.rovenfall.boss.phase",
+            "message.rovenfall.boss.telegraph",
+            "message.rovenfall.boss.ended"
     );
 
     @Test

@@ -19,6 +19,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.level.Level;
 import org.dldyou.rovenfall.Rovenfall;
+import org.dldyou.rovenfall.world.ProtectedRegion;
 
 public final class MobContentSnapshot {
     public static final int MAX_CATALOGS = 256;
@@ -247,8 +248,29 @@ public final class MobContentSnapshot {
 
     private static void validateArena(
             Source source, MobContentCatalog.ArenaPolicy arena, List<Problem> problems) {
-        if (arena.dimension().equals(Level.OVERWORLD)) {
-            problems.add(problem(source, arena.id(), "boss arena cannot target the Hub dimension"));
+        if (!arena.dimension().equals(WILDERNESS_DIMENSION)) {
+            problems.add(problem(source, arena.id(),
+                    "boss arena dimension must be " + WILDERNESS_DIMENSION.identifier()));
+        }
+        if (arena.center() == null) {
+            problems.add(problem(source, arena.id(), "boss arena center is required"));
+        } else {
+            range(source, arena.id(), "boss arena center Y", arena.center().getY(), -2_048, 2_048, problems);
+            int minimumChunkX = Math.toIntExact(Math.floorDiv(
+                    (long) arena.center().getX() - arena.protectionRadius(), 16L));
+            int minimumChunkZ = Math.toIntExact(Math.floorDiv(
+                    (long) arena.center().getZ() - arena.protectionRadius(), 16L));
+            int maximumChunkX = Math.toIntExact(Math.floorDiv(
+                    (long) arena.center().getX() + arena.protectionRadius(), 16L));
+            int maximumChunkZ = Math.toIntExact(Math.floorDiv(
+                    (long) arena.center().getZ() + arena.protectionRadius(), 16L));
+            var region = new ProtectedRegion(
+                    new java.util.UUID(0L, 0L), arena.dimension(), minimumChunkX, minimumChunkZ,
+                    maximumChunkX, maximumChunkZ);
+            if (!region.isValid()) {
+                problems.add(problem(source, arena.id(),
+                        "boss arena protection exceeds protected-region bounds"));
+            }
         }
         range(source, arena.id(), "protection radius", arena.protectionRadius(), 1, 1_024, problems);
         range(source, arena.id(), "leash radius", arena.leashRadius(), 1, 2_048, problems);

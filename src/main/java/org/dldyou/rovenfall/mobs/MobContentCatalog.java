@@ -5,6 +5,7 @@ import com.mojang.serialization.DataResult;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import java.util.List;
 import java.util.Optional;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
@@ -143,12 +144,14 @@ public record MobContentCatalog(
     public record ArenaPolicy(
             Identifier id,
             ResourceKey<Level> dimension,
+            BlockPos center,
             int protectionRadius,
             int leashRadius,
             int resetTimeoutTicks) {
         public static final Codec<ArenaPolicy> CODEC = RecordCodecBuilder.create(instance -> instance.group(
                 Identifier.CODEC.fieldOf("id").forGetter(ArenaPolicy::id),
                 ResourceKey.codec(Registries.DIMENSION).fieldOf("dimension").forGetter(ArenaPolicy::dimension),
+                BlockPos.CODEC.fieldOf("center").forGetter(ArenaPolicy::center),
                 Codec.INT.fieldOf("protection_radius").forGetter(ArenaPolicy::protectionRadius),
                 Codec.INT.fieldOf("leash_radius").forGetter(ArenaPolicy::leashRadius),
                 Codec.INT.fieldOf("reset_timeout_ticks").forGetter(ArenaPolicy::resetTimeoutTicks)

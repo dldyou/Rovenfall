@@ -56,6 +56,7 @@ import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import org.dldyou.rovenfall.claims.ClaimConfig;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimRole;
+import org.dldyou.rovenfall.mobs.BossEncounterRuntime;
 import org.dldyou.rovenfall.world.WorldTopology;
 
 public final class ClaimProtectionEvents {
@@ -235,6 +236,7 @@ public final class ClaimProtectionEvents {
     private void onAttackEntity(AttackEntityEvent event) {
         if (event.getEntity() instanceof ServerPlayer player
                 && player.level() instanceof ServerLevel level
+                && !BossEncounterRuntime.allowsArenaCombat(event.getTarget(), player)
                 && deny(level, event.getTarget().blockPosition(), player, ClaimProtectionService.Action.ENTITY)) {
             event.setCanceled(true);
         }
@@ -255,6 +257,7 @@ public final class ClaimProtectionEvents {
     private void onEntityInvulnerabilityCheck(EntityInvulnerabilityCheckEvent event) {
         if (event.getEntity().level() instanceof ServerLevel level
                 && event.getSource().getEntity() instanceof ServerPlayer player
+                && !BossEncounterRuntime.allowsArenaCombat(event.getEntity(), player)
                 && deny(level, event.getEntity().blockPosition(), player,
                         ClaimProtectionService.Action.ENTITY)) {
             event.setInvulnerable(true);
@@ -263,6 +266,11 @@ public final class ClaimProtectionEvents {
 
     private void onProjectileImpact(ProjectileImpactEvent event) {
         if (!(event.getProjectile().level() instanceof ServerLevel level)) {
+            return;
+        }
+        if (event.getRayTraceResult() instanceof EntityHitResult hit
+                && event.getProjectile().getOwner() instanceof ServerPlayer player
+                && BossEncounterRuntime.allowsArenaCombat(hit.getEntity(), player)) {
             return;
         }
         ClaimProtectionService.Action action = event.getProjectile()
@@ -467,6 +475,9 @@ public final class ClaimProtectionEvents {
                     auditEnvironmentDenied(level, target, ClaimProtectionService.Action.ENTITY);
                 }
                 return denied;
+            }
+            if (BossEncounterRuntime.allowsArenaCombat(entity, player)) {
+                return false;
             }
             Access access = access(level, entity.blockPosition(), player, ClaimProtectionService.Action.ENTITY);
             if (!access.decision.allowed()) {

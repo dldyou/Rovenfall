@@ -82,6 +82,7 @@
     {
       "id": "rovenfall:rift_warden_arena",
       "dimension": "rovenfall:wilderness",
+      "center": [4096, 96, 4096],
       "protection_radius": 48,
       "leash_radius": 64,
       "reset_timeout_ticks": 2400

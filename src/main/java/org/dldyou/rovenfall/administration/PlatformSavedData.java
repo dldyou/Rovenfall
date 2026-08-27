@@ -520,8 +520,13 @@ public final class PlatformSavedData extends SavedData {
     }
 
     boolean hasAuditTransaction(UUID transactionId) {
-        return transactionId != null && auditEntries.stream()
-                .anyMatch(entry -> transactionId.equals(entry.transactionId()));
+        return auditTransaction(transactionId).isPresent();
+    }
+
+    public Optional<AuditEntry> auditTransaction(UUID transactionId) {
+        return transactionId == null ? Optional.empty() : auditEntries.stream()
+                .filter(entry -> transactionId.equals(entry.transactionId()))
+                .findFirst();
     }
 
     public AuditPage auditPage(int page, int pageSize) {
