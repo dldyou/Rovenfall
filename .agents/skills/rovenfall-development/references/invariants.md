@@ -88,6 +88,8 @@ Generic economy reversal must reject cross-domain payments such as a paid skill 
 
 Create a snapshot before Wilderness reset, bulk economy adjustment, destructive migration, or restore. Evacuate players and block concurrent affected operations during reset/restore.
 
+Boss administration is `OWNER`-only for mutation. Persist the reset/recovery request audit before touching encounter, entity, arena, or reward state; record completion under a deterministic related transaction only after postconditions are verified. Retain `REWARD_PENDING` encounters until contribution, loot, currency, XP, item, and cooldown evidence is durable. Offline item delivery remains pending and recoverable; it is never treated as disposable stuck state. Exact transaction retries resume pending work without duplicating rewards or cleanup.
+
 ## Performance
 
 - Resolve claims by dimension/chunk index, players by UUID, and shops/portals by ID. Never scan every claim or player in a block, tick, packet, or interaction handler.

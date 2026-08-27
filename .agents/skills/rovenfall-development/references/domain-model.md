@@ -95,6 +95,8 @@ A **mutation definition** composes attribute changes, AI behavior modifiers, vis
 
 Bosses use protected arenas or managed spawn points. Rewards are personal to players who pass a server-calculated contribution threshold; last hit alone grants no ownership. Reward cooldowns prevent repeated farming.
 
+Every administrator role may inspect loaded mutated mobs and durable boss encounter, participant, phase, reward, and cooldown evidence. Only `OWNER` may force-reset an encounter or run stuck-encounter recovery. A reset must retain a `REWARD_PENDING` encounter until its full reward intent is durably represented in the reward ledger.
+
 ## Administration and observability
 
 Administrator roles are independent of claim roles:
@@ -106,6 +108,8 @@ Administrator roles are independent of claim roles:
 - `OWNER`: backups, migrations, Wilderness reset, and recovery.
 
 The first admin interface combines permission-gated mutation commands with a read-only searchable GUI for player state, balances, transactions, claims, shops, denied actions, and alerts. External dashboards and automatic punishment are outside the initial scope.
+
+Boss operations use a caller-supplied transaction ID. They append an immutable request audit before changing state and a deterministic completion audit only after cleanup or recovery is verifiably complete. Exact retries resume an incomplete request or return duplicate after completion.
 
 ## Localization
 
