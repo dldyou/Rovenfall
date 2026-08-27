@@ -70,7 +70,28 @@ public final class RovenfallCommands {
                         .then(Commands.argument("page", IntegerArgumentType.integer(1))
                                 .executes(context -> openAuditGui(
                                         context.getSource(),
-                                        IntegerArgumentType.getInteger(context, "page") - 1))));
+                                        IntegerArgumentType.getInteger(context, "page") - 1))))
+                .then(Commands.literal("search")
+                        .then(Commands.argument("query", StringArgumentType.greedyString())
+                                .executes(context -> searchAudit(
+                                        context.getSource(), 0,
+                                        StringArgumentType.getString(context, "query"))))
+                        .then(Commands.literal("page")
+                                .then(Commands.argument("page", IntegerArgumentType.integer(1))
+                                        .then(Commands.argument("query", StringArgumentType.greedyString())
+                                                .executes(context -> searchAudit(
+                                                        context.getSource(),
+                                                        IntegerArgumentType.getInteger(context, "page") - 1,
+                                                        StringArgumentType.getString(context, "query")))))))
+                .then(Commands.literal("export")
+                        .then(Commands.argument("transaction_id", UuidArgument.uuid())
+                                .then(Commands.argument("reason", StringArgumentType.string())
+                                        .then(Commands.argument("query", StringArgumentType.greedyString())
+                                                .executes(context -> exportAudit(
+                                                        context.getSource(),
+                                                        UuidArgument.getUuid(context, "transaction_id"),
+                                                        StringArgumentType.getString(context, "reason"),
+                                                        StringArgumentType.getString(context, "query")))))));
 
         var snapshotCommand = Commands.literal("snapshot")
                 .then(Commands.literal("create")
@@ -1400,14 +1421,32 @@ public final class RovenfallCommands {
 
     private static int listAudit(CommandSourceStack source, int page) {
         PlatformSavedData.AuditPage result = PlatformSavedData.get(source.getServer()).auditPage(page, AUDIT_PAGE_SIZE);
+        return sendAuditPage(source, result);
+    }
+
+    private static int searchAudit(CommandSourceStack source, int page, String queryText) {
+        long now = Instant.now().toEpochMilli();
+        try {
+            AuditQuery query = AuditQuery.parse(
+                    queryText, Math.max(0, now - AuditQuery.MAX_WINDOW_MILLIS), now, false);
+            PlatformSavedData.AuditPage result = PlatformSavedData.get(source.getServer())
+                    .auditPage(query, page, AUDIT_PAGE_SIZE);
+            return sendAuditPage(source, result);
+        } catch (IllegalArgumentException exception) {
+            return failure(source, "command.rovenfall.admin.audit.error.invalid_query");
+        }
+    }
+
+    private static int sendAuditPage(CommandSourceStack source, PlatformSavedData.AuditPage result) {
         if (result.entries().isEmpty()) {
-            source.sendSuccess(() -> Component.translatable("command.rovenfall.admin.audit.empty", page + 1), false);
+            source.sendSuccess(() -> Component.translatable(
+                    "command.rovenfall.admin.audit.empty", result.page() + 1), false);
             return 1;
         }
 
         source.sendSuccess(() -> Component.translatable(
                 "command.rovenfall.admin.audit.header",
-                page + 1,
+                result.page() + 1,
                 result.totalPages(),
                 result.totalEntries()), false);
         for (AuditEntry entry : result.entries()) {
@@ -1423,6 +1462,49 @@ public final class RovenfallCommands {
                     entry.reason()), false);
         }
         return result.entries().size();
+    }
+
+    private static int exportAudit(
+            CommandSourceStack source, UUID transactionId, String reason, String queryText) {
+        long now = Instant.now().toEpochMilli();
+        final AuditQuery query;
+        try {
+            query = AuditQuery.parse(queryText, 0, now, true);
+        } catch (IllegalArgumentException exception) {
+            PlatformSavedData state = PlatformSavedData.get(source.getServer());
+            AuditExportService.auditInvalidQuery(state, actorId(source), queryText, now, transactionId);
+            return failure(source, "command.rovenfall.admin.audit.error.invalid_query");
+        }
+
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        AuditExportService.Result result = AuditExportService.export(
+                state, AuditExportStore.forServer(source.getServer()), actorId(source),
+                authorizationOverride(source, state), query, reason, now, transactionId);
+        return switch (result.status()) {
+            case SUCCESS -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.admin.audit.export.success",
+                        result.rows(), result.bytes(), result.path().orElseThrow().toString(), transactionId.toString()), true);
+                yield 1;
+            }
+            case DUPLICATE -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.admin.audit.export.duplicate", transactionId.toString()), false);
+                yield 1;
+            }
+            case UNAUTHORIZED -> failure(source, "command.rovenfall.admin.audit.export.error.unauthorized");
+            case READ_ONLY_SCHEMA -> failure(
+                    source, "command.rovenfall.admin.error.read_only_schema", state.schemaVersion());
+            case INVALID_REASON -> failure(
+                    source, "command.rovenfall.admin.error.invalid_reason", AdministrationService.MAX_REASON_LENGTH);
+            case TRANSACTION_CONFLICT -> failure(
+                    source, "command.rovenfall.admin.audit.export.error.transaction_conflict");
+            case LIMIT_EXCEEDED -> failure(
+                    source, "command.rovenfall.admin.audit.export.error.limit",
+                    AuditExportService.MAX_EXPORT_ROWS, AuditExportService.MAX_EXPORT_BYTES);
+            case WRITE_FAILED -> failure(source, "command.rovenfall.admin.audit.export.error.write_failed");
+            case INVALID_REQUEST -> failure(source, "command.rovenfall.admin.audit.error.invalid_query");
+        };
     }
 
     private static int changeBalance(

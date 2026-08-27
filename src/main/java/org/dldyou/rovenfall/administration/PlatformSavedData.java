@@ -44,6 +44,9 @@ public final class PlatformSavedData extends SavedData {
     static final long ECONOMY_TRANSACTION_RETENTION_MILLIS = Duration.ofDays(30).toMillis();
     private static final long NON_EXPIRING_RECEIPT = -1L;
     private static final Duration AUDIT_RETENTION = Duration.ofDays(30);
+    private static final Comparator<AuditEntry> AUDIT_NEWEST_FIRST = Comparator
+            .comparingLong(AuditEntry::timestampEpochMillis).reversed()
+            .thenComparing(AuditEntry::transactionId);
     static final int MAX_AUDIT_ENTRIES = 100_000;
     static final int MAX_DENIED_AUDIT_ACTORS = 10_000;
     private static final Codec<Map<UUID, AdminRole>> ADMIN_ROLES_CODEC = Codec.unboundedMap(UUIDUtil.STRING_CODEC, AdminRole.CODEC);
@@ -550,6 +553,34 @@ public final class PlatformSavedData extends SavedData {
             entries.add(iterator.next());
         }
         return new AuditPage(page, totalPages, totalEntries, entries);
+    }
+
+    public AuditPage auditPage(AuditQuery query, int page, int pageSize) {
+        if (query == null || page < 0 || pageSize < 1 || pageSize > MAX_AUDIT_PAGE_SIZE) {
+            throw new IllegalArgumentException("Invalid audit page request");
+        }
+
+        long offset = (long) page * pageSize;
+        List<AuditEntry> matches = auditEntries.stream()
+                .filter(query::matches)
+                .sorted(AUDIT_NEWEST_FIRST)
+                .toList();
+        List<AuditEntry> entries = offset >= matches.size()
+                ? List.of()
+                : matches.subList((int) offset, (int) Math.min(offset + pageSize, matches.size()));
+        int totalPages = matches.isEmpty() ? 0 : (matches.size() + pageSize - 1) / pageSize;
+        return new AuditPage(page, totalPages, matches.size(), entries);
+    }
+
+    AuditSelection selectAudit(AuditQuery query, int maximumEntries) {
+        if (query == null || maximumEntries < 1) {
+            throw new IllegalArgumentException("Invalid audit selection request");
+        }
+        List<AuditEntry> matches = auditEntries.stream()
+                .filter(query::matches)
+                .sorted(AUDIT_NEWEST_FIRST)
+                .toList();
+        return new AuditSelection(matches.size(), matches.subList(0, Math.min(maximumEntries, matches.size())));
     }
 
     void commitRoleChange(UUID targetId, AdminRole role, AuditEntry auditEntry) {
@@ -1915,6 +1946,12 @@ public final class PlatformSavedData extends SavedData {
 
     public record AuditPage(int page, int totalPages, int totalEntries, List<AuditEntry> entries) {
         public AuditPage {
+            entries = List.copyOf(entries);
+        }
+    }
+
+    record AuditSelection(int totalEntries, List<AuditEntry> entries) {
+        AuditSelection {
             entries = List.copyOf(entries);
         }
     }
