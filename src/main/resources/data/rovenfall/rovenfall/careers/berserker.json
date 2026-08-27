@@ -1,0 +1,10 @@
+{
+  "translation_key": "career.rovenfall.berserker",
+  "tier": 3,
+  "parents": ["rovenfall:warrior"],
+  "level_xp": [300, 900, 1800, 3000],
+  "promotion_cost": 250,
+  "required_activities": [
+    {"activity": "rovenfall:combat", "level": 3}
+  ]
+}

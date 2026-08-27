@@ -1,0 +1,11 @@
+{
+  "translation_key": "skill.rovenfall.shield_wall",
+  "career": "rovenfall:guardian",
+  "kind": "active",
+  "max_rank": 3,
+  "point_cost": 2,
+  "prerequisites": [
+    {"skill": "rovenfall:power_strike", "rank": 2}
+  ],
+  "cooldown_ticks": 240
+}
