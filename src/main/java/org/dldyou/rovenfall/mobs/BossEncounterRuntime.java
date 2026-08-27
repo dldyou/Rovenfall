@@ -28,6 +28,7 @@ import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.dldyou.rovenfall.Rovenfall;
 import org.dldyou.rovenfall.administration.AdministrationService;
+import org.dldyou.rovenfall.administration.BossRewardService;
 import org.dldyou.rovenfall.administration.PlatformSavedData;
 import org.dldyou.rovenfall.administration.ProtectedRegionService;
 import org.dldyou.rovenfall.claims.ClaimKey;
@@ -197,6 +198,19 @@ public final class BossEncounterRuntime {
                 && target.distanceToSqr(center) <= maximumDistance;
     }
 
+    /** True only for an exact, retained boss or minion belonging to a managed encounter. */
+    public static boolean isManagedEncounterEntity(Entity entity) {
+        if (entity == null || !(entity.level() instanceof ServerLevel level)) {
+            return false;
+        }
+        UUID retainedId = encounterId(entity).orElse(null);
+        BossEncounterState encounter = retainedId == null ? null : BossEncounterSavedData.get(level.getServer())
+                .encounter(retainedId).orElse(null);
+        return encounter != null
+                && encounter.dimension().equals(level.dimension())
+                && isEncounterEntity(entity, encounter);
+    }
+
     public static ProtectedRegion regionFor(MobContentCatalog.ArenaPolicy arena) {
         int minimumChunkX = Math.toIntExact(Math.floorDiv(
                 (long) arena.center().getX() - arena.protectionRadius(), 16L));
@@ -343,7 +357,29 @@ public final class BossEncounterRuntime {
                 && encounter.dimension().equals(level.dimension())
                 && plan != null
                 && plan.mob().entityType().equals(BuiltInRegistries.ENTITY_TYPE.getKey(event.getEntity().getType()))) {
-            finish(level.getServer(), encounterId, "completed", System.currentTimeMillis(), false);
+            long timestamp = System.currentTimeMillis();
+            if (!validRewardArena(level.getServer(), encounter, plan)) {
+                BossRewardService.auditEncounterFailure(
+                        level.getServer(), encounter, "arena_evidence_invalid", timestamp);
+                finish(level.getServer(), encounterId, "reward_evidence_invalid", timestamp, false);
+                return;
+            }
+            BossEncounterState pending = encounter.markRewardPending(new BossEncounterState.RewardPlan(
+                    plan.boss(), plan.arena(), plan.mob(), plan.contribution(), plan.loot()));
+            if (pending.stage() != BossEncounterState.Stage.REWARD_PENDING) {
+                BossRewardService.auditEncounterFailure(
+                        level.getServer(), encounter, "reward_plan_invalid", timestamp);
+                finish(level.getServer(), encounterId, "reward_plan_invalid", timestamp, false);
+                return;
+            }
+            if (pending != encounter && !BossEncounterSavedData.get(level.getServer()).put(pending)) {
+                return;
+            }
+            var rewards = BossRewardService.prepare(
+                    level.getServer(), pending, plan.boss(), plan.mob(), plan.contribution(), plan.loot(), timestamp);
+            if (rewards.status().durable()) {
+                finish(level.getServer(), encounterId, "completed", timestamp, false);
+            }
         }
     }
 
@@ -353,10 +389,17 @@ public final class BossEncounterRuntime {
         for (BossEncounterState encounter : BossEncounterSavedData.get(server).activeEncounters()) {
             tick(server, encounter, timestamp);
         }
+        if (server.overworld().getGameTime() % 20L == 0L) {
+            BossRewardService.recover(server, timestamp);
+        }
     }
 
     private static void tick(MinecraftServer server, BossEncounterState persisted, long timestamp) {
         ResolvedPlan plan = resolvedPlan(server, persisted).orElse(null);
+        if (persisted.stage() == BossEncounterState.Stage.REWARD_PENDING) {
+            retryPendingReward(server, persisted, plan, timestamp);
+            return;
+        }
         PlatformSavedData platform = PlatformSavedData.get(server);
         Identifier regionId = regionId(persisted.encounterId());
         ProtectedRegion retainedRegion = platform.protectedRegion(regionId).orElse(null);
@@ -372,7 +415,15 @@ public final class BossEncounterRuntime {
             return;
         }
         Entity retained = level.getEntity(persisted.entityId());
-        if (!(retained instanceof Mob boss) || !boss.isAlive()) {
+        if (retained instanceof Mob deadBoss && !deadBoss.isAlive()) {
+            var rewards = BossRewardService.prepare(
+                    server, persisted, plan.boss(), plan.mob(), plan.contribution(), plan.loot(), timestamp);
+            if (rewards.status().durable()) {
+                finish(server, persisted.encounterId(), "completed_recovery", timestamp, false);
+            }
+            return;
+        }
+        if (!(retained instanceof Mob boss)) {
             if (isTimedOut(persisted, plan.arena(), timestamp)) {
                 finish(server, persisted.encounterId(), "missing_boss_timeout", timestamp, true);
             }
@@ -576,7 +627,9 @@ public final class BossEncounterRuntime {
     }
 
     private static void onServerStarted(ServerStartedEvent event) {
-        reconcile(event.getServer(), System.currentTimeMillis());
+        long timestamp = System.currentTimeMillis();
+        reconcile(event.getServer(), timestamp);
+        BossRewardService.recover(event.getServer(), timestamp);
     }
 
     private static void onDatapackSync(OnDatapackSyncEvent event) {
@@ -592,7 +645,10 @@ public final class BossEncounterRuntime {
             return;
         }
         for (BossEncounterState encounter : encounters.activeEncounters()) {
-            if (resolvedPlan(server, encounter).isEmpty()
+            ResolvedPlan plan = resolvedPlan(server, encounter).orElse(null);
+            if (encounter.stage() == BossEncounterState.Stage.REWARD_PENDING) {
+                retryPendingReward(server, encounter, plan, timestampEpochMillis);
+            } else if (plan == null
                     || platform.isWildernessOperationLocked()) {
                 finish(server, encounter.encounterId(), "recovery_reset", timestampEpochMillis, true);
             }
@@ -609,6 +665,39 @@ public final class BossEncounterRuntime {
         }
     }
 
+    private static void retryPendingReward(
+            MinecraftServer server,
+            BossEncounterState encounter,
+            ResolvedPlan plan,
+            long timestamp) {
+        if (plan == null) {
+            return;
+        }
+        PlatformSavedData platform = PlatformSavedData.get(server);
+        if (!platform.isWritable()) {
+            return;
+        }
+        if (!validRewardArena(server, encounter, plan)) {
+            BossRewardService.auditEncounterFailure(server, encounter, "arena_evidence_invalid", timestamp);
+            finish(server, encounter.encounterId(), "reward_evidence_invalid", timestamp, false);
+            return;
+        }
+        var rewards = BossRewardService.prepare(
+                server, encounter, plan.boss(), plan.mob(), plan.contribution(), plan.loot(), timestamp);
+        if (rewards.status().durable()) {
+            finish(server, encounter.encounterId(), "completed_recovery", timestamp, false);
+        }
+    }
+
+    private static boolean validRewardArena(
+            MinecraftServer server, BossEncounterState encounter, ResolvedPlan plan) {
+        Identifier regionId = regionId(encounter.encounterId());
+        ProtectedRegion retained = PlatformSavedData.get(server).protectedRegion(regionId).orElse(null);
+        return encounter.reservation().equals(regionFor(plan.arena()))
+                && encounter.reservation().equals(retained)
+                && isOwnedArenaRegion(server, regionId, retained);
+    }
+
     private static void cleanupOrphanRegion(
             MinecraftServer server, Identifier regionId, long timestampEpochMillis) {
         PlatformSavedData platform = PlatformSavedData.get(server);
@@ -623,6 +712,10 @@ public final class BossEncounterRuntime {
 
     private static Optional<ResolvedPlan> resolvedPlan(
             MinecraftServer server, BossEncounterState encounter) {
+        if (encounter.stage() == BossEncounterState.Stage.REWARD_PENDING) {
+            return encounter.rewardPlan().map(plan -> new ResolvedPlan(
+                    plan.boss(), plan.arena(), plan.mob(), plan.contribution(), plan.loot()));
+        }
         MobContentSnapshot snapshot = MobContentReloadListener.snapshot(server);
         var boss = snapshot.boss(encounter.bossId()).orElse(null);
         var arena = boss == null ? null : snapshot.arena(boss.arena()).orElse(null);

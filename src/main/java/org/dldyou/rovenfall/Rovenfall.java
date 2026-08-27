@@ -74,6 +74,7 @@ import org.dldyou.rovenfall.administration.EconomyService;
 import org.dldyou.rovenfall.administration.EconomyReversalService;
 import org.dldyou.rovenfall.administration.EconomyTransactionReceipt;
 import org.dldyou.rovenfall.administration.AdministrationService;
+import org.dldyou.rovenfall.administration.BossRewardService;
 import org.dldyou.rovenfall.administration.PlatformSavedData;
 import org.dldyou.rovenfall.administration.PlayerRecordService;
 import org.dldyou.rovenfall.administration.RpgAdministrationService;
@@ -103,6 +104,7 @@ import org.dldyou.rovenfall.mobs.MobContentSnapshot;
 import org.dldyou.rovenfall.mobs.BossEncounterRuntime;
 import org.dldyou.rovenfall.mobs.BossEncounterSavedData;
 import org.dldyou.rovenfall.mobs.BossEncounterState;
+import org.dldyou.rovenfall.mobs.BossRewardSavedData;
 import org.dldyou.rovenfall.mobs.MobMutationRuntime;
 import org.dldyou.rovenfall.mobs.RovenfallMobClient;
 import org.dldyou.rovenfall.mobs.RovenfallMobEntities;
@@ -161,7 +163,8 @@ public final class Rovenfall {
         NeoForge.EVENT_BUS.addListener(this::addServerReloadListeners);
         NeoForge.EVENT_BUS.addListener(shopTemplates::onDefaultDataComponentsBound);
         NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onDamage);
-        NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, RpgActivityEvents::onDeath);
+        // Observe managed encounter identity before the LOWEST-priority boss handler finalizes it.
+        NeoForge.EVENT_BUS.addListener(EventPriority.HIGH, RpgActivityEvents::onDeath);
         NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onServerTick);
         NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onCrafted);
         NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onSmelted);
@@ -449,6 +452,120 @@ public final class Rovenfall {
                         PlatformSavedData.get(server), AdministrationService.SYSTEM_ACTOR, true,
                         BossEncounterRuntime.regionId(unrelatedId), "gametest fixture cleanup",
                         timestamp + 9, UUID.randomUUID());
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("boss_reward_recovery"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var level = helper.getLevel();
+                var snapshot = MobContentReloadListener.snapshot(server);
+                var boss = snapshot.boss(id("rift_warden")).orElseThrow();
+                var mob = snapshot.mob(boss.mob()).orElseThrow();
+                var arena = snapshot.arena(boss.arena()).orElseThrow();
+                var contribution = snapshot.contributionRule(boss.contributionRule()).orElseThrow();
+                var loot = snapshot.loot(boss.loot()).orElseThrow();
+                var player = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                BlockPos center = helper.absolutePos(new BlockPos(1, 2, 1));
+                player.snapTo(center.getX() + 0.5D, center.getY(), center.getZ() + 0.5D, 0, 0);
+                long timestamp = System.currentTimeMillis();
+                UUID encounterId = UUID.randomUUID();
+                var reservation = new ProtectedRegion(
+                        AdministrationService.SYSTEM_ACTOR, level.dimension(), center.getX() >> 4,
+                        center.getZ() >> 4, center.getX() >> 4, center.getZ() >> 4);
+                var encounter = BossEncounterState.start(
+                        encounterId, boss.id(), BossEncounterRuntime.definitionFingerprint(
+                                boss, arena, mob, contribution, loot), UUID.randomUUID(), level.dimension(),
+                        center, reservation, timestamp, level.getGameTime())
+                        .contribute(player.getUUID(), contribution.minimumPoints(),
+                                contribution.maximumContributors(), timestamp + 1);
+                long balanceBefore = PlatformSavedData.get(server).economyBalance(player.getUUID()).orElse(0L);
+                long xpBefore = RpgPlayerSavedData.get(server).state(player.getUUID())
+                        .activityXp().getOrDefault(id("hunting"), 0L);
+
+                var prepared = BossRewardService.prepare(
+                        server, encounter, boss, mob, contribution, loot, timestamp + 2);
+                UUID transactionId = BossRewardService.transactionId(encounterId, player.getUUID());
+                helper.assertTrue(prepared.status().durable()
+                                && BossRewardSavedData.get(server).operation(transactionId).isPresent()
+                                && PlatformSavedData.get(server).economyBalance(player.getUUID()).orElse(0L)
+                                        == balanceBefore + loot.currency()
+                                && RpgPlayerSavedData.get(server).state(player.getUUID())
+                                        .activityXp().getOrDefault(id("hunting"), 0L)
+                                        == xpBefore + loot.experience(),
+                        "Qualified boss contribution did not durably award economy and RPG progression");
+
+                BossRewardService.recover(server, timestamp + 3);
+                var replay = BossRewardService.prepare(
+                        server, encounter, boss, mob, contribution, loot, timestamp + 4);
+                helper.assertTrue(replay.status().durable()
+                                && PlatformSavedData.get(server).economyBalance(player.getUUID()).orElse(0L)
+                                        == balanceBefore + loot.currency()
+                                && RpgPlayerSavedData.get(server).state(player.getUUID())
+                                        .activityXp().getOrDefault(id("hunting"), 0L)
+                                        == xpBefore + loot.experience(),
+                        "Boss reward replay duplicated currency or progression");
+
+                UUID cooldownEncounterId = UUID.randomUUID();
+                var cooldownEncounter = BossEncounterState.start(
+                        cooldownEncounterId, boss.id(), encounter.definitionFingerprint(), UUID.randomUUID(),
+                        level.dimension(), center, reservation, timestamp + 5, level.getGameTime())
+                        .contribute(player.getUUID(), contribution.minimumPoints(),
+                                contribution.maximumContributors(), timestamp + 5);
+                var cooldown = BossRewardService.prepare(
+                        server, cooldownEncounter, boss, mob, contribution, loot, timestamp + 6);
+                var cooldownAudit = PlatformSavedData.get(server).auditPage(0, 50).entries().stream()
+                        .filter(entry -> entry.target().equals(player.getUUID().toString()))
+                        .map(entry -> entry.actionType() + ":" + entry.reason()).toList();
+                helper.assertTrue(cooldown.status() == BossRewardService.PreparationStatus.NO_QUALIFIED_PLAYERS
+                                && BossRewardSavedData.get(server).operation(BossRewardService.transactionId(
+                                        cooldownEncounterId, player.getUUID())).isEmpty()
+                                && PlatformSavedData.get(server).auditPage(0, 50).entries().stream()
+                                        .anyMatch(entry -> entry.actionType().equals(id("boss_reward_denied"))
+                                                && entry.target().equals(player.getUUID().toString())
+                                                && entry.reason().equals("personal_cooldown")),
+                        "Personal boss cooldown did not deny and audit the replay: status="
+                                + cooldown.status() + ", audit=" + cooldownAudit);
+
+                var recoveryPlayer = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                recoveryPlayer.snapTo(center.getX() + 0.5D, center.getY(), center.getZ() + 1.5D, 0, 0);
+                UUID recoveryEncounterId = UUID.randomUUID();
+                var recoveryArena = new MobContentCatalog.ArenaPolicy(
+                        id("boss_reward_recovery_arena"), level.dimension(), center, 1, 2, 20);
+                var recoveryBoss = new MobContentCatalog.BossDefinition(
+                        id("boss_reward_recovery"), "boss.rovenfall.rift_warden", mob.id(), recoveryArena.id(),
+                        contribution.id(), loot.id(), boss.rewardCooldownTicks(), boss.phases());
+                var recoveryReservation = BossEncounterRuntime.regionFor(recoveryArena);
+                var recoveryRegion = ProtectedRegionService.create(
+                        PlatformSavedData.get(server), AdministrationService.SYSTEM_ACTOR, true,
+                        BossEncounterRuntime.regionId(recoveryEncounterId), recoveryReservation,
+                        "gametest pending boss reward", timestamp + 7, recoveryEncounterId);
+                helper.assertTrue(recoveryRegion.status() == ProtectedRegionService.Status.SUCCESS,
+                        "Could not reserve the pending boss reward arena fixture");
+                UUID recoveryFingerprint = BossEncounterRuntime.definitionFingerprint(
+                        recoveryBoss, recoveryArena, mob, contribution, loot);
+                var recoveryEncounter = BossEncounterState.start(
+                        recoveryEncounterId, recoveryBoss.id(), recoveryFingerprint, UUID.randomUUID(),
+                        level.dimension(), center, recoveryReservation, timestamp + 7, level.getGameTime())
+                        .contribute(recoveryPlayer.getUUID(), contribution.minimumPoints(),
+                                contribution.maximumContributors(), timestamp + 7)
+                        .markRewardPending(new BossEncounterState.RewardPlan(
+                                recoveryBoss, recoveryArena, mob, contribution, loot));
+                helper.assertTrue(BossEncounterSavedData.get(server).put(recoveryEncounter),
+                        "Could not persist the pending boss reward recovery fixture");
+
+                BossEncounterRuntime.recover(server, timestamp + 8);
+
+                helper.assertTrue(BossEncounterSavedData.get(server).encounter(recoveryEncounterId).isEmpty()
+                                && BossRewardSavedData.get(server).operation(BossRewardService.transactionId(
+                                        recoveryEncounterId, recoveryPlayer.getUUID())).isPresent(),
+                        "Restart recovery lost a death-complete encounter after its boss entity disappeared");
+                recoveryPlayer.discard();
+                player.discard();
                 helper.succeed();
             }
         });

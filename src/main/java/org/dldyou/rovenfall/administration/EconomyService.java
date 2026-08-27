@@ -128,6 +128,66 @@ public final class EconomyService {
                 timestampEpochMillis, transactionId, initialBalance, maximumBalance, Operation.AWARD);
     }
 
+    public static TransactionResult awardBossReward(
+            PlatformSavedData state,
+            UUID playerId,
+            long amount,
+            String reason,
+            long timestampEpochMillis,
+            UUID transactionId,
+            long initialBalance,
+            long maximumBalance) {
+        return mutate(state, AdministrationService.SYSTEM_ACTOR, true, playerId, amount, reason,
+                timestampEpochMillis, transactionId, initialBalance, maximumBalance, Operation.BOSS_REWARD);
+    }
+
+    static TransactionStatus previewBossReward(
+            PlatformSavedData state,
+            UUID playerId,
+            long amount,
+            String reason,
+            long timestampEpochMillis,
+            UUID transactionId,
+            long initialBalance,
+            long maximumBalance) {
+        if (state == null || !state.isWritable()) {
+            return TransactionStatus.READ_ONLY_SCHEMA;
+        }
+        if (playerId == null || timestampEpochMillis < 0 || !validTransactionId(transactionId)) {
+            return TransactionStatus.INVALID_INPUT;
+        }
+        long before = currentBalance(state, playerId, initialBalance);
+        Optional<EconomyTransactionReceipt> retained = state.economyReceipt(transactionId);
+        if (retained.isPresent()) {
+            return receiptMatches(retained.orElseThrow(), AdministrationService.SYSTEM_ACTOR, playerId,
+                    EconomyTransactionReceipt.Kind.BOSS_REWARD, amount)
+                    ? TransactionStatus.DUPLICATE_TRANSACTION
+                    : TransactionStatus.TRANSACTION_ID_CONFLICT;
+        }
+        if (state.hasEconomyTransaction(transactionId, timestampEpochMillis)) {
+            return TransactionStatus.TRANSACTION_ID_CONFLICT;
+        }
+        if (amount <= 0) {
+            return TransactionStatus.INVALID_AMOUNT;
+        }
+        if (validReason(reason).isEmpty()) {
+            return TransactionStatus.INVALID_REASON;
+        }
+        if (!EconomyConfig.isValid(initialBalance, maximumBalance)) {
+            return TransactionStatus.INVALID_CONFIGURATION;
+        }
+        if (!state.canCommitEconomyTransaction(transactionId, timestampEpochMillis)) {
+            return TransactionStatus.TRANSACTION_LEDGER_FULL;
+        }
+        try {
+            return Math.addExact(before, amount) <= maximumBalance
+                    ? TransactionStatus.SUCCESS
+                    : TransactionStatus.MAXIMUM_EXCEEDED;
+        } catch (ArithmeticException exception) {
+            return TransactionStatus.OVERFLOW;
+        }
+    }
+
     public static TransactionResult debit(
             PlatformSavedData state,
             UUID playerId,
@@ -367,6 +427,7 @@ public final class EconomyService {
         ADMIN_GRANT(true, true, "economy_admin_grant", EconomyTransactionReceipt.Kind.ADMIN_GRANT),
         ADMIN_DEBIT(true, false, "economy_admin_debit", EconomyTransactionReceipt.Kind.ADMIN_DEBIT),
         AWARD(false, true, "economy_award", EconomyTransactionReceipt.Kind.AWARD),
+        BOSS_REWARD(false, true, "boss_reward", EconomyTransactionReceipt.Kind.BOSS_REWARD),
         DEBIT(false, false, "economy_debit", EconomyTransactionReceipt.Kind.DEBIT);
 
         private final boolean administratorOnly;

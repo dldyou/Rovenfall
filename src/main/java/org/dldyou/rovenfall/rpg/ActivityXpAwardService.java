@@ -29,6 +29,20 @@ public final class ActivityXpAwardService {
                 ActivityXpConfig.limits());
     }
 
+    public static AwardResult awardBossReward(
+            RpgPlayerSavedData state,
+            RpgDefinitionSnapshot definitions,
+            UUID playerId,
+            Identifier activityId,
+            long amount,
+            long timestamp,
+            UUID transactionId,
+            String source) {
+        return award(state, definitions, playerId, activityId, amount, timestamp, transactionId, source,
+                new ActivityXpConfig.Limits(
+                        Integer.MAX_VALUE, RpgPlayerState.MAX_PROVENANCE, 0L, 0L, Integer.MAX_VALUE));
+    }
+
     static AwardResult award(
             RpgPlayerSavedData state, RpgDefinitionSnapshot definitions, UUID playerId,
             Identifier activityId, long amount, long timestamp, UUID transactionId, String source,

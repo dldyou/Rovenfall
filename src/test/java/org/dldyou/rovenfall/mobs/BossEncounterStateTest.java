@@ -21,7 +21,10 @@ import org.junit.jupiter.api.Test;
 
 final class BossEncounterStateTest {
     private static final UUID ENCOUNTER = UUID.fromString("7f40c570-a8f0-4dce-90ef-2e66165596b6");
-    private static final UUID FINGERPRINT = UUID.fromString("e0191da8-ebf4-489d-9317-cbd0d6d5b568");
+    private static final BossEncounterState.RewardPlan REWARD_PLAN = rewardPlan();
+    private static final UUID FINGERPRINT = BossEncounterRuntime.definitionFingerprint(
+            REWARD_PLAN.boss(), REWARD_PLAN.arena(), REWARD_PLAN.mob(),
+            REWARD_PLAN.contribution(), REWARD_PLAN.loot());
     private static final UUID ENTITY = UUID.fromString("c9e78625-ea68-455a-9227-66063c4ec050");
 
     @Test
@@ -58,6 +61,17 @@ final class BossEncounterStateTest {
     }
 
     @Test
+    void rewardPendingIntentIsPersistentAndStopsPatternProgression() {
+        BossEncounterState pending = state().beginTelegraph(id("pattern"), 50).markRewardPending(REWARD_PLAN);
+
+        assertEquals(BossEncounterState.Stage.REWARD_PENDING, pending.stage());
+        assertTrue(pending.patternId().isEmpty());
+        assertEquals(pending, pending.beginExecution(60));
+        var encoded = BossEncounterState.CODEC.encodeStart(JsonOps.INSTANCE, pending).getOrThrow();
+        assertEquals(pending, BossEncounterState.CODEC.parse(JsonOps.INSTANCE, encoded).getOrThrow());
+    }
+
+    @Test
     void encounterSelectionTimeoutAndArenaBoundsAreDeterministic() {
         var phaseOne = new MobContentCatalog.Phase(
                 id("phase_one"), "boss_phase.rovenfall.one", 100,
@@ -90,7 +104,7 @@ final class BossEncounterStateTest {
                 UUID.randomUUID(), id("other"), FINGERPRINT, ENTITY, WorldTopology.WILDERNESS,
                 new BlockPos(0, 80, 0), reservation(new BlockPos(0, 80, 0)),
                 1_000, 1_000, 0, BossEncounterState.Stage.IDLE,
-                Optional.empty(), 0, 20, 0, Map.of());
+                Optional.empty(), 0, 20, 0, Map.of(), Optional.empty());
 
         assertTrue(data.put(first));
         assertFalse(data.put(duplicateEntity));
@@ -154,6 +168,23 @@ final class BossEncounterStateTest {
     private static MobContentCatalog.PatternDefinition pattern(String path, int weight) {
         return new MobContentCatalog.PatternDefinition(
                 id(path), "boss_pattern.rovenfall." + path, id("melee_sweep"), 20, 20, 20, weight);
+    }
+
+    private static BossEncounterState.RewardPlan rewardPlan() {
+        var phase = new MobContentCatalog.Phase(
+                id("phase"), "boss_phase.rovenfall.phase", 100, List.of(pattern("pattern", 1)));
+        var boss = new MobContentCatalog.BossDefinition(
+                id("boss"), "boss.rovenfall.test", id("mob"), id("arena"), id("rule"), id("loot"),
+                20, List.of(phase));
+        var arena = new MobContentCatalog.ArenaPolicy(
+                id("arena"), WorldTopology.WILDERNESS, new BlockPos(4096, 96, 4096), 48, 64, 20);
+        var mob = new MobContentCatalog.MobDefinition(
+                id("mob"), "mob.rovenfall.test", Identifier.withDefaultNamespace("iron_golem"),
+                600, 16, 0.25, List.of(), id("loot"), Optional.empty());
+        var contribution = new MobContentCatalog.ContributionRule(id("rule"), 50, 500, 50);
+        var loot = new MobContentCatalog.LootDefinition(
+                id("loot"), ResourceKey.create(Registries.LOOT_TABLE, id("boss_loot")), 3, 250, 500);
+        return new BossEncounterState.RewardPlan(boss, arena, mob, contribution, loot);
     }
 
     private static Identifier id(String path) {

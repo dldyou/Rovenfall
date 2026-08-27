@@ -39,6 +39,28 @@ final class ActivityXpAwardServiceTest {
     }
 
     @Test
+    void bossRewardBypassesOrdinaryRateLimitsButRemainsIdempotent() {
+        RpgPlayerSavedData state = new RpgPlayerSavedData();
+        Identifier hunting = id("hunting");
+        RpgDefinitionSnapshot definitions = RpgDefinitionSnapshot.compile(List.of(
+                new RpgDefinitionSnapshot.ActivitySource(
+                        id("activities/hunting"), "test", hunting,
+                        new ActivityDefinition("activity.rovenfall.hunting", List.of(1_000L)))),
+                List.of(), List.of());
+
+        assertEquals(ActivityXpAwardService.Status.SUCCESS,
+                ActivityXpAwardService.awardBossReward(
+                        state, definitions, PLAYER, hunting, 500, 1_000,
+                        uuid(90), "boss_reward:test").status());
+        assertEquals(ActivityXpAwardService.Status.DUPLICATE,
+                ActivityXpAwardService.awardBossReward(
+                        state, definitions, PLAYER, hunting, 500, 1_001,
+                        uuid(90), "boss_reward:test").status());
+        assertEquals(500, state.state(PLAYER).activityXp().get(hunting));
+        assertEquals(1, state.state(PLAYER).provenance().size());
+    }
+
+    @Test
     void rejectsDuplicateCooldownRateUnknownAndReadOnlyWithoutMutation() {
         RpgPlayerSavedData state = new RpgPlayerSavedData();
         RpgDefinitionSnapshot definitions = definitions();

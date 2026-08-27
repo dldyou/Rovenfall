@@ -91,7 +91,8 @@ final class LocalizationCatalogTest {
             "message.rovenfall.boss.started",
             "message.rovenfall.boss.phase",
             "message.rovenfall.boss.telegraph",
-            "message.rovenfall.boss.ended"
+            "message.rovenfall.boss.ended",
+            "message.rovenfall.boss.reward_received"
     );
 
     @Test

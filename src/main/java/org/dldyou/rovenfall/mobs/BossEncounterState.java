@@ -2,6 +2,7 @@ package org.dldyou.rovenfall.mobs;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
+import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -35,7 +36,8 @@ public record BossEncounterState(
         long stageDeadlineGameTime,
         long nextPatternGameTime,
         int sequence,
-        Map<UUID, Long> contributions) {
+        Map<UUID, Long> contributions,
+        Optional<RewardPlan> rewardPlan) {
     public static final int MAX_CONTRIBUTORS = 1_024;
     public static final int MAX_SEQUENCE = 1_000_000_000;
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
@@ -46,34 +48,41 @@ public record BossEncounterState(
                     .flatXmap(BossEncounterState::contributionsFromEntries,
                             BossEncounterState::contributionEntries);
 
-    public static final Codec<BossEncounterState> CODEC =
-            RecordCodecBuilder.<BossEncounterState>create(instance -> instance.group(
-                    UUIDUtil.STRING_CODEC.fieldOf("encounter_id").forGetter(BossEncounterState::encounterId),
-                    Identifier.CODEC.fieldOf("boss_id").forGetter(BossEncounterState::bossId),
+    private static final MapCodec<PersistedState> PERSISTED_STATE_CODEC =
+            RecordCodecBuilder.mapCodec(instance -> instance.group(
+                    UUIDUtil.STRING_CODEC.fieldOf("encounter_id").forGetter(PersistedState::encounterId),
+                    Identifier.CODEC.fieldOf("boss_id").forGetter(PersistedState::bossId),
                     UUIDUtil.STRING_CODEC.fieldOf("definition_fingerprint")
-                            .forGetter(BossEncounterState::definitionFingerprint),
-                    UUIDUtil.STRING_CODEC.fieldOf("entity_id").forGetter(BossEncounterState::entityId),
-                    Level.RESOURCE_KEY_CODEC.fieldOf("dimension").forGetter(BossEncounterState::dimension),
-                    BlockPos.CODEC.fieldOf("center").forGetter(BossEncounterState::center),
-                    ProtectedRegion.CODEC.fieldOf("reservation").forGetter(BossEncounterState::reservation),
-                    Codec.LONG.fieldOf("started_at").forGetter(BossEncounterState::startedAtEpochMillis),
+                            .forGetter(PersistedState::definitionFingerprint),
+                    UUIDUtil.STRING_CODEC.fieldOf("entity_id").forGetter(PersistedState::entityId),
+                    Level.RESOURCE_KEY_CODEC.fieldOf("dimension").forGetter(PersistedState::dimension),
+                    BlockPos.CODEC.fieldOf("center").forGetter(PersistedState::center),
+                    ProtectedRegion.CODEC.fieldOf("reservation").forGetter(PersistedState::reservation),
+                    Codec.LONG.fieldOf("started_at").forGetter(PersistedState::startedAtEpochMillis),
                     Codec.LONG.fieldOf("last_participant_at")
-                            .forGetter(BossEncounterState::lastParticipantAtEpochMillis),
-                    Codec.INT.fieldOf("phase_index").forGetter(BossEncounterState::phaseIndex),
-                    Stage.CODEC.fieldOf("stage").forGetter(BossEncounterState::stage),
-                    Identifier.CODEC.optionalFieldOf("pattern_id").forGetter(BossEncounterState::patternId),
-                    Codec.LONG.fieldOf("stage_deadline").forGetter(BossEncounterState::stageDeadlineGameTime),
-                    Codec.LONG.fieldOf("next_pattern").forGetter(BossEncounterState::nextPatternGameTime),
-                    Codec.INT.fieldOf("sequence").forGetter(BossEncounterState::sequence),
+                            .forGetter(PersistedState::lastParticipantAtEpochMillis),
+                    Codec.INT.fieldOf("phase_index").forGetter(PersistedState::phaseIndex),
+                    Stage.CODEC.fieldOf("stage").forGetter(PersistedState::stage),
+                    Identifier.CODEC.optionalFieldOf("pattern_id").forGetter(PersistedState::patternId),
+                    Codec.LONG.fieldOf("stage_deadline").forGetter(PersistedState::stageDeadlineGameTime),
+                    Codec.LONG.fieldOf("next_pattern").forGetter(PersistedState::nextPatternGameTime),
+                    Codec.INT.fieldOf("sequence").forGetter(PersistedState::sequence),
                     CONTRIBUTIONS_CODEC.optionalFieldOf("contributions", Map.of())
-                            .forGetter(BossEncounterState::contributions)
-            ).apply(instance, BossEncounterState::new)).validate(state -> state.isValid()
+                            .forGetter(PersistedState::contributions)
+            ).apply(instance, PersistedState::new));
+
+    public static final Codec<BossEncounterState> CODEC = RecordCodecBuilder.<BossEncounterState>create(
+            instance -> instance.group(
+            PERSISTED_STATE_CODEC.forGetter(BossEncounterState::persistedState),
+            RewardPlan.CODEC.optionalFieldOf("reward_plan").forGetter(BossEncounterState::rewardPlan)
+            ).apply(instance, PersistedState::toEncounter)).validate(state -> state.isValid()
                     ? DataResult.success(state)
                     : DataResult.error(() -> "Invalid boss encounter state"));
 
     public BossEncounterState {
         patternId = patternId == null ? Optional.empty() : patternId;
         contributions = contributions == null ? Map.of() : Map.copyOf(contributions);
+        rewardPlan = rewardPlan == null ? Optional.empty() : rewardPlan;
     }
 
     public static BossEncounterState start(
@@ -89,11 +98,15 @@ public record BossEncounterState(
         return new BossEncounterState(
                 encounterId, bossId, definitionFingerprint, entityId, dimension, center.immutable(), reservation,
                 timestampEpochMillis, timestampEpochMillis, 0, Stage.IDLE, Optional.empty(), 0,
-                gameTime + 20, 0, Map.of());
+                gameTime + 20, 0, Map.of(), Optional.empty());
     }
 
     public boolean isValid() {
-        boolean stageValid = stage == Stage.IDLE ? patternId.isEmpty() : patternId.isPresent();
+        boolean stageValid = stage == Stage.IDLE || stage == Stage.REWARD_PENDING
+                ? patternId.isEmpty() : patternId.isPresent();
+        boolean rewardValid = stage == Stage.REWARD_PENDING
+                ? rewardPlan.filter(plan -> plan.matches(bossId, definitionFingerprint)).isPresent()
+                : rewardPlan.isEmpty();
         return encounterId != null && !ZERO_UUID.equals(encounterId)
                 && bossId != null && definitionFingerprint != null && !ZERO_UUID.equals(definitionFingerprint)
                 && entityId != null && !ZERO_UUID.equals(entityId)
@@ -103,7 +116,7 @@ public record BossEncounterState(
                 && reservation.contains(ClaimKey.at(dimension, center))
                 && startedAtEpochMillis >= 0 && lastParticipantAtEpochMillis >= startedAtEpochMillis
                 && phaseIndex >= 0 && phaseIndex < MobContentCatalog.MAX_PHASES
-                && stage != null && stageValid
+                && stage != null && stageValid && rewardValid
                 && stageDeadlineGameTime >= 0 && nextPatternGameTime >= 0
                 && sequence >= 0 && sequence <= MAX_SEQUENCE
                 && contributions.size() <= MAX_CONTRIBUTORS
@@ -140,7 +153,8 @@ public record BossEncounterState(
     }
 
     public BossEncounterState enterPhase(int newPhaseIndex, long gameTime) {
-        if (newPhaseIndex <= phaseIndex || newPhaseIndex >= MobContentCatalog.MAX_PHASES) {
+        if (stage == Stage.REWARD_PENDING
+                || newPhaseIndex <= phaseIndex || newPhaseIndex >= MobContentCatalog.MAX_PHASES) {
             return this;
         }
         return copy(newPhaseIndex, Stage.IDLE, Optional.empty(), 0, gameTime + 20,
@@ -171,6 +185,19 @@ public record BossEncounterState(
                 sequence + 1, contributions, lastParticipantAtEpochMillis);
     }
 
+    public BossEncounterState markRewardPending(RewardPlan plan) {
+        if (plan == null || !plan.matches(bossId, definitionFingerprint)) {
+            return this;
+        }
+        if (stage == Stage.REWARD_PENDING) {
+            return this;
+        }
+        return new BossEncounterState(
+                encounterId, bossId, definitionFingerprint, entityId, dimension, center, reservation,
+                startedAtEpochMillis, lastParticipantAtEpochMillis, phaseIndex, Stage.REWARD_PENDING,
+                Optional.empty(), 0, 0, sequence, contributions, Optional.of(plan));
+    }
+
     private BossEncounterState copy(
             int nextPhase,
             Stage nextStage,
@@ -184,7 +211,14 @@ public record BossEncounterState(
                 encounterId, bossId, definitionFingerprint, entityId, dimension, center, reservation,
                 startedAtEpochMillis,
                 nextLastParticipant, nextPhase, nextStage, nextPattern, nextDeadline,
-                nextPatternAt, nextSequence, nextContributions);
+                nextPatternAt, nextSequence, nextContributions, rewardPlan);
+    }
+
+    private PersistedState persistedState() {
+        return new PersistedState(
+                encounterId, bossId, definitionFingerprint, entityId, dimension, center, reservation,
+                startedAtEpochMillis, lastParticipantAtEpochMillis, phaseIndex, stage, patternId,
+                stageDeadlineGameTime, nextPatternGameTime, sequence, contributions);
     }
 
     private static DataResult<Map<UUID, Long>> contributionsFromEntries(List<Contribution> entries) {
@@ -206,10 +240,62 @@ public record BossEncounterState(
                 .toList());
     }
 
+    public record RewardPlan(
+            MobContentCatalog.BossDefinition boss,
+            MobContentCatalog.ArenaPolicy arena,
+            MobContentCatalog.MobDefinition mob,
+            MobContentCatalog.ContributionRule contribution,
+            MobContentCatalog.LootDefinition loot) {
+        public static final Codec<RewardPlan> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                MobContentCatalog.BossDefinition.CODEC.fieldOf("boss").forGetter(RewardPlan::boss),
+                MobContentCatalog.ArenaPolicy.CODEC.fieldOf("arena").forGetter(RewardPlan::arena),
+                MobContentCatalog.MobDefinition.CODEC.fieldOf("mob").forGetter(RewardPlan::mob),
+                MobContentCatalog.ContributionRule.CODEC.fieldOf("contribution").forGetter(RewardPlan::contribution),
+                MobContentCatalog.LootDefinition.CODEC.fieldOf("loot").forGetter(RewardPlan::loot)
+        ).apply(instance, RewardPlan::new));
+
+        boolean matches(Identifier encounterBossId, UUID fingerprint) {
+            return boss != null && arena != null && mob != null && contribution != null && loot != null
+                    && boss.id().equals(encounterBossId)
+                    && boss.mob().equals(mob.id())
+                    && boss.arena().equals(arena.id())
+                    && boss.contributionRule().equals(contribution.id())
+                    && boss.loot().equals(loot.id())
+                    && BossEncounterRuntime.definitionFingerprint(
+                            boss, arena, mob, contribution, loot).equals(fingerprint);
+        }
+    }
+
+    private record PersistedState(
+            UUID encounterId,
+            Identifier bossId,
+            UUID definitionFingerprint,
+            UUID entityId,
+            ResourceKey<Level> dimension,
+            BlockPos center,
+            ProtectedRegion reservation,
+            long startedAtEpochMillis,
+            long lastParticipantAtEpochMillis,
+            int phaseIndex,
+            Stage stage,
+            Optional<Identifier> patternId,
+            long stageDeadlineGameTime,
+            long nextPatternGameTime,
+            int sequence,
+            Map<UUID, Long> contributions) {
+        private BossEncounterState toEncounter(Optional<RewardPlan> rewardPlan) {
+            return new BossEncounterState(
+                    encounterId, bossId, definitionFingerprint, entityId, dimension, center, reservation,
+                    startedAtEpochMillis, lastParticipantAtEpochMillis, phaseIndex, stage, patternId,
+                    stageDeadlineGameTime, nextPatternGameTime, sequence, contributions, rewardPlan);
+        }
+    }
+
     public enum Stage implements StringRepresentable {
         IDLE("idle"),
         TELEGRAPH("telegraph"),
-        EXECUTING("executing");
+        EXECUTING("executing"),
+        REWARD_PENDING("reward_pending");
 
         public static final Codec<Stage> CODEC = StringRepresentable.fromEnum(Stage::values);
         private final String serializedName;

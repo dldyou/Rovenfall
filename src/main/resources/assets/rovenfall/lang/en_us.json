@@ -365,5 +365,6 @@
   "message.rovenfall.boss.started": "%s has awakened. The arena is now protected.",
   "message.rovenfall.boss.phase": "Boss phase changed: %s",
   "message.rovenfall.boss.telegraph": "Incoming boss pattern: %s",
-  "message.rovenfall.boss.ended": "The boss encounter ended (%s)."
+  "message.rovenfall.boss.ended": "The boss encounter ended (%s).",
+  "message.rovenfall.boss.reward_received": "Boss reward delivered: %s currency and %s hunting XP."
 }
