@@ -288,6 +288,21 @@ public final class ShopTradeService {
                 <= maximumDistance * maximumDistance;
     }
 
+    static List<Identifier> accessibleShopIds(
+            PlatformSavedData state, ResourceKey<Level> playerDimension, Vec3 playerPosition) {
+        if (state == null || playerDimension == null || playerPosition == null
+                || !Double.isFinite(playerPosition.x)
+                || !Double.isFinite(playerPosition.y)
+                || !Double.isFinite(playerPosition.z)) {
+            return List.of();
+        }
+        return state.shopInstancesView().entrySet().stream()
+                .filter(entry -> canAccess(entry.getValue(), playerDimension, playerPosition))
+                .map(java.util.Map.Entry::getKey)
+                .sorted()
+                .toList();
+    }
+
     private static Optional<ShopInstance.Stock> restock(ShopInstance.Stock stock, long gameTime) {
         if (stock.unlimited() || stock.restockAmount().isEmpty() || gameTime < stock.nextRestockGameTime()) {
             return Optional.of(stock);
