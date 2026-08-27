@@ -157,6 +157,10 @@ public final class PortalService {
         }
         Identifier originId = PortalDefinition.originProtectionId(portalId);
         Identifier destinationId = PortalDefinition.destinationProtectionId(portalId);
+        if (!editing && (state.protectedRegion(originId).isPresent()
+                || state.protectedRegion(destinationId).isPresent())) {
+            return Status.PROTECTION_CONFLICT;
+        }
         Set<Identifier> replaced = editing ? Set.of(originId, destinationId) : Set.of();
         List<ProtectedRegion> regions = List.of(
                 definition.protectedRegion(definition.origin()),

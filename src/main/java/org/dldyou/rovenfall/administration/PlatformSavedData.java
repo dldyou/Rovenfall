@@ -120,6 +120,14 @@ public final class PlatformSavedData extends SavedData {
             Comparator.comparingLong(ReceiptExpiry::timestampEpochMillis)
                     .thenComparing(ReceiptExpiry::reversal, Comparator.reverseOrder())
                     .thenComparing(ReceiptExpiry::transactionId));
+    private final PriorityQueue<PortalReceiptExpiry> portalReceiptExpiryQueue = new PriorityQueue<>(
+            Comparator.comparingLong(PortalReceiptExpiry::expiryEpochMillis)
+                    .thenComparing(PortalReceiptExpiry::transactionId));
+    private final PriorityQueue<PortalCooldownExpiry> portalCooldownExpiryQueue = new PriorityQueue<>(
+            Comparator.comparingLong(PortalCooldownExpiry::deadlineEpochMillis)
+                    .thenComparing(PortalCooldownExpiry::playerId)
+                    .thenComparing(PortalCooldownExpiry::portalId));
+    private int activePortalCooldownCount;
     private final java.util.Set<Identifier> shopDependencyLocks = new HashSet<>();
     private final Map<UUID, Long> lastDeniedAuditByActor = new LinkedHashMap<>(16, 0.75F, true);
 
@@ -170,6 +178,7 @@ public final class PlatformSavedData extends SavedData {
         rebuildClaimOwnerIndex();
         rebuildProtectedRegionIndex();
         rebuildPortalOriginIndex();
+        rebuildPortalEvidenceIndexes();
     }
 
     private static PlatformSavedData decode(
@@ -588,6 +597,7 @@ public final class PlatformSavedData extends SavedData {
         rebuildClaimOwnerIndex();
         rebuildProtectedRegionIndex();
         rebuildPortalOriginIndex();
+        rebuildPortalEvidenceIndexes();
         commitAudit(auditEntry);
     }
 
@@ -744,43 +754,70 @@ public final class PlatformSavedData extends SavedData {
         commitAudit(auditEntry);
     }
 
-    boolean canCommitPortalTravel(UUID transactionId, long timestampEpochMillis) {
-        if (transactionId == null || portalTravelReceipts.containsKey(transactionId)) {
-            return false;
+    boolean hasPortalTravelReceipt(UUID transactionId, long timestampEpochMillis) {
+        if (portalTravelReceipts.containsKey(transactionId)) {
+            return true;
         }
-        long receiptCutoff = timestampEpochMillis - ECONOMY_TRANSACTION_RETENTION_MILLIS;
-        long retainedReceipts = portalTravelReceipts.values().stream()
-                .filter(receipt -> receipt.completedAtEpochMillis() >= receiptCutoff)
-                .count();
-        long retainedCooldowns = portalCooldowns.values().stream()
-                .flatMap(cooldowns -> cooldowns.values().stream())
-                .filter(deadline -> deadline > timestampEpochMillis)
-                .count();
-        return retainedReceipts < PortalState.MAX_RUNTIME_ENTRIES
-                && retainedCooldowns < PortalState.MAX_RUNTIME_ENTRIES;
+        trimPortalEvidence(timestampEpochMillis);
+        return false;
     }
 
-    void commitPortalTravel(
+    Optional<PortalTravelReservation> reservePortalTravel(
             UUID playerId,
             Identifier portalId,
             long cooldownUntil,
             UUID transactionId,
             long timestampEpochMillis,
-            PortalDefinition.Endpoint destination,
-            AuditEntry auditEntry) {
-        if (!canCommitPortalTravel(transactionId, timestampEpochMillis)) {
-            throw new IllegalStateException("Portal travel evidence cannot be committed");
+            PortalDefinition.Endpoint destination) {
+        trimPortalEvidence(timestampEpochMillis);
+        boolean addsCooldown = cooldownUntil > timestampEpochMillis;
+        if (transactionId == null
+                || portalTravelReceipts.containsKey(transactionId)
+                || portalTravelReceipts.size() >= PortalState.MAX_RUNTIME_ENTRIES
+                || (addsCooldown && activePortalCooldownCount >= PortalState.MAX_RUNTIME_ENTRIES)) {
+            return Optional.empty();
         }
-        long receiptCutoff = timestampEpochMillis - ECONOMY_TRANSACTION_RETENTION_MILLIS;
-        portalTravelReceipts.entrySet().removeIf(entry -> entry.getValue().completedAtEpochMillis() < receiptCutoff);
-        portalCooldowns.values().forEach(cooldowns ->
-                cooldowns.entrySet().removeIf(entry -> entry.getValue() <= timestampEpochMillis));
-        portalCooldowns.entrySet().removeIf(entry -> entry.getValue().isEmpty());
-        if (cooldownUntil > timestampEpochMillis) {
-            portalCooldowns.computeIfAbsent(playerId, ignored -> new HashMap<>()).put(portalId, cooldownUntil);
+        PortalState.TravelReceipt receipt =
+                new PortalState.TravelReceipt(playerId, portalId, timestampEpochMillis, destination);
+        portalTravelReceipts.put(transactionId, receipt);
+        if (addsCooldown) {
+            Long previous = portalCooldowns.computeIfAbsent(playerId, ignored -> new HashMap<>())
+                    .putIfAbsent(portalId, cooldownUntil);
+            if (previous != null) {
+                portalTravelReceipts.remove(transactionId);
+                return Optional.empty();
+            }
+            activePortalCooldownCount++;
         }
-        portalTravelReceipts.put(transactionId,
-                new PortalState.TravelReceipt(playerId, portalId, timestampEpochMillis, destination));
+        return Optional.of(new PortalTravelReservation(
+                playerId, portalId, cooldownUntil, transactionId, receipt, addsCooldown));
+    }
+
+    void rollbackPortalTravel(PortalTravelReservation reservation) {
+        portalTravelReceipts.remove(reservation.transactionId(), reservation.receipt());
+        if (!reservation.cooldownAdded()) {
+            return;
+        }
+        Map<Identifier, Long> cooldowns = portalCooldowns.get(reservation.playerId());
+        if (cooldowns != null
+                && cooldowns.remove(reservation.portalId(), reservation.cooldownUntilEpochMillis())) {
+            activePortalCooldownCount--;
+            if (cooldowns.isEmpty()) {
+                portalCooldowns.remove(reservation.playerId());
+            }
+        }
+    }
+
+    void completePortalTravel(PortalTravelReservation reservation, AuditEntry auditEntry) {
+        long receiptExpiry = portalReceiptExpiry(reservation.receipt().completedAtEpochMillis());
+        if (receiptExpiry != NON_EXPIRING_RECEIPT) {
+            portalReceiptExpiryQueue.add(
+                    new PortalReceiptExpiry(reservation.transactionId(), receiptExpiry));
+        }
+        if (reservation.cooldownAdded()) {
+            portalCooldownExpiryQueue.add(new PortalCooldownExpiry(
+                    reservation.playerId(), reservation.portalId(), reservation.cooldownUntilEpochMillis()));
+        }
         commitAudit(auditEntry);
     }
 
@@ -1462,6 +1499,60 @@ public final class PlatformSavedData extends SavedData {
         portalDefinitions.forEach((portalId, definition) -> portalOriginIndex.put(definition.origin(), portalId));
     }
 
+    private void rebuildPortalEvidenceIndexes() {
+        portalReceiptExpiryQueue.clear();
+        portalTravelReceipts.forEach((transactionId, receipt) -> {
+            long expiry = portalReceiptExpiry(receipt.completedAtEpochMillis());
+            if (expiry != NON_EXPIRING_RECEIPT) {
+                portalReceiptExpiryQueue.add(new PortalReceiptExpiry(transactionId, expiry));
+            }
+        });
+        portalCooldownExpiryQueue.clear();
+        activePortalCooldownCount = 0;
+        portalCooldowns.forEach((playerId, cooldowns) -> cooldowns.forEach((portalId, deadline) -> {
+            activePortalCooldownCount++;
+            portalCooldownExpiryQueue.add(new PortalCooldownExpiry(playerId, portalId, deadline));
+        }));
+    }
+
+    private void trimPortalEvidence(long timestampEpochMillis) {
+        boolean changed = false;
+        while (!portalReceiptExpiryQueue.isEmpty()
+                && portalReceiptExpiryQueue.peek().expiryEpochMillis() <= timestampEpochMillis) {
+            PortalReceiptExpiry expiry = portalReceiptExpiryQueue.remove();
+            PortalState.TravelReceipt receipt = portalTravelReceipts.get(expiry.transactionId());
+            if (receipt != null
+                    && portalReceiptExpiry(receipt.completedAtEpochMillis()) == expiry.expiryEpochMillis()) {
+                portalTravelReceipts.remove(expiry.transactionId());
+                changed = true;
+            }
+        }
+        while (!portalCooldownExpiryQueue.isEmpty()
+                && portalCooldownExpiryQueue.peek().deadlineEpochMillis() <= timestampEpochMillis) {
+            PortalCooldownExpiry expiry = portalCooldownExpiryQueue.remove();
+            Map<Identifier, Long> cooldowns = portalCooldowns.get(expiry.playerId());
+            if (cooldowns == null) {
+                continue;
+            }
+            Long deadline = cooldowns.get(expiry.portalId());
+            if (deadline != null && deadline == expiry.deadlineEpochMillis()) {
+                cooldowns.remove(expiry.portalId());
+                activePortalCooldownCount--;
+                if (cooldowns.isEmpty()) {
+                    portalCooldowns.remove(expiry.playerId());
+                }
+                changed = true;
+            }
+        }
+        if (changed) {
+            setDirty();
+        }
+    }
+
+    private static long portalReceiptExpiry(long timestampEpochMillis) {
+        return receiptExpiry(timestampEpochMillis);
+    }
+
     boolean commitPlayerLogin(UUID playerId, long timestampEpochMillis) {
         PlayerRecord previous = playerRecords.get(playerId);
         PlayerRecord updated = previous == null
@@ -1529,5 +1620,20 @@ public final class PlatformSavedData extends SavedData {
     }
 
     private record ReceiptExpiry(UUID transactionId, long timestampEpochMillis, boolean reversal) {
+    }
+
+    record PortalTravelReservation(
+            UUID playerId,
+            Identifier portalId,
+            long cooldownUntilEpochMillis,
+            UUID transactionId,
+            PortalState.TravelReceipt receipt,
+            boolean cooldownAdded) {
+    }
+
+    private record PortalReceiptExpiry(UUID transactionId, long expiryEpochMillis) {
+    }
+
+    private record PortalCooldownExpiry(UUID playerId, Identifier portalId, long deadlineEpochMillis) {
     }
 }

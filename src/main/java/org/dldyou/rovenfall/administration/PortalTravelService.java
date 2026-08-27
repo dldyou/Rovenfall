@@ -98,7 +98,7 @@ public final class PortalTravelService {
             return denied(state, playerId, currentDimension, BlockPos.containing(currentPosition), portalId,
                     Status.NOT_FOUND, "not_found", timestampEpochMillis, transactionId, 0L);
         }
-        if (state.portalTravelReceipt(transactionId).isPresent()) {
+        if (state.hasPortalTravelReceipt(transactionId, timestampEpochMillis)) {
             return denied(state, playerId, currentDimension, BlockPos.containing(currentPosition), portalId,
                     Status.DUPLICATE_TRANSACTION, "duplicate_transaction", timestampEpochMillis, transactionId,
                     state.portalCooldownUntil(playerId, portalId));
@@ -129,10 +129,6 @@ public final class PortalTravelService {
                     Status.COMBAT_LOCKED, "combat_locked", timestampEpochMillis, transactionId,
                     lastCombat + COMBAT_LOCK_MILLIS);
         }
-        if (!state.canCommitPortalTravel(transactionId, timestampEpochMillis)) {
-            return denied(state, playerId, currentDimension, BlockPos.containing(currentPosition), portalId,
-                    Status.EVIDENCE_FULL, "evidence_full", timestampEpochMillis, transactionId, 0L);
-        }
         long nextUse;
         try {
             nextUse = Math.addExact(timestampEpochMillis, definition.cooldownMillis());
@@ -149,20 +145,29 @@ public final class PortalTravelService {
             return denied(state, playerId, currentDimension, BlockPos.containing(currentPosition), portalId,
                     Status.UNSAFE_DESTINATION, "unsafe_destination", timestampEpochMillis, transactionId, 0L);
         }
-        if (!gateway.teleport(definition.destination().dimension(), destination)) {
+        PortalDefinition.Endpoint resolved = new PortalDefinition.Endpoint(
+                definition.destination().dimension(), destination);
+        PlatformSavedData.PortalTravelReservation reservation = state.reservePortalTravel(
+                playerId, portalId, nextUse, transactionId, timestampEpochMillis, resolved).orElse(null);
+        if (reservation == null) {
+            return denied(state, playerId, currentDimension, BlockPos.containing(currentPosition), portalId,
+                    Status.EVIDENCE_FULL, "evidence_full", timestampEpochMillis, transactionId, 0L);
+        }
+        boolean teleported;
+        try {
+            teleported = gateway.teleport(definition.destination().dimension(), destination);
+        } catch (RuntimeException exception) {
+            state.rollbackPortalTravel(reservation);
             return denied(state, playerId, currentDimension, BlockPos.containing(currentPosition), portalId,
                     Status.TELEPORT_FAILED, "teleport_failed", timestampEpochMillis, transactionId, 0L);
         }
-
-        PortalDefinition.Endpoint resolved = new PortalDefinition.Endpoint(
-                definition.destination().dimension(), destination);
-        state.commitPortalTravel(
-                playerId,
-                portalId,
-                nextUse,
-                transactionId,
-                timestampEpochMillis,
-                resolved,
+        if (!teleported) {
+            state.rollbackPortalTravel(reservation);
+            return denied(state, playerId, currentDimension, BlockPos.containing(currentPosition), portalId,
+                    Status.TELEPORT_FAILED, "teleport_failed", timestampEpochMillis, transactionId, 0L);
+        }
+        state.completePortalTravel(
+                reservation,
                 new AuditEntry(
                         timestampEpochMillis,
                         playerId,

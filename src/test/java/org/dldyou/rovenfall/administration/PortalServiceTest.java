@@ -2,9 +2,11 @@ package org.dldyou.rovenfall.administration;
 
 import static org.dldyou.rovenfall.PersistenceTestHarness.roundTrip;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonObject;
+import com.mojang.serialization.JsonOps;
 import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
@@ -127,6 +129,18 @@ final class PortalServiceTest {
         PlatformSavedData state = new PlatformSavedData();
         UUID nativeOperator = id(200);
         PortalDefinition definition = definition(nativeOperator, ORIGIN, DESTINATION, 0, 0, true);
+        PortalDefinition outOfBoundsProtection = definition(
+                nativeOperator,
+                new PortalDefinition.Endpoint(WorldTopology.HUB, new BlockPos(29_999_999, 70, 0)),
+                DESTINATION,
+                PortalDefinition.MAX_PROTECTION_RADIUS_CHUNKS,
+                0,
+                true);
+        assertEquals(PortalService.Status.INVALID_REQUEST, PortalService.create(
+                state, nativeOperator, true, PORTAL_ID, outOfBoundsProtection,
+                ignored -> true, "invalid protection bounds", 500, id(203)).status());
+        assertTrue(state.portalDefinition(PORTAL_ID).isEmpty());
+
         assertEquals(PortalService.Status.ENDPOINT_UNAVAILABLE, PortalService.create(
                 state, nativeOperator, true, PORTAL_ID, definition,
                 endpoint -> !endpoint.equals(DESTINATION), "unavailable", 1_000, id(201)).status());
@@ -154,6 +168,24 @@ final class PortalServiceTest {
         assertEquals(PortalService.Status.SUCCESS, PortalService.delete(
                 state, contentManager, false, PORTAL_ID,
                 "content delete", 3_000, id(214)).status());
+    }
+
+    @Test
+    void portalCreationDoesNotOverwriteAProtectedRegionWithItsDerivedId() {
+        PlatformSavedData state = new PlatformSavedData();
+        UUID owner = id(220);
+        owner(state, owner);
+        Identifier derivedId = PortalDefinition.originProtectionId(PORTAL_ID);
+        ProtectedRegion retained = new ProtectedRegion(owner, WorldTopology.HUB, 500, 500, 500, 500);
+        assertEquals(ProtectedRegionService.Status.SUCCESS, ProtectedRegionService.create(
+                state, owner, false, derivedId, retained, "reserved id", 1_000, id(221)).status());
+
+        assertEquals(PortalService.Status.PROTECTION_CONFLICT, PortalService.create(
+                state, owner, false, PORTAL_ID, definition(owner, ORIGIN, DESTINATION, 0, 0, true),
+                ignored -> true, "must not overwrite", 2_000, id(222)).status());
+        assertEquals(retained, state.protectedRegion(derivedId).orElseThrow());
+        assertTrue(state.portalDefinition(PORTAL_ID).isEmpty());
+        assertTrue(state.protectedRegion(PortalDefinition.destinationProtectionId(PORTAL_ID)).isEmpty());
     }
 
     @Test
@@ -220,10 +252,34 @@ final class PortalServiceTest {
         assertEquals(0, loaded.portalCooldownUntil(failingPlayer, PORTAL_ID));
         assertTrue(loaded.portalTravelReceipt(id(312)).isEmpty());
 
+        UUID throwingPlayer = id(315);
+        FakeGateway throwingTeleport = new FakeGateway(
+                true, Optional.of(DESTINATION.position()), true, true);
+        assertEquals(PortalTravelService.Status.TELEPORT_FAILED,
+                travel(loaded, throwingPlayer, ORIGIN, PORTAL_ID, 46_000, id(316), throwingTeleport).status());
+        assertEquals(1, throwingTeleport.teleports);
+        assertEquals(0, loaded.portalCooldownUntil(throwingPlayer, PORTAL_ID));
+        assertTrue(loaded.portalTravelReceipt(id(316)).isEmpty());
+
         FakeGateway overflow = new FakeGateway(true, Optional.of(DESTINATION.position()), true);
         assertEquals(PortalTravelService.Status.INVALID_REQUEST,
                 travel(loaded, id(313), ORIGIN, PORTAL_ID, Long.MAX_VALUE - 1, id(314), overflow).status());
         assertEquals(0, overflow.teleports);
+    }
+
+    @Test
+    void portalStateCodecRejectsOversizedRuntimeListsBeforeBuildingMaps() {
+        JsonObject encoded = new JsonObject();
+        JsonArray combatTimestamps = new JsonArray();
+        for (int index = 0; index <= PortalState.MAX_COMBAT_ENTRIES; index++) {
+            JsonObject entry = new JsonObject();
+            entry.addProperty("player", new UUID(1L, index + 1L).toString());
+            entry.addProperty("timestamp", index);
+            combatTimestamps.add(entry);
+        }
+        encoded.add("combat_timestamps", combatTimestamps);
+
+        assertTrue(PortalState.CODEC.parse(JsonOps.INSTANCE, encoded).error().isPresent());
     }
 
     @Test
@@ -285,12 +341,22 @@ final class PortalServiceTest {
         private final boolean available;
         private final Optional<BlockPos> safeDestination;
         private final boolean teleportSucceeds;
+        private final boolean teleportThrows;
         private int teleports;
 
         private FakeGateway(boolean available, Optional<BlockPos> safeDestination, boolean teleportSucceeds) {
+            this(available, safeDestination, teleportSucceeds, false);
+        }
+
+        private FakeGateway(
+                boolean available,
+                Optional<BlockPos> safeDestination,
+                boolean teleportSucceeds,
+                boolean teleportThrows) {
             this.available = available;
             this.safeDestination = safeDestination;
             this.teleportSucceeds = teleportSucceeds;
+            this.teleportThrows = teleportThrows;
         }
 
         @Override
@@ -306,6 +372,9 @@ final class PortalServiceTest {
         @Override
         public boolean teleport(ResourceKey<Level> dimension, BlockPos destination) {
             teleports++;
+            if (teleportThrows) {
+                throw new IllegalStateException("simulated teleport failure");
+            }
             return teleportSucceeds;
         }
     }

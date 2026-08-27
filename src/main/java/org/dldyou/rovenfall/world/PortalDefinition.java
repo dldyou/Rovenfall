@@ -33,12 +33,13 @@ public record PortalDefinition(
     ).apply(instance, PortalDefinition::new)).validate(PortalDefinition::validate);
 
     public boolean isValid() {
-        return administratorId != null && origin != null && origin.isValid()
+        boolean valid = administratorId != null && origin != null && origin.isValid()
                 && destination != null && destination.isValid()
                 && protectionRadiusChunks >= 0
                 && protectionRadiusChunks <= MAX_PROTECTION_RADIUS_CHUNKS
                 && cooldownMillis >= 0 && cooldownMillis <= MAX_COOLDOWN_MILLIS
                 && safeArrivalPolicy != null;
+        return valid && protectedRegion(origin).isValid() && protectedRegion(destination).isValid();
     }
 
     public ProtectedRegion protectedRegion(Endpoint endpoint) {
