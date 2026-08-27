@@ -1,6 +1,6 @@
 package org.dldyou.rovenfall.rpg;
 
-import java.util.ArrayList;
+import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -15,7 +15,8 @@ public final class ActivityXpAwardService {
     private static final Identifier EXPLORATION = Identifier.fromNamespaceAndPath("rovenfall", "exploration");
 
     public enum Status {
-        SUCCESS, INVALID_REQUEST, UNKNOWN_ACTIVITY, READ_ONLY, DUPLICATE, COOLDOWN, RATE_LIMIT, OVERFLOW, STATE_FULL
+        SUCCESS, INVALID_REQUEST, UNKNOWN_ACTIVITY, UNKNOWN_CAREER, READ_ONLY, DUPLICATE, COOLDOWN, RATE_LIMIT,
+        OVERFLOW, STATE_FULL
     }
     public record AwardResult(Status status, long totalXp, boolean committed) {}
 
@@ -51,6 +52,20 @@ public final class ActivityXpAwardService {
             return new AwardResult(Status.RATE_LIMIT, state.state(playerId).activityXp().getOrDefault(activityId, 0L), false);
         }
         RpgPlayerState current = state.state(playerId);
+        Optional<Identifier> activeCareer = current.activeCareer();
+        Optional<CareerDefinition> activeCareerDefinition = activeCareer.flatMap(definitions::career);
+        if (activeCareer.isPresent() && activeCareerDefinition.isEmpty()) {
+            return new AwardResult(Status.UNKNOWN_CAREER,
+                    current.activityXp().getOrDefault(activityId, 0L), false);
+        }
+        Optional<UUID> careerTransactionId = activeCareer.map(careerId -> careerTransactionId(
+                transactionId, careerId));
+        if (current.careerProvenance().stream().anyMatch(entry ->
+                entry.transactionId().equals(transactionId)
+                        || careerTransactionId.filter(entry.transactionId()::equals).isPresent())) {
+            return new AwardResult(Status.DUPLICATE,
+                    current.activityXp().getOrDefault(activityId, 0L), false);
+        }
         Optional<Identifier> discovery = activityId.equals(EXPLORATION)
                 ? explorationDiscovery(source)
                 : Optional.empty();
@@ -65,7 +80,8 @@ public final class ActivityXpAwardService {
         long sourceXp = 0;
         long total = current.activityXp().getOrDefault(activityId, 0L);
         for (RpgPlayerState.ProgressionProvenance entry : current.provenance()) {
-            if (entry.transactionId().equals(transactionId)) {
+            if (entry.transactionId().equals(transactionId)
+                    || careerTransactionId.filter(entry.transactionId()::equals).isPresent()) {
                 return new AwardResult(Status.DUPLICATE, total, false);
             }
             if (entry.kind() != RpgPlayerState.ProgressionProvenance.Kind.ACTIVITY_XP) {
@@ -99,23 +115,51 @@ public final class ActivityXpAwardService {
         if (updated > RpgPlayerState.MAX_XP) {
             return new AwardResult(Status.OVERFLOW, total, false);
         }
-        List<RpgPlayerState.ProgressionProvenance> provenance = new ArrayList<>(current.provenance());
-        provenance.add(new RpgPlayerState.ProgressionProvenance(
+        RpgPlayerState.ProgressionProvenance activityEvidence = new RpgPlayerState.ProgressionProvenance(
                 RpgPlayerState.ProgressionProvenance.Kind.ACTIVITY_XP,
-                activityId, amount, timestamp, transactionId, source));
-        while (provenance.size() > RpgPlayerState.MAX_PROVENANCE) {
-            provenance.removeFirst();
-        }
+                activityId, amount, timestamp, transactionId, source);
+        List<RpgPlayerState.ProgressionProvenance> careerEvidence = List.of();
         var activityXp = new java.util.HashMap<>(current.activityXp());
         activityXp.put(activityId, updated);
+        var careers = new java.util.HashMap<>(current.careers());
+        if (activeCareer.isPresent()) {
+            Identifier careerId = activeCareer.orElseThrow();
+            RpgPlayerState.CareerProgress progress = careers.get(careerId);
+            if (progress == null) {
+                return new AwardResult(Status.UNKNOWN_CAREER, total, false);
+            }
+            final long careerAward;
+            final long careerExperience;
+            try {
+                careerAward = Math.multiplyExact(amount, activeCareerDefinition.orElseThrow().careerXpMultiplier());
+                careerExperience = Math.addExact(progress.experience(), careerAward);
+            } catch (ArithmeticException exception) {
+                return new AwardResult(Status.OVERFLOW, total, false);
+            }
+            if (careerExperience > RpgPlayerState.MAX_XP) {
+                return new AwardResult(Status.OVERFLOW, total, false);
+            }
+            int rank = Math.max(progress.rank(), CareerProgressionService.levelForXp(
+                    careerExperience, activeCareerDefinition.orElseThrow().levelXp()));
+            careers.put(careerId, new RpgPlayerState.CareerProgress(
+                    careerExperience, rank, progress.skillPoints(), progress.learnedSkills()));
+            careerEvidence = List.of(new RpgPlayerState.ProgressionProvenance(
+                    RpgPlayerState.ProgressionProvenance.Kind.CAREER_XP,
+                    careerId, careerAward, timestamp, careerTransactionId.orElseThrow(), source));
+        }
+        List<RpgPlayerState.ProgressionProvenance> provenance = CareerProgressionService.appendEvidence(
+                CareerProgressionService.activityEvidence(current), activityEvidence);
+        List<RpgPlayerState.ProgressionProvenance> careerProvenance =
+                CareerProgressionService.appendCareerEvidence(
+                        current, careerEvidence.toArray(RpgPlayerState.ProgressionProvenance[]::new));
         var discoveries = new HashSet<>(current.explorationDiscoveries());
         if (discovery.isPresent()
                 && discoveries.size() >= RpgPlayerState.MAX_EXPLORATION_DISCOVERIES) {
             return new AwardResult(Status.STATE_FULL, total, false);
         }
         discovery.ifPresent(discoveries::add);
-        RpgPlayerState candidate = new RpgPlayerState(activityXp, current.careers(), current.activeCareer(),
-                current.activeSkillSlots(), current.cooldowns(), discoveries, provenance);
+        RpgPlayerState candidate = new RpgPlayerState(activityXp, careers, current.activeCareer(),
+                current.activeSkillSlots(), current.cooldowns(), discoveries, provenance, careerProvenance);
         boolean committed = state.commit(playerId, candidate);
         return new AwardResult(committed ? Status.SUCCESS : Status.STATE_FULL, committed ? updated : total, committed);
     }
@@ -167,5 +211,10 @@ public final class ActivityXpAwardService {
         } catch (RuntimeException exception) {
             return Optional.empty();
         }
+    }
+
+    private static UUID careerTransactionId(UUID transactionId, Identifier careerId) {
+        return UUID.nameUUIDFromBytes(("rovenfall:career_xp:" + transactionId + ":" + careerId)
+                .getBytes(StandardCharsets.UTF_8));
     }
 }

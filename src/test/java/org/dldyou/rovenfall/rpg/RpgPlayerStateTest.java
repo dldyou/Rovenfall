@@ -136,6 +136,10 @@ final class RpgPlayerStateTest {
         var duplicateTransaction = new RpgPlayerState(
                 Map.of(), Map.of(), Optional.empty(), Map.of(), Map.of(), List.of(evidence, evidence));
         assertFalse(root.commit(player, duplicateTransaction));
+        var duplicateAcrossLedgers = new RpgPlayerState(
+                Map.of(), Map.of(), Optional.empty(), Map.of(), Map.of(), Set.of(),
+                List.of(evidence), List.of(evidence));
+        assertFalse(root.commit(player, duplicateAcrossLedgers));
         assertFalse(root.commit(new UUID(0L, 0L), RpgPlayerState.EMPTY));
         assertEquals(0, root.playerCount());
     }

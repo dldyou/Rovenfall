@@ -20,7 +20,8 @@ public record RpgPlayerState(
         Map<Integer, Identifier> activeSkillSlots,
         Map<Identifier, Long> cooldowns,
         Set<Identifier> explorationDiscoveries,
-        List<ProgressionProvenance> provenance) {
+        List<ProgressionProvenance> provenance,
+        List<ProgressionProvenance> careerProvenance) {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
     public static final int MAX_ACTIVITIES = 128;
     public static final int MAX_CAREERS = 256;
@@ -29,6 +30,7 @@ public record RpgPlayerState(
     public static final int MAX_COOLDOWNS = 1_024;
     public static final int MAX_EXPLORATION_DISCOVERIES = 256;
     public static final int MAX_PROVENANCE = 256;
+    public static final int MAX_CAREER_PROVENANCE = 256;
     public static final long MAX_XP = 1_000_000_000_000_000L;
     public static final int MAX_RANK = 1_000;
     public static final int MAX_SKILL_RANK = SkillDefinition.MAX_RANK;
@@ -65,11 +67,14 @@ public record RpgPlayerState(
             EXPLORATION_DISCOVERIES_CODEC.optionalFieldOf("exploration_discoveries", Set.of())
                     .forGetter(RpgPlayerState::explorationDiscoveries),
             ProgressionProvenance.CODEC.listOf(0, MAX_PROVENANCE).optionalFieldOf("provenance", List.of())
-                    .forGetter(RpgPlayerState::provenance)
+                    .forGetter(RpgPlayerState::provenance),
+            ProgressionProvenance.CODEC.listOf(0, MAX_CAREER_PROVENANCE)
+                    .optionalFieldOf("career_provenance", List.of())
+                    .forGetter(RpgPlayerState::careerProvenance)
     ).apply(instance, RpgPlayerState::new)).validate(RpgPlayerState::validate);
 
     public static final RpgPlayerState EMPTY = new RpgPlayerState(
-            Map.of(), Map.of(), Optional.empty(), Map.of(), Map.of(), Set.of(), List.of());
+            Map.of(), Map.of(), Optional.empty(), Map.of(), Map.of(), Set.of(), List.of(), List.of());
 
     public RpgPlayerState(
             Map<Identifier, Long> activityXp,
@@ -78,7 +83,19 @@ public record RpgPlayerState(
             Map<Integer, Identifier> activeSkillSlots,
             Map<Identifier, Long> cooldowns,
             List<ProgressionProvenance> provenance) {
-        this(activityXp, careers, activeCareer, activeSkillSlots, cooldowns, Set.of(), provenance);
+        this(activityXp, careers, activeCareer, activeSkillSlots, cooldowns, Set.of(), provenance, List.of());
+    }
+
+    public RpgPlayerState(
+            Map<Identifier, Long> activityXp,
+            Map<Identifier, CareerProgress> careers,
+            Optional<Identifier> activeCareer,
+            Map<Integer, Identifier> activeSkillSlots,
+            Map<Identifier, Long> cooldowns,
+            Set<Identifier> explorationDiscoveries,
+            List<ProgressionProvenance> provenance) {
+        this(activityXp, careers, activeCareer, activeSkillSlots, cooldowns,
+                explorationDiscoveries, provenance, List.of());
     }
 
     public RpgPlayerState {
@@ -89,6 +106,7 @@ public record RpgPlayerState(
         cooldowns = Map.copyOf(cooldowns);
         explorationDiscoveries = Set.copyOf(explorationDiscoveries);
         provenance = List.copyOf(provenance);
+        careerProvenance = List.copyOf(careerProvenance);
     }
 
     public boolean isValid() {
@@ -105,6 +123,7 @@ public record RpgPlayerState(
     private static Optional<String> validationError(RpgPlayerState state) {
         if (state.activityXp().size() > MAX_ACTIVITIES || state.careers().size() > MAX_CAREERS
                 || state.cooldowns().size() > MAX_COOLDOWNS || state.provenance().size() > MAX_PROVENANCE
+                || state.careerProvenance().size() > MAX_CAREER_PROVENANCE
                 || state.explorationDiscoveries().size() > MAX_EXPLORATION_DISCOVERIES
                 || state.activeSkillSlots().size() > MAX_ACTIVE_SKILL_SLOTS) {
             return Optional.of("RPG player state exceeds a collection limit");
@@ -132,10 +151,16 @@ public record RpgPlayerState(
                 return Optional.of("Skill cooldown is out of bounds");
             }
         }
-        Set<UUID> transactions = java.util.HashSet.newHashSet(state.provenance().size());
+        Set<UUID> transactions = java.util.HashSet.newHashSet(
+                state.provenance().size() + state.careerProvenance().size());
         for (ProgressionProvenance entry : state.provenance()) {
             if (!entry.isValid() || !transactions.add(entry.transactionId())) {
                 return Optional.of("Progression provenance is invalid or contains a duplicate transaction");
+            }
+        }
+        for (ProgressionProvenance entry : state.careerProvenance()) {
+            if (!entry.isValid() || !transactions.add(entry.transactionId())) {
+                return Optional.of("Career provenance is invalid or contains a duplicate transaction");
             }
         }
         return Optional.empty();
@@ -249,20 +274,42 @@ public record RpgPlayerState(
     }
 
     public record ProgressionProvenance(
-            Kind kind, Identifier target, long amount, long timestamp, UUID transactionId, String source) {
+            Kind kind,
+            Identifier target,
+            long amount,
+            long timestamp,
+            UUID transactionId,
+            String source,
+            Optional<Identifier> previousTarget) {
         public static final Codec<ProgressionProvenance> CODEC = RecordCodecBuilder.<ProgressionProvenance>create(instance -> instance.group(
                 Kind.CODEC.fieldOf("kind").forGetter(ProgressionProvenance::kind),
                 Identifier.CODEC.fieldOf("target").forGetter(ProgressionProvenance::target),
                 XP_CODEC.fieldOf("amount").forGetter(ProgressionProvenance::amount),
                 TICK_CODEC.fieldOf("timestamp").forGetter(ProgressionProvenance::timestamp),
                 UUIDUtil.STRING_CODEC.fieldOf("transaction").forGetter(ProgressionProvenance::transactionId),
-                Codec.string(1, 160).fieldOf("source").forGetter(ProgressionProvenance::source)
+                Codec.string(1, 160).fieldOf("source").forGetter(ProgressionProvenance::source),
+                Identifier.CODEC.optionalFieldOf("previous_target").forGetter(ProgressionProvenance::previousTarget)
         ).apply(instance, ProgressionProvenance::new)).validate(ProgressionProvenance::validate);
+
+        public ProgressionProvenance(
+                Kind kind,
+                Identifier target,
+                long amount,
+                long timestamp,
+                UUID transactionId,
+                String source) {
+            this(kind, target, amount, timestamp, transactionId, source, Optional.empty());
+        }
+
+        public ProgressionProvenance {
+            previousTarget = previousTarget == null ? Optional.empty() : previousTarget;
+        }
 
         boolean isValid() {
             return kind != null && target != null && amount >= 0 && amount <= MAX_XP && timestamp >= 0
                     && transactionId != null && !ZERO_UUID.equals(transactionId)
-                    && source != null && !source.isBlank() && source.length() <= 160;
+                    && source != null && !source.isBlank() && source.length() <= 160
+                    && previousTarget != null;
         }
 
         private static DataResult<ProgressionProvenance> validate(ProgressionProvenance provenance) {
@@ -272,7 +319,8 @@ public record RpgPlayerState(
         }
 
         public enum Kind implements net.minecraft.util.StringRepresentable {
-            ACTIVITY_XP("activity_xp"), CAREER_XP("career_xp"), SKILL_UNLOCK("skill_unlock"), CAREER_PROMOTION("career_promotion");
+            ACTIVITY_XP("activity_xp"), CAREER_XP("career_xp"), SKILL_UNLOCK("skill_unlock"),
+            CAREER_PROMOTION("career_promotion"), CAREER_SWITCH("career_switch");
 
             public static final Codec<Kind> CODEC = net.minecraft.util.StringRepresentable.fromEnum(Kind::values);
             private final String id;

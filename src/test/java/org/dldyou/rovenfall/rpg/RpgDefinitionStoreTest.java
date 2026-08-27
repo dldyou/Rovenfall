@@ -150,6 +150,33 @@ final class RpgDefinitionStoreTest {
         assertTrue(error.getMessage().contains("outside the career lineage"));
     }
 
+    @Test
+    void validatesRootAndNonRootBranchShapeWithoutHardCodingTierCount() {
+        var valid = RpgDefinitionSnapshot.compile(
+                List.of(activity("combat")),
+                List.of(
+                        career("root", 1, List.of(), List.of()),
+                        career("tier_700", 700, List.of(id("root")), List.of())),
+                List.of());
+        assertEquals(700, valid.career(id("tier_700")).orElseThrow().tier());
+
+        var rootWithParent = assertThrows(RpgDefinitionSnapshot.ValidationException.class, () ->
+                RpgDefinitionSnapshot.compile(
+                        List.of(activity("combat")),
+                        List.of(
+                                career("root", 1, List.of(id("other")), List.of()),
+                                career("other", 1, List.of(), List.of())),
+                        List.of()));
+        assertTrue(rootWithParent.getMessage().contains("tier 1 career cannot have a parent"));
+
+        var nonRootWithoutParent = assertThrows(RpgDefinitionSnapshot.ValidationException.class, () ->
+                RpgDefinitionSnapshot.compile(
+                        List.of(activity("combat")),
+                        List.of(career("orphan", 2, List.of(), List.of())),
+                        List.of()));
+        assertTrue(nonRootWithoutParent.getMessage().contains("requires at least one parent"));
+    }
+
     private static RpgDefinitionSnapshot.ActivitySource activity(String path) {
         return activity(path, path);
     }

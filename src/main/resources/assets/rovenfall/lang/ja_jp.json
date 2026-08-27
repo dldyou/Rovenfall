@@ -267,5 +267,18 @@
   "wilderness.rovenfall.restore.shutdown": "Wilderness 復元が確定しました。サーバーを終了し、再起動時にスナップショットを適用します。",
   "wilderness.rovenfall.reset.completed": "Wilderness リセットが完了し、新しい Wilderness を利用できます。",
   "wilderness.rovenfall.restore.completed": "検証済みスナップショットから Wilderness を復元しました。",
-  "wilderness.rovenfall.operation.failed": "Wilderness 操作は安全に失敗し、以前のワールドが維持されました。監査ログを確認してください。"
+  "wilderness.rovenfall.operation.failed": "Wilderness 操作は安全に失敗し、以前のワールドが維持されました。監査ログを確認してください。",
+  "command.rovenfall.career.promote.success": "%1$s に転職しました。監査トランザクション: %2$s",
+  "command.rovenfall.career.switch.success": "アクティブな職業を %1$s に切り替えました。監査トランザクション: %2$s",
+  "command.rovenfall.career.promote.error.missing_parent": "先に前提職業 %s に転職してください。",
+  "command.rovenfall.career.promote.error.parent_rank": "前提職業 %1$s はランク %2$s が必要です。現在は %3$s です。",
+  "command.rovenfall.career.promote.error.activity_level": "アクティビティ %1$s はレベル %2$s が必要です。現在は %3$s です。",
+  "command.rovenfall.career.promote.error.already": "%s はすでに転職済みです。",
+  "command.rovenfall.career.switch.error.not_promoted": "%s に切り替える前に転職で解放してください。",
+  "command.rovenfall.career.switch.error.already": "%s はすでにアクティブです。",
+  "command.rovenfall.career.error.unknown": "不明な職業です: %s",
+  "command.rovenfall.career.error.read_only": "RPG 保存データが読み取り専用のため、職業を変更できません。",
+  "command.rovenfall.career.error.state_full": "RPG 進行状態または監査証拠をこれ以上保存できません。",
+  "command.rovenfall.career.error.duplicate": "その職業トランザクションはすでに処理されています。",
+  "command.rovenfall.career.error.failed": "職業操作に失敗しました: %s"
 }
