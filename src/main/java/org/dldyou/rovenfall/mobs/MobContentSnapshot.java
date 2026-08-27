@@ -186,6 +186,7 @@ public final class MobContentSnapshot {
         registered(source, mob.id(), "behavior modifier", mob.behaviorModifiers(),
                 BUILT_IN_BEHAVIOR_MODIFIERS, problems);
         reference(source, mob.id(), "loot", mob.loot(), loot, problems);
+        mob.spawn().ifPresent(spawn -> validateSpawn(source, mob.id(), spawn, problems));
     }
 
     private static void validateMutation(
@@ -216,19 +217,26 @@ public final class MobContentSnapshot {
             }
             finiteRange(source, mutation.id(), "attribute amount", modifier.amount(), -1_000_000, 1_000_000, problems);
         }
-        MobContentCatalog.SpawnCondition spawn = mutation.spawn();
-        if (!spawn.dimension().equals(WILDERNESS_DIMENSION)) {
-            problems.add(problem(source, mutation.id(),
-                    "mutation spawn dimension must be " + WILDERNESS_DIMENSION.identifier()));
-        }
-        range(source, mutation.id(), "spawn chance per million", spawn.chancePerMillion(), 1, 1_000_000, problems);
-        range(source, mutation.id(), "minimum Y", spawn.minimumY(), -2_048, 2_048, problems);
-        range(source, mutation.id(), "maximum Y", spawn.maximumY(), -2_048, 2_048, problems);
-        if (spawn.minimumY() > spawn.maximumY()) {
-            problems.add(problem(source, mutation.id(), "minimum Y must not exceed maximum Y"));
-        }
+        validateSpawn(source, mutation.id(), mutation.spawn(), problems);
         range(source, mutation.id(), "reward multiplier percent", mutation.rewardMultiplierPercent(), 1, 10_000, problems);
         mutation.bonusLoot().ifPresent(id -> reference(source, mutation.id(), "bonus loot", id, loot, problems));
+    }
+
+    private static void validateSpawn(
+            Source source,
+            Identifier id,
+            MobContentCatalog.SpawnCondition spawn,
+            List<Problem> problems) {
+        if (!spawn.dimension().equals(WILDERNESS_DIMENSION)) {
+            problems.add(problem(source, id,
+                    "spawn dimension must be " + WILDERNESS_DIMENSION.identifier()));
+        }
+        range(source, id, "spawn chance per million", spawn.chancePerMillion(), 1, 1_000_000, problems);
+        range(source, id, "minimum Y", spawn.minimumY(), -2_048, 2_048, problems);
+        range(source, id, "maximum Y", spawn.maximumY(), -2_048, 2_048, problems);
+        if (spawn.minimumY() > spawn.maximumY()) {
+            problems.add(problem(source, id, "minimum Y must not exceed maximum Y"));
+        }
     }
 
     private static void validateArena(
@@ -387,7 +395,10 @@ public final class MobContentSnapshot {
 
     public MobContentSnapshot validateRuntimeBindings(RuntimeBindings bindings) {
         List<Problem> problems = new ArrayList<>();
-        mobs.forEach((id, mob) -> validateEntityType(id, mob.entityType(), problems));
+        mobs.forEach((id, mob) -> {
+            validateEntityType(id, mob.entityType(), problems);
+            mob.spawn().ifPresent(spawn -> validateDimension(id, spawn.dimension(), bindings, problems));
+        });
         mutations.forEach((id, mutation) -> {
             mutation.eligibleEntityTypes().forEach(entityType -> validateEntityType(id, entityType, problems));
             mutation.attributes().forEach(modifier -> {

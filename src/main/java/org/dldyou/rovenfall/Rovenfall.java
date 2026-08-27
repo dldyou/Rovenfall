@@ -29,6 +29,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.projectile.arrow.Arrow;
 import net.minecraft.world.entity.projectile.hurtingprojectile.SmallFireball;
 import net.minecraft.world.level.block.Blocks;
@@ -99,6 +100,9 @@ import org.dldyou.rovenfall.economy.ShopInstance;
 import org.dldyou.rovenfall.mobs.MobContentReloadListener;
 import org.dldyou.rovenfall.mobs.MobContentCatalog;
 import org.dldyou.rovenfall.mobs.MobContentSnapshot;
+import org.dldyou.rovenfall.mobs.RovenfallMobClient;
+import org.dldyou.rovenfall.mobs.RovenfallMobEntities;
+import org.dldyou.rovenfall.mobs.RovenfallMobRuntime;
 import org.dldyou.rovenfall.rpg.RpgDefinitionReloadListener;
 import org.dldyou.rovenfall.rpg.ActivityXpConfig;
 import org.dldyou.rovenfall.rpg.ActivityXpAwardService;
@@ -126,6 +130,7 @@ public final class Rovenfall {
     private final RpgDefinitionReloadListener rpgDefinitions = new RpgDefinitionReloadListener();
 
     public Rovenfall(IEventBus modBus, ModContainer modContainer) {
+        RovenfallMobEntities.register(modBus);
         modContainer.registerConfig(ModConfig.Type.SERVER, EconomyConfig.SPEC);
         modContainer.registerConfig(ModConfig.Type.SERVER, ActivityXpConfig.SPEC, "rovenfall-rpg-server.toml");
         modContainer.registerConfig(ModConfig.Type.SERVER, ClaimConfig.SPEC, "rovenfall-claims-server.toml");
@@ -133,6 +138,7 @@ public final class Rovenfall {
         modBus.addListener(RpgSkillNetwork::registerPayloads);
         if (FMLEnvironment.getDist() == Dist.CLIENT) {
             RpgSkillClient.register(modBus);
+            RovenfallMobClient.register(modBus);
         }
         NeoForge.EVENT_BUS.addListener(RovenfallCommands::register);
         NeoForge.EVENT_BUS.addListener(EconomyService::onPlayerLoggedIn);
@@ -145,6 +151,7 @@ public final class Rovenfall {
         WildernessResetEvents.register(NeoForge.EVENT_BUS);
         ClaimProtectionEvents.register(NeoForge.EVENT_BUS);
         RpgSkillEvents.register(NeoForge.EVENT_BUS);
+        RovenfallMobRuntime.register(NeoForge.EVENT_BUS);
         NeoForge.EVENT_BUS.addListener(this::addServerReloadListeners);
         NeoForge.EVENT_BUS.addListener(shopTemplates::onDefaultDataComponentsBound);
         NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onDamage);
@@ -230,6 +237,63 @@ public final class Rovenfall {
                     helper.assertTrue(snapshot == MobContentReloadListener.snapshot(helper.getLevel().getServer()),
                             "Invalid candidate replaced the last valid mob content snapshot");
                 }
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("ordinary_custom_mobs"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var level = helper.getLevel();
+                var snapshot = MobContentReloadListener.snapshot(level.getServer());
+                var groveDefinition = snapshot.mob(RovenfallMobEntities.GROVE_STALKER_ID).orElseThrow();
+                var beetleDefinition = snapshot.mob(RovenfallMobEntities.OREBOUND_BEETLE_ID).orElseThrow();
+                helper.assertTrue(groveDefinition.spawn().orElseThrow().dimension().equals(WorldTopology.WILDERNESS)
+                                && beetleDefinition.spawn().orElseThrow().dimension().equals(WorldTopology.WILDERNESS),
+                        "Ordinary mob spawn rules are not restricted to the Wilderness");
+
+                var grove = RovenfallMobEntities.GROVE_STALKER.get().create(level, EntitySpawnReason.COMMAND);
+                var beetle = RovenfallMobEntities.OREBOUND_BEETLE.get().create(level, EntitySpawnReason.COMMAND);
+                var groveTarget = EntityTypes.COW.create(level, EntitySpawnReason.COMMAND);
+                var beetleTarget = EntityTypes.COW.create(level, EntitySpawnReason.COMMAND);
+                helper.assertTrue(grove != null && beetle != null && groveTarget != null && beetleTarget != null,
+                        "Could not construct ordinary custom mob combat fixtures");
+
+                RovenfallMobRuntime.applyDefinition(grove, groveDefinition, false);
+                RovenfallMobRuntime.applyDefinition(beetle, beetleDefinition, false);
+                helper.assertTrue(grove.getAttributeValue(Attributes.MAX_HEALTH) == 30.0
+                                && grove.getAttributeValue(Attributes.ATTACK_DAMAGE) == 6.0
+                                && beetle.getAttributeValue(Attributes.MAX_HEALTH) == 24.0
+                                && beetle.getAttributeValue(Attributes.ATTACK_DAMAGE) == 5.0
+                                && grove.getExperienceReward(level, null) == 12
+                                && beetle.getExperienceReward(level, null) == 10,
+                        "Data-driven ordinary mob attributes were not applied");
+
+                float groveTargetHealth = groveTarget.getHealth();
+                float beetleTargetHealth = beetleTarget.getHealth();
+                helper.assertTrue(grove.doHurtTarget(level, groveTarget)
+                                && beetle.doHurtTarget(level, beetleTarget)
+                                && Math.abs(groveTarget.getHealth() - (groveTargetHealth - 6.0F)) < 0.01F
+                                && Math.abs(beetleTarget.getHealth() - (beetleTargetHealth - 5.0F)) < 0.01F,
+                        "Ordinary custom mob combat damage did not match definitions");
+
+                grove.setHealth(11.0F);
+                RovenfallMobRuntime.applyDefinition(grove, groveDefinition, true);
+                helper.assertTrue(grove.getHealth() == 11.0F,
+                        "Reloading a persisted custom mob healed it unexpectedly");
+
+                BlockPos hubPosition = helper.absolutePos(new BlockPos(1, 2, 1));
+                grove.snapTo(hubPosition.getX() + 0.5, hubPosition.getY(), hubPosition.getZ() + 0.5, 0, 0);
+                helper.assertTrue(!level.addFreshEntity(grove),
+                        "A Wilderness-only custom mob was admitted to the Hub");
+                var rewardPlayer = helper.makeMockServerPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+                helper.assertTrue(RovenfallMobRuntime.isEligibleRewardPlayer(rewardPlayer)
+                                && !RovenfallMobRuntime.isEligibleRewardPlayer(FakePlayerFactory.getMinecraft(level)),
+                        "Custom mob reward player eligibility did not distinguish real and fake players");
+                rewardPlayer.discard();
+                beetle.discard();
+                groveTarget.discard();
+                beetleTarget.discard();
                 helper.succeed();
             }
         });

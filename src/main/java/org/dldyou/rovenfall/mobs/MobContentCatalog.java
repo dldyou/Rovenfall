@@ -55,7 +55,8 @@ public record MobContentCatalog(
             double attackDamage,
             double movementSpeed,
             List<Identifier> behaviorModifiers,
-            Identifier loot) {
+            Identifier loot,
+            Optional<SpawnCondition> spawn) {
         public static final Codec<MobDefinition> CODEC = RecordCodecBuilder.create(instance -> instance.group(
                 Identifier.CODEC.fieldOf("id").forGetter(MobDefinition::id),
                 Codec.string(1, 160).fieldOf("translation_key").forGetter(MobDefinition::translationKey),
@@ -65,11 +66,13 @@ public record MobContentCatalog(
                 Codec.DOUBLE.fieldOf("movement_speed").forGetter(MobDefinition::movementSpeed),
                 Identifier.CODEC.listOf(0, MAX_REFERENCES).optionalFieldOf("behavior_modifiers", List.of())
                         .forGetter(MobDefinition::behaviorModifiers),
-                Identifier.CODEC.fieldOf("loot").forGetter(MobDefinition::loot)
+                Identifier.CODEC.fieldOf("loot").forGetter(MobDefinition::loot),
+                SpawnCondition.CODEC.optionalFieldOf("spawn").forGetter(MobDefinition::spawn)
         ).apply(instance, MobDefinition::new));
 
         public MobDefinition {
             behaviorModifiers = List.copyOf(behaviorModifiers);
+            spawn = spawn == null ? Optional.empty() : spawn;
         }
     }
 

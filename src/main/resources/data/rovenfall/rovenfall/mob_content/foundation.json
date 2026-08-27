@@ -3,22 +3,34 @@
     {
       "id": "rovenfall:grove_stalker",
       "translation_key": "mob.rovenfall.grove_stalker",
-      "entity_type": "minecraft:wolf",
+      "entity_type": "rovenfall:grove_stalker",
       "max_health": 30.0,
       "attack_damage": 6.0,
       "movement_speed": 0.32,
       "behavior_modifiers": ["rovenfall:ambush"],
-      "loot": "rovenfall:grove_stalker_loot"
+      "loot": "rovenfall:grove_stalker_loot",
+      "spawn": {
+        "dimension": "rovenfall:wilderness",
+        "chance_per_million": 150000,
+        "minimum_y": -64,
+        "maximum_y": 320
+      }
     },
     {
       "id": "rovenfall:orebound_beetle",
       "translation_key": "mob.rovenfall.orebound_beetle",
-      "entity_type": "minecraft:silverfish",
+      "entity_type": "rovenfall:orebound_beetle",
       "max_health": 24.0,
       "attack_damage": 5.0,
       "movement_speed": 0.28,
       "behavior_modifiers": ["rovenfall:burrow"],
-      "loot": "rovenfall:orebound_beetle_loot"
+      "loot": "rovenfall:orebound_beetle_loot",
+      "spawn": {
+        "dimension": "rovenfall:wilderness",
+        "chance_per_million": 120000,
+        "minimum_y": -64,
+        "maximum_y": 96
+      }
     },
     {
       "id": "rovenfall:rift_warden_vessel",
@@ -80,14 +92,14 @@
   "loot": [
     {
       "id": "rovenfall:grove_stalker_loot",
-      "loot_table": "minecraft:entities/wolf",
+      "loot_table": "rovenfall:entities/grove_stalker",
       "rolls": 1,
       "currency": 8,
       "experience": 12
     },
     {
       "id": "rovenfall:orebound_beetle_loot",
-      "loot_table": "minecraft:entities/silverfish",
+      "loot_table": "rovenfall:entities/orebound_beetle",
       "rolls": 1,
       "currency": 7,
       "experience": 10
