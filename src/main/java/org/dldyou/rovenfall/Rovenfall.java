@@ -13,6 +13,7 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.SimpleContainer;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
@@ -27,6 +28,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.projectile.arrow.Arrow;
 import net.minecraft.world.entity.projectile.hurtingprojectile.SmallFireball;
 import net.minecraft.world.level.block.Blocks;
@@ -34,24 +36,33 @@ import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.DispenserBlock;
 import net.minecraft.world.level.block.entity.DispenserBlockEntity;
 import net.minecraft.world.level.block.piston.PistonBaseBlock;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.level.dimension.LevelStem;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.bus.api.EventPriority;
+import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.common.util.BlockSnapshot;
 import net.neoforged.neoforge.common.util.FakePlayerFactory;
 import net.neoforged.neoforge.event.AddServerReloadListenersEvent;
 import net.neoforged.neoforge.event.RegisterGameTestsEvent;
 import net.neoforged.neoforge.event.entity.EntityInvulnerabilityCheckEvent;
 import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
+import net.neoforged.neoforge.event.entity.living.BabyEntitySpawnEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.neoforged.neoforge.event.entity.player.AdvancementEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.entity.player.UseItemOnBlockEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.level.BlockDropsEvent;
 import net.neoforged.neoforge.event.level.ExplosionEvent;
 import net.neoforged.neoforge.event.level.PistonEvent;
 import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
@@ -84,6 +95,11 @@ import org.dldyou.rovenfall.mobs.MobContentReloadListener;
 import org.dldyou.rovenfall.mobs.MobContentCatalog;
 import org.dldyou.rovenfall.mobs.MobContentSnapshot;
 import org.dldyou.rovenfall.rpg.RpgDefinitionReloadListener;
+import org.dldyou.rovenfall.rpg.ActivityXpConfig;
+import org.dldyou.rovenfall.rpg.ActivityXpAwardService;
+import org.dldyou.rovenfall.rpg.ActivityWorldSavedData;
+import org.dldyou.rovenfall.rpg.RpgActivityEvents;
+import org.dldyou.rovenfall.rpg.RpgPlayerSavedData;
 import org.dldyou.rovenfall.rpg.SkillDefinition;
 import org.dldyou.rovenfall.world.ProtectedRegion;
 import org.dldyou.rovenfall.world.PortalDefinition;
@@ -98,6 +114,7 @@ public final class Rovenfall {
 
     public Rovenfall(IEventBus modBus, ModContainer modContainer) {
         modContainer.registerConfig(ModConfig.Type.SERVER, EconomyConfig.SPEC);
+        modContainer.registerConfig(ModConfig.Type.SERVER, ActivityXpConfig.SPEC, "rovenfall-rpg-server.toml");
         modContainer.registerConfig(ModConfig.Type.SERVER, ClaimConfig.SPEC, "rovenfall-claims-server.toml");
         modBus.addListener(this::registerGameTests);
         NeoForge.EVENT_BUS.addListener(RovenfallCommands::register);
@@ -107,6 +124,16 @@ public final class Rovenfall {
         ClaimProtectionEvents.register(NeoForge.EVENT_BUS);
         NeoForge.EVENT_BUS.addListener(this::addServerReloadListeners);
         NeoForge.EVENT_BUS.addListener(shopTemplates::onDefaultDataComponentsBound);
+        NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onDamage);
+        NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, RpgActivityEvents::onDeath);
+        NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onServerTick);
+        NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onCrafted);
+        NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onSmelted);
+        NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onAdvancement);
+        NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, RpgActivityEvents::onPlace);
+        NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, RpgActivityEvents::onBlockDrops);
+        NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, RpgActivityEvents::onBreeding);
+        NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, RpgActivityEvents::onPistonPre);
     }
 
     private void registerGameTests(RegisterGameTestsEvent event) {
@@ -164,6 +191,210 @@ public final class Rovenfall {
                 var active = snapshot.skill(id("power_strike")).orElseThrow();
                 helper.assertTrue(active.kind() == SkillDefinition.Kind.ACTIVE && active.cooldownTicks().isPresent(),
                         "Active skill metadata was not preserved");
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("rpg_activity_xp"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var state = RpgPlayerSavedData.get(server);
+                UUID player = UUID.randomUUID();
+                UUID transactionId = UUID.randomUUID();
+                var result = ActivityXpAwardService.award(state,
+                        RpgDefinitionReloadListener.snapshot(server), player, id("combat"), 1,
+                        System.currentTimeMillis(), transactionId, "gametest:combat");
+                helper.assertTrue(result.status() == ActivityXpAwardService.Status.SUCCESS,
+                        "Activity XP was not committed");
+                helper.assertTrue(state.state(player).provenance().size() == 1
+                                && state.state(player).provenance().getFirst().transactionId().equals(transactionId),
+                        "Activity XP provenance was not recorded");
+                helper.assertTrue(RpgActivityEvents.blockActivity(Blocks.DIAMOND_ORE.defaultBlockState())
+                                .equals(Optional.of(id("mining"))),
+                        "Pickaxe-minable block was not classified as mining");
+                helper.assertTrue(RpgActivityEvents.blockActivity(Blocks.WHEAT.defaultBlockState()
+                                .setValue(BlockStateProperties.AGE_7, 7)).equals(Optional.of(id("farming")))
+                                && RpgActivityEvents.blockActivity(Blocks.WHEAT.defaultBlockState()).isEmpty(),
+                        "Mature and immature crops did not follow the farming policy");
+                var naturalMiner = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                var nether = server.getLevel(net.minecraft.world.level.Level.NETHER);
+                helper.assertTrue(nether != null, "Nether was unavailable for the activity policy test");
+                BlockPos miningPosition = new BlockPos(12_345, 64, 12_345);
+                NeoForge.EVENT_BUS.post(new BlockDropsEvent(
+                        nether, miningPosition, Blocks.DIAMOND_ORE.defaultBlockState(), null,
+                        new ArrayList<>(), naturalMiner, ItemStack.EMPTY));
+                helper.assertTrue(RpgPlayerSavedData.get(server).state(naturalMiner.getUUID())
+                                .activityXp().getOrDefault(id("mining"), 0L) == 1,
+                        "Validated natural ore break did not award mining XP");
+
+                var worldState = ActivityWorldSavedData.get(server);
+                BlockPos syntheticPosition = miningPosition.east();
+                helper.assertTrue(worldState.markSynthetic(nether.dimension(), syntheticPosition),
+                        "Synthetic resource marker was not recorded");
+                NeoForge.EVENT_BUS.post(new BlockDropsEvent(
+                        nether, syntheticPosition, Blocks.DIAMOND_ORE.defaultBlockState(), null,
+                        new ArrayList<>(), naturalMiner, ItemStack.EMPTY));
+                helper.assertTrue(RpgPlayerSavedData.get(server).state(naturalMiner.getUUID())
+                                .activityXp().getOrDefault(id("mining"), 0L) == 1,
+                        "Player-placed ore awarded mining XP");
+
+                var fakeMiner = FakePlayerFactory.getMinecraft(nether);
+                long fakeBefore = RpgPlayerSavedData.get(server).state(fakeMiner.getUUID())
+                        .activityXp().getOrDefault(id("mining"), 0L);
+                NeoForge.EVENT_BUS.post(new BlockDropsEvent(
+                        nether, miningPosition.west(), Blocks.DIAMOND_ORE.defaultBlockState(), null,
+                        new ArrayList<>(), fakeMiner, ItemStack.EMPTY));
+                helper.assertTrue(RpgPlayerSavedData.get(server).state(fakeMiner.getUUID())
+                                .activityXp().getOrDefault(id("mining"), 0L) == fakeBefore,
+                        "Synthetic fake-player action awarded mining XP");
+
+                BlockPos protectedPosition = server.overworld().getRespawnData().pos();
+                NeoForge.EVENT_BUS.post(new BlockDropsEvent(
+                        server.overworld(), protectedPosition, Blocks.DIAMOND_ORE.defaultBlockState(), null,
+                        new ArrayList<>(), naturalMiner, ItemStack.EMPTY));
+                helper.assertTrue(RpgPlayerSavedData.get(server).state(naturalMiner.getUUID())
+                                .activityXp().getOrDefault(id("mining"), 0L) == 1,
+                        "Protected-region action awarded mining XP");
+
+                var cookingPlayer = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                NeoForge.EVENT_BUS.post(new PlayerEvent.ItemCraftedEvent(
+                        cookingPlayer, new ItemStack(Items.BREAD), new SimpleContainer(1)));
+                NeoForge.EVENT_BUS.post(new PlayerEvent.ItemSmeltedEvent(
+                        cookingPlayer, new ItemStack(Items.COOKED_BEEF), 1));
+                helper.assertTrue(state.state(cookingPlayer.getUUID()).activityXp()
+                                .getOrDefault(id("cooking"), 0L) == 2,
+                        "Completed food crafting and smelting events did not award cooking XP");
+                long fakeCookingBefore = state.state(fakeMiner.getUUID()).activityXp()
+                        .getOrDefault(id("cooking"), 0L);
+                NeoForge.EVENT_BUS.post(new PlayerEvent.ItemCraftedEvent(
+                        fakeMiner, new ItemStack(Items.BREAD), new SimpleContainer(1)));
+                helper.assertTrue(state.state(fakeMiner.getUUID()).activityXp()
+                                .getOrDefault(id("cooking"), 0L) == fakeCookingBefore,
+                        "Fake-player crafting event awarded cooking XP");
+
+                var explorer = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                var ordinaryAdvancement = server.getAdvancements().get(
+                        Identifier.withDefaultNamespace("story/mine_stone"));
+                var explorationAdvancement = server.getAdvancements().get(
+                        Identifier.withDefaultNamespace("adventure/adventuring_time"));
+                helper.assertTrue(ordinaryAdvancement != null && explorationAdvancement != null,
+                        "Built-in advancement fixtures were unavailable");
+                NeoForge.EVENT_BUS.post(new AdvancementEvent.AdvancementEarnEvent(explorer, ordinaryAdvancement));
+                NeoForge.EVENT_BUS.post(new AdvancementEvent.AdvancementEarnEvent(explorer, explorationAdvancement));
+                NeoForge.EVENT_BUS.post(new AdvancementEvent.AdvancementEarnEvent(explorer, explorationAdvancement));
+                helper.assertTrue(state.state(explorer.getUUID()).activityXp()
+                                .getOrDefault(id("exploration"), 0L) == 1,
+                        "Exploration whitelist or first-discovery policy was bypassed");
+
+                var hunter = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                var target = EntityTypes.COW.create(nether, EntitySpawnReason.COMMAND);
+                helper.assertTrue(target != null, "Combat target could not be created");
+                target.setPos(12_350.5D, 64, 12_350.5D);
+                target.setHealth(2F);
+                nether.addFreshEntity(target);
+                helper.assertTrue(target.hurtServer(
+                                nether, nether.damageSources().playerAttack(hunter), 4F),
+                        "Server combat fixture did not apply damage");
+                helper.assertTrue(state.state(hunter.getUUID()).activityXp()
+                                .getOrDefault(id("combat"), 0L) == 1,
+                        "Applied server damage did not award combat XP");
+                helper.assertTrue(state.state(hunter.getUUID()).activityXp()
+                                .getOrDefault(id("hunting"), 0L) == 1,
+                        "Recorded damage contribution did not award hunting XP on death");
+
+                var canceledTarget = EntityTypes.COW.create(nether, EntitySpawnReason.COMMAND);
+                helper.assertTrue(canceledTarget != null, "Canceled-death target could not be created");
+                canceledTarget.setPos(12_352.5D, 64, 12_350.5D);
+                canceledTarget.setHealth(2F);
+                nether.addFreshEntity(canceledTarget);
+                var deathCancellation = new DeathCancellationFixture(canceledTarget.getUUID());
+                NeoForge.EVENT_BUS.register(deathCancellation);
+                try {
+                    helper.assertTrue(canceledTarget.hurtServer(
+                                    nether, nether.damageSources().playerAttack(hunter), 4F),
+                            "Canceled-death fixture did not enter the server damage pipeline");
+                } finally {
+                    NeoForge.EVENT_BUS.unregister(deathCancellation);
+                    canceledTarget.discard();
+                }
+                helper.assertTrue(state.state(hunter.getUUID()).activityXp()
+                                .getOrDefault(id("hunting"), 0L) == 1,
+                        "Canceled death awarded hunting XP");
+
+                var projectileHunter = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                var projectileTarget = EntityTypes.COW.create(nether, EntitySpawnReason.COMMAND);
+                helper.assertTrue(projectileTarget != null, "Projectile combat target could not be created");
+                projectileTarget.setPos(12_354.5D, 64, 12_350.5D);
+                nether.addFreshEntity(projectileTarget);
+                var combatArrow = new Arrow(nether, projectileHunter, new ItemStack(Items.ARROW), null);
+                helper.assertTrue(projectileTarget.hurtServer(
+                                nether, nether.damageSources().arrow(combatArrow, projectileHunter), 2F),
+                        "Server projectile damage fixture did not apply damage");
+                helper.assertTrue(state.state(projectileHunter.getUUID()).activityXp()
+                                .getOrDefault(id("combat"), 0L) == 1,
+                        "Player-owned projectile damage did not award combat XP");
+
+                BlockPos pistonBase = miningPosition.south(8);
+                BlockPos pistonOre = pistonBase.east();
+                BlockPos pistonDestination = pistonOre.east();
+                nether.setBlock(pistonBase,
+                        Blocks.PISTON.defaultBlockState().setValue(PistonBaseBlock.FACING, Direction.EAST), 3);
+                nether.setBlock(pistonOre, Blocks.DIAMOND_ORE.defaultBlockState(), 3);
+                helper.assertTrue(worldState.markSynthetic(nether.dimension(), pistonOre),
+                        "Piston source marker was not recorded");
+                var activityPiston = new PistonEvent.Pre(
+                        nether, pistonBase, Direction.EAST, PistonEvent.PistonMoveType.EXTEND);
+                NeoForge.EVENT_BUS.post(activityPiston);
+                helper.assertTrue(!activityPiston.isCanceled(), "Ordinary activity piston move was canceled");
+                helper.assertTrue(worldState.consumeSynthetic(nether.dimension(), pistonDestination),
+                        "Piston event did not propagate the synthetic-resource marker");
+                worldState.consumeSynthetic(nether.dimension(), pistonOre);
+
+                var farmer = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                BlockPos farmPosition = miningPosition.south(4);
+                NeoForge.EVENT_BUS.post(new BlockDropsEvent(
+                        nether, farmPosition, Blocks.WHEAT.defaultBlockState()
+                                .setValue(BlockStateProperties.AGE_7, 7), null,
+                        new ArrayList<>(), farmer, ItemStack.EMPTY));
+                NeoForge.EVENT_BUS.post(new BlockDropsEvent(
+                        nether, farmPosition.east(), Blocks.WHEAT.defaultBlockState(), null,
+                        new ArrayList<>(), farmer, ItemStack.EMPTY));
+                helper.assertTrue(state.state(farmer.getUUID()).activityXp()
+                                .getOrDefault(id("farming"), 0L) == 1,
+                        "Mature and immature crop events violated farming XP policy");
+                var canceledHarvest = new BlockDropsEvent(
+                        nether, farmPosition.west(), Blocks.WHEAT.defaultBlockState()
+                                .setValue(BlockStateProperties.AGE_7, 7), null,
+                        new ArrayList<>(), farmer, ItemStack.EMPTY);
+                canceledHarvest.setCanceled(true);
+                NeoForge.EVENT_BUS.post(canceledHarvest);
+                helper.assertTrue(state.state(farmer.getUUID()).activityXp()
+                                .getOrDefault(id("farming"), 0L) == 1,
+                        "Canceled harvest event awarded farming XP");
+
+                var parentA = EntityTypes.COW.create(nether, EntitySpawnReason.COMMAND);
+                var parentB = EntityTypes.COW.create(nether, EntitySpawnReason.COMMAND);
+                var child = EntityTypes.COW.create(nether, EntitySpawnReason.BREEDING);
+                helper.assertTrue(parentA != null && parentB != null && child != null,
+                        "Breeding fixtures could not be created");
+                parentA.setPos(12_360.5D, 64, 12_360.5D);
+                parentB.setPos(12_361.5D, 64, 12_360.5D);
+                child.setPos(12_360.5D, 64, 12_361.5D);
+                parentA.setInLove(farmer);
+                NeoForge.EVENT_BUS.post(new BabyEntitySpawnEvent(parentA, parentB, child));
+                helper.assertTrue(state.state(farmer.getUUID()).activityXp()
+                                .getOrDefault(id("farming"), 0L) == 2,
+                        "Validated breeding completion did not award farming XP");
+                var roundTrip = RpgPlayerSavedData.CODEC.parse(NbtOps.INSTANCE,
+                        RpgPlayerSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow()).getOrThrow();
+                helper.assertTrue(roundTrip.state(player).activityXp().get(id("combat")) == 1,
+                        "Activity XP did not survive codec round-trip");
                 helper.succeed();
             }
         });
@@ -416,6 +647,28 @@ public final class Rovenfall {
 
                 BlockPos ownedPosition = new BlockPos(
                         (ownerKey.chunkX() << 4) + 8, 70, (ownerKey.chunkZ() << 4) + 8);
+                BlockSnapshot ownerPlacementSnapshot = BlockSnapshot.create(
+                        level.dimension(), level, ownedPosition);
+                level.setBlock(ownedPosition, Blocks.STONE.defaultBlockState(), 3);
+                var ownerPlacement = new BlockEvent.EntityPlaceEvent(
+                        ownerPlacementSnapshot, Blocks.DIRT.defaultBlockState(), owner);
+                NeoForge.EVENT_BUS.post(ownerPlacement);
+                helper.assertTrue(!ownerPlacement.isCanceled(), "Owner placement event was canceled");
+                helper.assertTrue(RpgPlayerSavedData.get(server).state(owner.getUUID()).activityXp()
+                                .getOrDefault(id("building"), 0L) == 1,
+                        "Validated claim placement did not award building XP");
+
+                BlockPos visitorPlacementPosition = ownedPosition.east();
+                BlockSnapshot visitorPlacementSnapshot = BlockSnapshot.create(
+                        level.dimension(), level, visitorPlacementPosition);
+                level.setBlock(visitorPlacementPosition, Blocks.STONE.defaultBlockState(), 3);
+                var visitorPlacement = new BlockEvent.EntityPlaceEvent(
+                        visitorPlacementSnapshot, Blocks.DIRT.defaultBlockState(), visitor);
+                NeoForge.EVENT_BUS.post(visitorPlacement);
+                helper.assertTrue(visitorPlacement.isCanceled(), "Visitor placement event was allowed");
+                helper.assertTrue(RpgPlayerSavedData.get(server).state(visitor.getUUID()).activityXp()
+                                .getOrDefault(id("building"), 0L) == 0,
+                        "Denied claim placement awarded building XP");
                 var ownerBreak = new BreakBlockEvent(
                         level, ownedPosition, level.getBlockState(ownedPosition), owner);
                 NeoForge.EVENT_BUS.post(ownerBreak);
@@ -1057,5 +1310,14 @@ public final class Rovenfall {
 
     private static Identifier id(String path) {
         return Identifier.fromNamespaceAndPath(MOD_ID, path);
+    }
+
+    private record DeathCancellationFixture(UUID targetId) {
+        @SubscribeEvent(priority = EventPriority.HIGHEST)
+        public void cancelDeath(LivingDeathEvent event) {
+            if (event.getEntity().getUUID().equals(targetId)) {
+                event.setCanceled(true);
+            }
+        }
     }
 }

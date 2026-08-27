@@ -19,6 +19,7 @@ public record RpgPlayerState(
         Optional<Identifier> activeCareer,
         Map<Integer, Identifier> activeSkillSlots,
         Map<Identifier, Long> cooldowns,
+        Set<Identifier> explorationDiscoveries,
         List<ProgressionProvenance> provenance) {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
     public static final int MAX_ACTIVITIES = 128;
@@ -26,6 +27,7 @@ public record RpgPlayerState(
     public static final int MAX_SKILLS = 1_024;
     public static final int MAX_ACTIVE_SKILL_SLOTS = 4;
     public static final int MAX_COOLDOWNS = 1_024;
+    public static final int MAX_EXPLORATION_DISCOVERIES = 256;
     public static final int MAX_PROVENANCE = 256;
     public static final long MAX_XP = 1_000_000_000_000_000L;
     public static final int MAX_RANK = 1_000;
@@ -49,6 +51,9 @@ public record RpgPlayerState(
     private static final Codec<Map<Integer, Identifier>> ACTIVE_SKILL_SLOTS_CODEC =
             ActiveSkillSlot.CODEC.listOf(0, MAX_ACTIVE_SKILL_SLOTS)
                     .flatXmap(RpgPlayerState::activeSkillSlotsFromEntries, RpgPlayerState::activeSkillSlotEntries);
+    private static final Codec<Set<Identifier>> EXPLORATION_DISCOVERIES_CODEC =
+            Identifier.CODEC.listOf(0, MAX_EXPLORATION_DISCOVERIES)
+                    .flatXmap(RpgPlayerState::discoveriesFromEntries, RpgPlayerState::discoveryEntries);
 
     public static final Codec<RpgPlayerState> CODEC = RecordCodecBuilder.<RpgPlayerState>create(instance -> instance.group(
             ACTIVITY_XP_CODEC.optionalFieldOf("activity_xp", Map.of()).forGetter(RpgPlayerState::activityXp),
@@ -57,12 +62,24 @@ public record RpgPlayerState(
             ACTIVE_SKILL_SLOTS_CODEC.optionalFieldOf("active_skill_slots", Map.of())
                     .forGetter(RpgPlayerState::activeSkillSlots),
             COOLDOWNS_CODEC.optionalFieldOf("cooldowns", Map.of()).forGetter(RpgPlayerState::cooldowns),
+            EXPLORATION_DISCOVERIES_CODEC.optionalFieldOf("exploration_discoveries", Set.of())
+                    .forGetter(RpgPlayerState::explorationDiscoveries),
             ProgressionProvenance.CODEC.listOf(0, MAX_PROVENANCE).optionalFieldOf("provenance", List.of())
                     .forGetter(RpgPlayerState::provenance)
     ).apply(instance, RpgPlayerState::new)).validate(RpgPlayerState::validate);
 
     public static final RpgPlayerState EMPTY = new RpgPlayerState(
-            Map.of(), Map.of(), Optional.empty(), Map.of(), Map.of(), List.of());
+            Map.of(), Map.of(), Optional.empty(), Map.of(), Map.of(), Set.of(), List.of());
+
+    public RpgPlayerState(
+            Map<Identifier, Long> activityXp,
+            Map<Identifier, CareerProgress> careers,
+            Optional<Identifier> activeCareer,
+            Map<Integer, Identifier> activeSkillSlots,
+            Map<Identifier, Long> cooldowns,
+            List<ProgressionProvenance> provenance) {
+        this(activityXp, careers, activeCareer, activeSkillSlots, cooldowns, Set.of(), provenance);
+    }
 
     public RpgPlayerState {
         activityXp = Map.copyOf(activityXp);
@@ -70,6 +87,7 @@ public record RpgPlayerState(
         activeCareer = activeCareer == null ? Optional.empty() : activeCareer;
         activeSkillSlots = Map.copyOf(activeSkillSlots);
         cooldowns = Map.copyOf(cooldowns);
+        explorationDiscoveries = Set.copyOf(explorationDiscoveries);
         provenance = List.copyOf(provenance);
     }
 
@@ -87,6 +105,7 @@ public record RpgPlayerState(
     private static Optional<String> validationError(RpgPlayerState state) {
         if (state.activityXp().size() > MAX_ACTIVITIES || state.careers().size() > MAX_CAREERS
                 || state.cooldowns().size() > MAX_COOLDOWNS || state.provenance().size() > MAX_PROVENANCE
+                || state.explorationDiscoveries().size() > MAX_EXPLORATION_DISCOVERIES
                 || state.activeSkillSlots().size() > MAX_ACTIVE_SKILL_SLOTS) {
             return Optional.of("RPG player state exceeds a collection limit");
         }
@@ -143,6 +162,20 @@ public record RpgPlayerState(
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> new ActiveSkillSlot(entry.getKey(), entry.getValue()))
                 .toList());
+    }
+
+    private static DataResult<Set<Identifier>> discoveriesFromEntries(List<Identifier> entries) {
+        Set<Identifier> result = new java.util.LinkedHashSet<>();
+        for (Identifier entry : entries) {
+            if (!result.add(entry)) {
+                return DataResult.error(() -> "Duplicate exploration discovery " + entry);
+            }
+        }
+        return DataResult.success(Set.copyOf(result));
+    }
+
+    private static DataResult<List<Identifier>> discoveryEntries(Set<Identifier> discoveries) {
+        return DataResult.success(discoveries.stream().sorted().toList());
     }
 
     private record ActiveSkillSlot(int slot, Identifier skill) {
