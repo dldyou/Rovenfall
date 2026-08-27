@@ -168,7 +168,8 @@ public final class ActivityXpAwardService {
         }
         discovery.ifPresent(discoveries::add);
         RpgPlayerState candidate = new RpgPlayerState(activityXp, careers, current.activeCareer(),
-                current.activeSkillSlots(), current.cooldowns(), discoveries, provenance, careerProvenance);
+                current.activeSkillSlots(), current.cooldowns(), discoveries, provenance, careerProvenance,
+                current.lastActiveSkillRequestId());
         boolean committed = state.commit(playerId, candidate);
         return new AwardResult(committed ? Status.SUCCESS : Status.STATE_FULL, committed ? updated : total, committed);
     }

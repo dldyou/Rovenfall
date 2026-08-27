@@ -26,6 +26,7 @@ Required atomic operations include:
 - claim purchase: eligible chunk, protection override, ownership cap, balance, debit, ownership, audit;
 - promotion: active lineage, prerequisites, inventory/currency costs, branch conflict, mutation, audit;
 - skill unlock/reset: tree version, prerequisites, points/currency, mutation, audit;
+- active skill: protocol/session, monotonic request, definition revision, learned active slot, current career lineage, persistent world-time cooldown, server-resolved target/dimension/range/line of sight/protection, effect, and request/cooldown commit; discard armed effects on logout, career change, skill reset, or definition reload;
 - portal travel: portal link, cooldown, combat rule, safe destination, teleport, audit where required; and
 - administrative mutation: role, reason, target snapshot, mutation, audit.
 

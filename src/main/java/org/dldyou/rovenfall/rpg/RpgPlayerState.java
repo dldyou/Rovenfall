@@ -21,7 +21,8 @@ public record RpgPlayerState(
         Map<Identifier, Long> cooldowns,
         Set<Identifier> explorationDiscoveries,
         List<ProgressionProvenance> provenance,
-        List<ProgressionProvenance> careerProvenance) {
+        List<ProgressionProvenance> careerProvenance,
+        long lastActiveSkillRequestId) {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
     public static final int MAX_ACTIVITIES = 128;
     public static final int MAX_CAREERS = 256;
@@ -70,11 +71,26 @@ public record RpgPlayerState(
                     .forGetter(RpgPlayerState::provenance),
             ProgressionProvenance.CODEC.listOf(0, MAX_CAREER_PROVENANCE)
                     .optionalFieldOf("career_provenance", List.of())
-                    .forGetter(RpgPlayerState::careerProvenance)
+                    .forGetter(RpgPlayerState::careerProvenance),
+            TICK_CODEC.optionalFieldOf("last_active_skill_request_id", 0L)
+                    .forGetter(RpgPlayerState::lastActiveSkillRequestId)
     ).apply(instance, RpgPlayerState::new)).validate(RpgPlayerState::validate);
 
     public static final RpgPlayerState EMPTY = new RpgPlayerState(
-            Map.of(), Map.of(), Optional.empty(), Map.of(), Map.of(), Set.of(), List.of(), List.of());
+            Map.of(), Map.of(), Optional.empty(), Map.of(), Map.of(), Set.of(), List.of(), List.of(), 0L);
+
+    public RpgPlayerState(
+            Map<Identifier, Long> activityXp,
+            Map<Identifier, CareerProgress> careers,
+            Optional<Identifier> activeCareer,
+            Map<Integer, Identifier> activeSkillSlots,
+            Map<Identifier, Long> cooldowns,
+            Set<Identifier> explorationDiscoveries,
+            List<ProgressionProvenance> provenance,
+            List<ProgressionProvenance> careerProvenance) {
+        this(activityXp, careers, activeCareer, activeSkillSlots, cooldowns,
+                explorationDiscoveries, provenance, careerProvenance, 0L);
+    }
 
     public RpgPlayerState(
             Map<Identifier, Long> activityXp,
@@ -83,7 +99,8 @@ public record RpgPlayerState(
             Map<Integer, Identifier> activeSkillSlots,
             Map<Identifier, Long> cooldowns,
             List<ProgressionProvenance> provenance) {
-        this(activityXp, careers, activeCareer, activeSkillSlots, cooldowns, Set.of(), provenance, List.of());
+        this(activityXp, careers, activeCareer, activeSkillSlots, cooldowns,
+                Set.of(), provenance, List.of(), 0L);
     }
 
     public RpgPlayerState(
@@ -95,7 +112,7 @@ public record RpgPlayerState(
             Set<Identifier> explorationDiscoveries,
             List<ProgressionProvenance> provenance) {
         this(activityXp, careers, activeCareer, activeSkillSlots, cooldowns,
-                explorationDiscoveries, provenance, List.of());
+                explorationDiscoveries, provenance, List.of(), 0L);
     }
 
     public RpgPlayerState {
@@ -125,7 +142,8 @@ public record RpgPlayerState(
                 || state.cooldowns().size() > MAX_COOLDOWNS || state.provenance().size() > MAX_PROVENANCE
                 || state.careerProvenance().size() > MAX_CAREER_PROVENANCE
                 || state.explorationDiscoveries().size() > MAX_EXPLORATION_DISCOVERIES
-                || state.activeSkillSlots().size() > MAX_ACTIVE_SKILL_SLOTS) {
+                || state.activeSkillSlots().size() > MAX_ACTIVE_SKILL_SLOTS
+                || state.lastActiveSkillRequestId() < 0) {
             return Optional.of("RPG player state exceeds a collection limit");
         }
         if (state.activeCareer().isPresent() && !state.careers().containsKey(state.activeCareer().orElseThrow())) {
@@ -320,7 +338,8 @@ public record RpgPlayerState(
 
         public enum Kind implements net.minecraft.util.StringRepresentable {
             ACTIVITY_XP("activity_xp"), CAREER_XP("career_xp"), SKILL_UNLOCK("skill_unlock"),
-            CAREER_PROMOTION("career_promotion"), CAREER_SWITCH("career_switch"), SKILL_RESET("skill_reset");
+            CAREER_PROMOTION("career_promotion"), CAREER_SWITCH("career_switch"), SKILL_RESET("skill_reset"),
+            SKILL_SLOT("skill_slot");
 
             public static final Codec<Kind> CODEC = net.minecraft.util.StringRepresentable.fromEnum(Kind::values);
             private final String id;

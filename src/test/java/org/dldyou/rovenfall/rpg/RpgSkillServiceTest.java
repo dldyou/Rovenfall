@@ -212,7 +212,13 @@ final class RpgSkillServiceTest {
             List<SkillDefinition.Prerequisite> prerequisites) {
         return skill(id, new SkillDefinition(
                 "skill.rovenfall." + id.getPath(), career, SkillDefinition.Kind.ACTIVE,
-                maxRank, cost, prerequisites, Optional.of(100), Optional.empty()));
+                maxRank, cost, prerequisites, Optional.of(100), Optional.empty(),
+                Optional.of(new SkillDefinition.ActiveEffect(
+                        SkillDefinition.EffectType.DAMAGE_DEALT,
+                        SkillDefinition.TargetType.LIVING_ENTITY,
+                        100,
+                        20,
+                        4.0))));
     }
 
     private static RpgDefinitionSnapshot.SkillSource skill(Identifier id, SkillDefinition definition) {

@@ -117,8 +117,12 @@ public final class CareerProgressionService {
                         careerId, definition.tier(), timestamp, transactionId, source, current.activeCareer()));
         RpgPlayerState candidate = new RpgPlayerState(
                 current.activityXp(), careers, Optional.of(careerId), current.activeSkillSlots(),
-                current.cooldowns(), current.explorationDiscoveries(), activityEvidence(current), careerProvenance);
+                current.cooldowns(), current.explorationDiscoveries(), activityEvidence(current), careerProvenance,
+                current.lastActiveSkillRequestId());
         boolean committed = state.commit(playerId, candidate);
+        if (committed) {
+            RpgActiveSkillRuntime.clear(playerId);
+        }
         return result(committed ? Status.SUCCESS : Status.STATE_FULL, careerId, transactionId, committed);
     }
 
@@ -158,8 +162,12 @@ public final class CareerProgressionService {
                         careerId, 0, timestamp, transactionId, source, current.activeCareer()));
         RpgPlayerState candidate = new RpgPlayerState(
                 current.activityXp(), current.careers(), Optional.of(careerId), current.activeSkillSlots(),
-                current.cooldowns(), current.explorationDiscoveries(), activityEvidence(current), careerProvenance);
+                current.cooldowns(), current.explorationDiscoveries(), activityEvidence(current), careerProvenance,
+                current.lastActiveSkillRequestId());
         boolean committed = state.commit(playerId, candidate);
+        if (committed) {
+            RpgActiveSkillRuntime.clear(playerId);
+        }
         return result(committed ? Status.SUCCESS : Status.STATE_FULL, careerId, transactionId, committed);
     }
 

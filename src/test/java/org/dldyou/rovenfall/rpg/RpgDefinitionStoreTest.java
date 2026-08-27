@@ -31,6 +31,9 @@ final class RpgDefinitionStoreTest {
                                 List.of(prerequisite("foundation", 1)))));
 
         assertSame(snapshot, store.current());
+        assertEquals(1, store.revision());
+        assertSame(snapshot, store.versioned().snapshot());
+        assertEquals(1, store.versioned().revision());
         assertEquals(3, snapshot.career(id("guardian")).orElseThrow().tier());
         assertEquals(SkillDefinition.Kind.ACTIVE, snapshot.skill(id("strike")).orElseThrow().kind());
         assertThrows(UnsupportedOperationException.class, () -> snapshot.activities().clear());
@@ -52,6 +55,7 @@ final class RpgDefinitionStoreTest {
                 List.of()));
 
         assertSame(previous, store.current());
+        assertEquals(1, store.revision());
         assertTrue(error.getMessage().contains("missing parent career"));
     }
 
@@ -134,7 +138,7 @@ final class RpgDefinitionStoreTest {
     }
 
     @Test
-    void passiveEffectsAreRequiredOnlyForPassiveSkills() {
+    void skillKindsRequireOnlyTheirMatchingEffect() {
         var passiveWithoutEffect = new RpgDefinitionSnapshot.SkillSource(
                 file("missing_effect"), "test", id("missing_effect"),
                 new SkillDefinition("skill.rovenfall.missing_effect", id("novice"),
@@ -153,6 +157,7 @@ final class RpgDefinitionStoreTest {
 
         assertTrue(error.getMessage().contains("passive skill requires passive_effect"));
         assertTrue(error.getMessage().contains("active skill cannot define passive_effect"));
+        assertTrue(error.getMessage().contains("active skill requires active_effect"));
     }
 
     @Test
@@ -231,6 +236,14 @@ final class RpgDefinitionStoreTest {
                         kind == SkillDefinition.Kind.PASSIVE
                                 ? Optional.of(new SkillDefinition.PassiveEffect(
                                         SkillDefinition.EffectType.DAMAGE_TAKEN_REDUCTION, 100))
+                                : Optional.empty(),
+                        kind == SkillDefinition.Kind.ACTIVE
+                                ? Optional.of(new SkillDefinition.ActiveEffect(
+                                        SkillDefinition.EffectType.DAMAGE_DEALT,
+                                        SkillDefinition.TargetType.LIVING_ENTITY,
+                                        100,
+                                        20,
+                                        4.0))
                                 : Optional.empty()));
     }
 

@@ -45,9 +45,11 @@ import net.minecraft.world.phys.EntityHitResult;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.config.ModConfig;
+import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.common.util.BlockSnapshot;
 import net.neoforged.neoforge.common.util.FakePlayerFactory;
@@ -101,9 +103,15 @@ import org.dldyou.rovenfall.rpg.ActivityXpConfig;
 import org.dldyou.rovenfall.rpg.ActivityXpAwardService;
 import org.dldyou.rovenfall.rpg.ActivityWorldSavedData;
 import org.dldyou.rovenfall.rpg.RpgActivityEvents;
+import org.dldyou.rovenfall.rpg.RpgActiveSkillRuntime;
+import org.dldyou.rovenfall.rpg.RpgActiveSkillService;
 import org.dldyou.rovenfall.rpg.RpgPlayerSavedData;
+import org.dldyou.rovenfall.rpg.CareerProgressionService;
+import org.dldyou.rovenfall.rpg.RpgSkillService;
 import org.dldyou.rovenfall.rpg.SkillDefinition;
 import org.dldyou.rovenfall.rpg.RpgSkillEvents;
+import org.dldyou.rovenfall.rpg.RpgSkillClient;
+import org.dldyou.rovenfall.rpg.RpgSkillNetwork;
 import org.dldyou.rovenfall.rpg.RpgSkillResetCoordinator;
 import org.dldyou.rovenfall.world.ProtectedRegion;
 import org.dldyou.rovenfall.world.PortalDefinition;
@@ -121,9 +129,15 @@ public final class Rovenfall {
         modContainer.registerConfig(ModConfig.Type.SERVER, ActivityXpConfig.SPEC, "rovenfall-rpg-server.toml");
         modContainer.registerConfig(ModConfig.Type.SERVER, ClaimConfig.SPEC, "rovenfall-claims-server.toml");
         modBus.addListener(this::registerGameTests);
+        modBus.addListener(RpgSkillNetwork::registerPayloads);
+        if (FMLEnvironment.getDist() == Dist.CLIENT) {
+            RpgSkillClient.register(modBus);
+        }
         NeoForge.EVENT_BUS.addListener(RovenfallCommands::register);
         NeoForge.EVENT_BUS.addListener(EconomyService::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(RpgSkillResetCoordinator::onPlayerLoggedIn);
+        NeoForge.EVENT_BUS.addListener(RpgSkillNetwork::onPlayerLoggedIn);
+        NeoForge.EVENT_BUS.addListener(RpgSkillNetwork::onPlayerLoggedOut);
         NeoForge.EVENT_BUS.addListener(PlayerRecordService::onPlayerLoggedIn);
         PortalEvents.register(NeoForge.EVENT_BUS);
         WildernessResetEvents.register(NeoForge.EVENT_BUS);
@@ -231,7 +245,9 @@ public final class Rovenfall {
                 helper.assertTrue(guardian.tier() == 3 && guardian.parents().equals(List.of(id("warrior"))),
                         "N-tier career lineage was not preserved");
                 var active = snapshot.skill(id("power_strike")).orElseThrow();
-                helper.assertTrue(active.kind() == SkillDefinition.Kind.ACTIVE && active.cooldownTicks().isPresent(),
+                helper.assertTrue(active.kind() == SkillDefinition.Kind.ACTIVE && active.cooldownTicks().isPresent()
+                                && active.activeEffect().orElseThrow().target()
+                                == SkillDefinition.TargetType.LIVING_ENTITY,
                         "Active skill metadata was not preserved");
                 var passive = snapshot.skill(id("battle_fury")).orElseThrow();
                 helper.assertTrue(passive.kind() == SkillDefinition.Kind.PASSIVE
@@ -239,6 +255,167 @@ public final class Rovenfall {
                                 == SkillDefinition.EffectType.DAMAGE_DEALT,
                         "Passive skill effect metadata was not preserved");
                 helper.succeed();
+            }
+        });
+        event.registerTest(id("rpg_active_skill"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS,
+                new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 10, 0, true)) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var definitions = RpgDefinitionReloadListener.snapshot(server);
+                var state = RpgPlayerSavedData.get(server);
+                var player = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                var activeSkillLevel = helper.getLevel();
+                BlockPos playerPosition = helper.absolutePos(new BlockPos(1_000, 2, 1_000));
+                BlockPos targetPosition = playerPosition.east(2);
+                activeSkillLevel.getChunkAt(playerPosition);
+                player.setPos(
+                        playerPosition.getX() + 0.5, playerPosition.getY(), playerPosition.getZ() + 0.5);
+                var target = EntityTypes.COW.create(activeSkillLevel, EntitySpawnReason.COMMAND);
+                helper.assertTrue(target != null, "Could not create the power-strike target");
+                target.setPos(
+                        targetPosition.getX() + 0.5, targetPosition.getY(), targetPosition.getZ() + 0.5);
+                activeSkillLevel.addFreshEntity(target);
+                long timestamp = System.currentTimeMillis();
+
+                helper.assertTrue(CareerProgressionService.promote(
+                                state, definitions, player.getUUID(), id("novice"), timestamp,
+                                UUID.randomUUID(), "gametest:active:promote_novice").status()
+                                == CareerProgressionService.Status.SUCCESS,
+                        "Could not promote the active-skill fixture to novice");
+                for (int index = 0; index < 60; index++) {
+                    helper.assertTrue(ActivityXpAwardService.award(
+                                    state, definitions, player.getUUID(), id("combat"), 10,
+                                    timestamp + (index + 1L) * 4_000L, UUID.randomUUID(),
+                                    "gametest:active:novice_" + index).status()
+                                    == ActivityXpAwardService.Status.SUCCESS,
+                            "Could not rank the novice active-skill fixture");
+                }
+                helper.assertTrue(RpgSkillService.learn(
+                                state, definitions, player.getUUID(), id("sturdy_body"),
+                                timestamp + 245_000, UUID.randomUUID(), "gametest:active").status()
+                                == RpgSkillService.Status.SUCCESS
+                                && RpgSkillService.learn(
+                                state, definitions, player.getUUID(), id("sturdy_body"),
+                                timestamp + 245_001, UUID.randomUUID(), "gametest:active").status()
+                                == RpgSkillService.Status.SUCCESS,
+                        "Could not learn the power-strike prerequisite");
+                helper.assertTrue(CareerProgressionService.promote(
+                                state, definitions, player.getUUID(), id("warrior"), timestamp + 246_000,
+                                UUID.randomUUID(), "gametest:active:promote_warrior").status()
+                                == CareerProgressionService.Status.SUCCESS,
+                        "Could not promote the active-skill fixture to warrior");
+                for (int index = 0; index < 100; index++) {
+                    helper.assertTrue(ActivityXpAwardService.award(
+                                    state, definitions, player.getUUID(), id("combat"), 10,
+                                    timestamp + 250_000L + index * 4_000L, UUID.randomUUID(),
+                                    "gametest:active:warrior_" + index).status()
+                                    == ActivityXpAwardService.Status.SUCCESS,
+                            "Could not rank the warrior active-skill fixture");
+                }
+                helper.assertTrue(RpgSkillService.learn(
+                                state, definitions, player.getUUID(), id("power_strike"),
+                                timestamp + 650_000, UUID.randomUUID(), "gametest:active").status()
+                                == RpgSkillService.Status.SUCCESS,
+                        "Could not learn power strike");
+                helper.assertTrue(RpgActiveSkillService.assignSlot(
+                                state, definitions, player.getUUID(), 0, Optional.of(id("power_strike")),
+                                4, timestamp + 651_000, UUID.randomUUID(), "gametest:active").status()
+                                == RpgActiveSkillService.Status.SUCCESS,
+                        "Could not bind power strike");
+
+                helper.runAfterDelay(1, () -> {
+                    long gameTime = activeSkillLevel.getGameTime();
+                    helper.assertTrue(player.isAlive() && !player.isSpectator(),
+                            "Power-strike actor was not an eligible live player");
+                    helper.assertTrue(activeSkillLevel.getEntity(target.getId()) == target && target.isAlive(),
+                            "Power-strike target was not registered and alive");
+                    helper.assertTrue(player.distanceToSqr(target) <= 36.0,
+                            "Power-strike target was outside server range");
+                    helper.assertTrue(player.hasLineOfSight(target),
+                            "Power-strike target was not visible to the server");
+                    var activated = RpgActiveSkillService.activate(
+                            state,
+                            definitions,
+                            RpgDefinitionReloadListener.revision(server),
+                            player.getUUID(),
+                            new RpgActiveSkillService.ActivationRequest(
+                                    RpgDefinitionReloadListener.revision(server),
+                                    1,
+                                    0,
+                                    activeSkillLevel.dimension().identifier(),
+                                    target.getId()),
+                            4,
+                            gameTime,
+                            RpgActiveSkillRuntime.gateway(player));
+                    helper.assertTrue(activated.status() == RpgActiveSkillService.Status.SUCCESS,
+                            "Server did not activate the bound power strike: " + activated.status());
+                    helper.assertTrue(state.state(player.getUUID()).cooldowns().get(id("power_strike"))
+                                    == gameTime + 160,
+                            "Power-strike cooldown was not committed");
+                    float boosted = RpgActiveSkillRuntime.modifyDamage(
+                            player, target, activeSkillLevel.dimension().identifier(), gameTime, 10F);
+                    helper.assertTrue(Math.abs(boosted - 12.5F) < 0.001F,
+                            "Power strike did not apply its rank-scaled server effect");
+                    helper.assertTrue(RpgActiveSkillRuntime.modifyDamage(
+                                    player, target, activeSkillLevel.dimension().identifier(), gameTime, 10F) == 10F,
+                            "Power strike was applied more than once");
+
+                    helper.assertTrue(RpgSkillService.learn(
+                                    state, definitions, player.getUUID(), id("power_strike"),
+                                    timestamp + 652_000, UUID.randomUUID(), "gametest:active").status()
+                                    == RpgSkillService.Status.SUCCESS,
+                            "Could not learn the shield-wall prerequisite");
+                    helper.assertTrue(CareerProgressionService.promote(
+                                    state, definitions, player.getUUID(), id("guardian"), timestamp + 653_000,
+                                    UUID.randomUUID(), "gametest:active:promote_guardian").status()
+                                    == CareerProgressionService.Status.SUCCESS,
+                            "Could not promote the active-skill fixture to guardian");
+                    for (int index = 0; index < 30; index++) {
+                        helper.assertTrue(ActivityXpAwardService.award(
+                                        state, definitions, player.getUUID(), id("combat"), 10,
+                                        timestamp + 654_000L + index * 4_000L, UUID.randomUUID(),
+                                        "gametest:active:guardian_" + index).status()
+                                        == ActivityXpAwardService.Status.SUCCESS,
+                                "Could not rank the guardian active-skill fixture");
+                    }
+                    helper.assertTrue(RpgSkillService.learn(
+                                    state, definitions, player.getUUID(), id("shield_wall"),
+                                    timestamp + 775_000, UUID.randomUUID(), "gametest:active").status()
+                                    == RpgSkillService.Status.SUCCESS,
+                            "Could not learn shield wall");
+                    helper.assertTrue(RpgActiveSkillService.assignSlot(
+                                    state, definitions, player.getUUID(), 1, Optional.of(id("shield_wall")),
+                                    4, timestamp + 776_000, UUID.randomUUID(), "gametest:active").status()
+                                    == RpgActiveSkillService.Status.SUCCESS,
+                            "Could not bind shield wall");
+                    var shield = RpgActiveSkillService.activate(
+                            state,
+                            definitions,
+                            RpgDefinitionReloadListener.revision(server),
+                            player.getUUID(),
+                            new RpgActiveSkillService.ActivationRequest(
+                                    RpgDefinitionReloadListener.revision(server),
+                                    2,
+                                    1,
+                                    activeSkillLevel.dimension().identifier(),
+                                    target.getId()),
+                            4,
+                            gameTime,
+                            RpgActiveSkillRuntime.gateway(player));
+                    helper.assertTrue(shield.status() == RpgActiveSkillService.Status.SUCCESS,
+                            "Self-target shield wall was rejected while looking at an entity: " + shield.status());
+                    float reduced = RpgActiveSkillRuntime.modifyDamage(
+                            null, player, activeSkillLevel.dimension().identifier(), gameTime, 10F);
+                    helper.assertTrue(Math.abs(reduced - 8F) < 0.001F,
+                            "Shield wall did not reduce incoming damage");
+                    helper.assertTrue(RpgActiveSkillRuntime.modifyDamage(
+                                    null, player, activeSkillLevel.dimension().identifier(), gameTime + 100, 10F) == 10F,
+                            "Shield wall did not expire at its server-defined duration");
+                    helper.succeed();
+                });
             }
         });
         event.registerTest(id("rpg_activity_xp"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData) {

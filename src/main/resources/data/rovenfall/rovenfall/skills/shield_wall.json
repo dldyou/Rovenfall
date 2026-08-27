@@ -7,5 +7,11 @@
   "prerequisites": [
     {"skill": "rovenfall:power_strike", "rank": 2}
   ],
-  "cooldown_ticks": 240
+  "cooldown_ticks": 240,
+  "active_effect": {
+    "type": "damage_taken_reduction",
+    "target": "self",
+    "basis_points_per_rank": 2000,
+    "duration_ticks": 100
+  }
 }

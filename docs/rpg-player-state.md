@@ -4,9 +4,10 @@ RPG runtime progression is stored in the permanent overworld data storage under
 `rovenfall:rpg_player_state`. It is intentionally separate from the platform and
 economy root so a future wilderness reset cannot remove progression.
 
-The root is schema version 1 and contains at most 100,000 UUID-keyed player
+The root is schema version 2 and contains at most 100,000 UUID-keyed player
 records. Each record stores activity XP, learned career progress, the active
-career, four indexed active skill slots, skill cooldown deadlines, and a bounded
+career, four indexed active skill slots, skill cooldown deadlines, the last
+processed active-skill request number, and a bounded
 set of first exploration discoveries plus separate bounded activity and career
 provenance trails with globally unique transaction UUIDs. IDs are namespaced resource IDs;
 player names are never keys.
@@ -17,7 +18,7 @@ text, and provenance are bounded before a mutation is committed. A failed
 operation leaves the previous state untouched and only a committed operation
 marks the SavedData dirty.
 
-Schema migrations are explicit. Schema 0 is promoted to schema 1 without
+Schema migrations are explicit. Schema 0 is promoted through schema 1 to schema 2 without
 inventing player records. A newer or invalid schema remains readable but is
 marked read-only; the RPG service rejects mutations until the server supports
 that schema. Unknown definition IDs are preserved by the codec and are not
@@ -46,6 +47,21 @@ Definitions form a validated prerequisite DAG. Passive effect metadata is data-d
 the initial effects modify dealt damage or reduce incoming damage, and only learned
 passives in the active career and its ancestors apply on the server.
 
+Active skills use a strict versioned client-intent protocol. On login the server
+sends the current validated-definition revision, enabled slot count, next request
+number, and a fresh session nonce. A key press sends only that envelope, the slot,
+the actor's claimed dimension, and an optional targeted entity ID. The server
+resolves the bound definition and target, then validates the learned rank, active
+career lineage, definition revision, dimension, range, line of sight, claim
+permission, cooldown, request sequence, and rate limit. Damage, duration, range,
+and cooldown values always come from the installed definition. A processed
+request number and successful cooldown are committed together, so replay remains
+rejected after restart. Cooldown deadlines use the persistent server world game
+time. The initial per-cast cost is cooldown-only; skill points remain a learning
+cost, not a client-supplied activation cost. Short-lived effects are discarded
+when the player logs out, changes career, resets skills, or definitions reload,
+so an effect cannot outlive the state and definition revision that authorized it.
+
 Branch reset removes the selected learned skill and every transitive learned
 dependent. Full reset starts with every learned skill owned by the selected career
 and then applies the same dependent closure, so no surviving skill has a dangling
@@ -58,9 +74,10 @@ dedicated `rpg_skill_payment` receipt is never accepted by generic economy rever
 Branch and full prices are configurable in `rovenfall-rpg-server.toml`.
 
 Player commands are `/rovenfall skill learn <skill>`,
+`/rovenfall skill bind <1..4> <skill>`, `/rovenfall skill unbind <1..4>`,
 `/rovenfall skill reset branch <skill>`, and
-`/rovenfall skill reset full <career>`. Active-skill activation is introduced by
-its own milestone issue. `promotion_cost` remains definition metadata until career
+`/rovenfall skill reset full <career>`. Active slots use configurable Z/X/C/V
+key mappings and the server may enable one to four slots. `promotion_cost` remains definition metadata until career
 promotion receives its own cross-root payment policy. The `Snapshot` view is
 immutable and suitable for administration queries or background read-only work.
 `RpgPlayerSnapshotStore` can persist an atomic compressed NBT copy under

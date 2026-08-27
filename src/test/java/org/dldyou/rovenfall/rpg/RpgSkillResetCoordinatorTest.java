@@ -168,7 +168,13 @@ final class RpgSkillResetCoordinatorTest {
                 List.of(new RpgDefinitionSnapshot.SkillSource(
                         id("skills/strike"), "test", STRIKE,
                         new SkillDefinition("skill.rovenfall.strike", WARRIOR,
-                                SkillDefinition.Kind.ACTIVE, 3, 1, List.of(), Optional.of(20)))));
+                                SkillDefinition.Kind.ACTIVE, 3, 1, List.of(), Optional.of(20), Optional.empty(),
+                                Optional.of(new SkillDefinition.ActiveEffect(
+                                        SkillDefinition.EffectType.DAMAGE_DEALT,
+                                        SkillDefinition.TargetType.LIVING_ENTITY,
+                                        100,
+                                        20,
+                                        4.0))))));
     }
 
     private static Identifier id(String path) {
