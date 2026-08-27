@@ -20,6 +20,7 @@ import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import org.dldyou.rovenfall.Rovenfall;
+import org.dldyou.rovenfall.rpg.ActivityWorldSavedData;
 import org.dldyou.rovenfall.world.WorldTopology;
 
 public final class WildernessResetService {
@@ -142,7 +143,10 @@ public final class WildernessResetService {
             if (!server.saveEverything(false, true, true)) {
                 throw new WildernessResetStore.StoreException("server_save_failed");
             }
-            recoveryEvidence = store.createSnapshot(recoverySnapshotId, WorldTopology.wildernessPath(server));
+            recoveryEvidence = store.createSnapshot(
+                    recoverySnapshotId,
+                    WorldTopology.wildernessPath(server),
+                    ActivityWorldSavedData.get(server).snapshotDimension(WorldTopology.WILDERNESS));
             recoverySnapshotCreated = true;
             if (kind == WildernessResetState.Kind.RESET) {
                 targetSnapshotId = recoverySnapshotId;
@@ -232,15 +236,19 @@ public final class WildernessResetService {
                 if (active.isPresent()) {
                     throw new WildernessResetStore.StoreException("lifecycle_operation_mismatch");
                 }
+            } else if (active.isEmpty() || !active.orElseThrow().equals(operation)) {
+                throw new WildernessResetStore.StoreException("lifecycle_operation_mismatch");
+            }
+            if (result.succeeded()) {
+                reconcileActivityMarkers(server, store, operation);
+            }
+            if (evidenceRecorded) {
                 if (result.succeeded()) {
                     store.cleanupCommittedSwap(operation.transactionId());
                 }
                 store.acknowledgeLifecycleResult(result.succeeded());
                 store.discardUnrecordedSnapshots(recordedSnapshotIds(state));
                 return;
-            }
-            if (active.isEmpty() || !active.orElseThrow().equals(operation)) {
-                throw new WildernessResetStore.StoreException("lifecycle_operation_mismatch");
             }
             WildernessResetState.Result evidenceResult = result.succeeded()
                     ? WildernessResetState.Result.COMPLETED : WildernessResetState.Result.FAILED;
@@ -274,6 +282,25 @@ public final class WildernessResetService {
         }
         requireLifecycleResult(state.isWildernessOperationLocked());
         store.discardUnrecordedSnapshots(recordedSnapshotIds(state));
+    }
+
+    private static void reconcileActivityMarkers(
+            MinecraftServer server,
+            WildernessResetStore store,
+            WildernessResetState.Operation operation) throws WildernessResetStore.StoreException {
+        ActivityWorldSavedData activityState = ActivityWorldSavedData.get(server);
+        if (!activityState.isWritable() || activityState.isSaturated()) {
+            return;
+        }
+        if (operation.kind() == WildernessResetState.Kind.RESET) {
+            activityState.clearDimension(WorldTopology.WILDERNESS);
+            return;
+        }
+        ActivityWorldSavedData.DimensionSnapshot markers = store.activityMarkers(operation.snapshotId());
+        if (!markers.dimension().equals(WorldTopology.WILDERNESS)
+                || !activityState.replaceDimension(markers)) {
+            throw new WildernessResetStore.StoreException("activity_marker_restore_failed");
+        }
     }
 
     static void requireLifecycleResult(boolean operationLocked) throws WildernessResetStore.StoreException {

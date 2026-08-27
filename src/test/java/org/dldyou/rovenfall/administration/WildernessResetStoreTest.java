@@ -14,6 +14,8 @@ import java.util.UUID;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtOps;
+import net.minecraft.world.level.Level;
+import org.dldyou.rovenfall.rpg.ActivityWorldSavedData;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -58,6 +60,23 @@ final class WildernessResetStoreTest {
     }
 
     @Test
+    void snapshotEvidenceIncludesRestorableActivityMarkers() throws Exception {
+        Path wilderness = temporaryDirectory.resolve("dimensions/rovenfall/wilderness");
+        Files.createDirectories(wilderness);
+        Files.writeString(wilderness.resolve("world.txt"), "world");
+        WildernessResetStore store = new WildernessResetStore(temporaryDirectory.resolve("operations"));
+        UUID snapshotId = UUID.randomUUID();
+        var markers = new ActivityWorldSavedData.DimensionSnapshot(
+                Level.NETHER, Set.of(new net.minecraft.core.BlockPos(4, 32, 8).asLong()));
+
+        var evidence = store.createSnapshot(snapshotId, wilderness, markers);
+
+        assertEquals(markers, store.activityMarkers(snapshotId));
+        assertEquals(evidence, store.snapshotEvidence(snapshotId));
+        assertEquals(2L, evidence.fileCount());
+    }
+
+    @Test
     void missingStagingRollsBackWithoutReplacingAuthoritativeWorld() throws Exception {
         Path wilderness = temporaryDirectory.resolve("dimensions/rovenfall/wilderness");
         Files.createDirectories(wilderness);
@@ -77,6 +96,53 @@ final class WildernessResetStoreTest {
         assertFalse(failed.succeeded());
         assertEquals("keep", Files.readString(marker));
         assertTrue(store.lifecycleResult().orElseThrow().detail().contains("failed"));
+    }
+
+    @Test
+    void tamperedRestoreStagingFailsBeforeReplacingAuthoritativeWorld() throws Exception {
+        Path wilderness = temporaryDirectory.resolve("dimensions/rovenfall/wilderness");
+        Files.createDirectories(wilderness);
+        Path authoritative = wilderness.resolve("authoritative.txt");
+        Files.writeString(authoritative, "current");
+        Path operations = temporaryDirectory.resolve("operations");
+        WildernessResetStore store = new WildernessResetStore(operations);
+        UUID targetId = UUID.randomUUID();
+        var target = store.createSnapshot(targetId, wilderness);
+        UUID recoveryId = UUID.randomUUID();
+        var recovery = store.createSnapshot(recoveryId, wilderness);
+        var restore = operation(
+                WildernessResetState.Kind.RESTORE, targetId, recoveryId, UUID.randomUUID(), target, recovery);
+        store.prepareRestore(restore);
+        store.writePending(restore);
+        Files.writeString(
+                operations.resolve("staging").resolve(restore.transactionId().toString())
+                        .resolve("world/injected.txt"),
+                "tampered");
+
+        var result = store.applyPending(wilderness).orElseThrow();
+
+        assertFalse(result.succeeded());
+        assertEquals("current", Files.readString(authoritative));
+        assertFalse(Files.exists(wilderness.resolve("injected.txt")));
+    }
+
+    @Test
+    void missingRecoverySnapshotPreventsRestoreFromBeingArmed() throws Exception {
+        Path wilderness = temporaryDirectory.resolve("dimensions/rovenfall/wilderness");
+        Files.createDirectories(wilderness);
+        Files.writeString(wilderness.resolve("world.txt"), "current");
+        WildernessResetStore store = new WildernessResetStore(temporaryDirectory.resolve("operations"));
+        UUID targetId = UUID.randomUUID();
+        var target = store.createSnapshot(targetId, wilderness);
+        UUID recoveryId = UUID.randomUUID();
+        var recovery = store.createSnapshot(recoveryId, wilderness);
+        var restore = operation(
+                WildernessResetState.Kind.RESTORE, targetId, recoveryId, UUID.randomUUID(), target, recovery);
+        store.prepareRestore(restore);
+        store.discardSnapshot(recoveryId);
+
+        assertThrows(WildernessResetStore.StoreException.class, () -> store.writePending(restore));
+        assertFalse(store.hasPending());
     }
 
     @Test
@@ -151,6 +217,25 @@ final class WildernessResetStoreTest {
         CompoundTag manifest = (CompoundTag) WildernessResetState.Operation.CODEC
                 .encodeStart(NbtOps.INSTANCE, operation).getOrThrow();
         manifest.putLong("file_count", -1L);
+        NbtIo.writeCompressed(manifest, operations.resolve("pending.nbt"));
+
+        assertThrows(WildernessResetStore.StoreException.class, () -> store.applyPending(wilderness));
+    }
+
+    @Test
+    void inconsistentResetRecoveryEvidenceFailsManifestValidation() throws Exception {
+        Path wilderness = temporaryDirectory.resolve("dimensions/rovenfall/wilderness");
+        Files.createDirectories(wilderness);
+        Path operations = temporaryDirectory.resolve("operations");
+        Files.createDirectories(operations);
+        WildernessResetStore store = new WildernessResetStore(operations);
+        UUID snapshotId = UUID.randomUUID();
+        var snapshot = store.createSnapshot(snapshotId, wilderness);
+        var operation = operation(
+                WildernessResetState.Kind.RESET, snapshotId, snapshotId, UUID.randomUUID(), snapshot, snapshot);
+        CompoundTag manifest = (CompoundTag) WildernessResetState.Operation.CODEC
+                .encodeStart(NbtOps.INSTANCE, operation).getOrThrow();
+        manifest.putLong("recovery_file_count", snapshot.fileCount() + 1L);
         NbtIo.writeCompressed(manifest, operations.resolve("pending.nbt"));
 
         assertThrows(WildernessResetStore.StoreException.class, () -> store.applyPending(wilderness));

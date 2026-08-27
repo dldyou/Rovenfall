@@ -26,16 +26,20 @@ Each reason is required, and transaction UUIDs make retries detectable.
 
 Snapshots, staging data, retired worlds, and lifecycle manifests live under
 `<world>/rovenfall/wilderness-resets`. Snapshot evidence records the file count, byte count, and
-SHA-256 digest in the permanent overworld `rovenfall:platform` SavedData. At most eight snapshot
-directories are accepted; reaching the limit fails before evacuation or world replacement so an
-operator can archive old snapshots deliberately.
+SHA-256 digest in the permanent overworld `rovenfall:platform` SavedData. Each snapshot also
+captures Wilderness placed-resource provenance so restored ores cannot be treated as natural. At
+most eight snapshot directories are accepted; reaching the limit fails before evacuation or world
+replacement so an operator can archive old snapshots deliberately.
 
 While an operation is staged, portal travel and Wilderness block, interaction, entity, fluid,
-piston, fire, and explosion mutations are denied. Failure before the atomic manifest leaves the
+piston, fire, and explosion mutations are denied. Preparation or evacuation failure leaves the
 current Wilderness authoritative and rolls back any partial evacuation; a failed return teleport is
-reported separately and never permits world replacement. Failure while applying a
-manifest restores the retired directory before the server loads levels; an unrecoverable filesystem
-failure aborts startup for manual intervention rather than loading an ambiguous world.
+reported separately and never permits world replacement. The operation lock and evacuated player
+positions are persisted before the atomic manifest is armed. If that persistence or manifest write
+fails, the server stops without replacing the world and any persisted lock requires operator
+intervention. Failure while applying a manifest restores the retired directory before the server
+loads levels; an unrecoverable filesystem failure aborts startup for manual intervention rather
+than loading an ambiguous world.
 
 All managed paths are confined below the configured world root. Symbolic links, junction-like
 reparse entries, conflicting or unreadable lifecycle manifests, and mismatched operation IDs abort

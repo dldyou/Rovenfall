@@ -152,7 +152,11 @@ public record WildernessResetState(
                     && snapshotId != null && !ZERO_UUID.equals(snapshotId)
                     && recoverySnapshotId != null && !ZERO_UUID.equals(recoverySnapshotId)
                     && actorId != null
-                    && (kind == Kind.RESET ? snapshotId.equals(recoverySnapshotId)
+                    && (kind == Kind.RESET
+                            ? snapshotId.equals(recoverySnapshotId)
+                                    && fileCount == recoveryFileCount
+                                    && byteCount == recoveryByteCount
+                                    && java.util.Objects.equals(sha256, recoverySha256)
                             : !snapshotId.equals(recoverySnapshotId))
                     && requestedAtEpochMillis >= 0 && validReason(reason) && fileCount >= 0 && byteCount >= 0
                     && sha256 != null && sha256.matches("[0-9a-f]{64}")

@@ -152,8 +152,15 @@ public final class Rovenfall {
                         "Hub has no safe reset evacuation destination");
                 var state = PlatformSavedData.get(server);
                 var rpg = RpgPlayerSavedData.get(server);
+                UUID preservedPlayer = UUID.randomUUID();
                 UUID warningId = UUID.randomUUID();
                 long now = System.currentTimeMillis();
+                helper.assertTrue(ActivityXpAwardService.award(
+                                rpg, RpgDefinitionReloadListener.snapshot(server), preservedPlayer,
+                                id("combat"), 1, now, UUID.randomUUID(), "wilderness-preflight")
+                                .status() == ActivityXpAwardService.Status.SUCCESS,
+                        "Could not create isolated RPG preservation evidence");
+                var preservedRpgState = rpg.state(preservedPlayer);
                 helper.assertTrue(WildernessResetService.warn(
                                 state, AdministrationService.SYSTEM_ACTOR, true,
                                 "gametest unavailable topology", now, warningId).status()
@@ -166,7 +173,7 @@ public final class Rovenfall {
                         "Missing Wilderness topology did not fail closed");
                 helper.assertTrue(!state.isWildernessOperationLocked(),
                         "Failed Wilderness preflight left an operation lock");
-                helper.assertTrue(rpg.playerCount() == 0,
+                helper.assertTrue(rpg.state(preservedPlayer).equals(preservedRpgState),
                         "Failed Wilderness preflight changed global RPG state");
                 helper.succeed();
             }

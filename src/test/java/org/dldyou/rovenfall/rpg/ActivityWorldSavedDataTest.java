@@ -77,4 +77,20 @@ final class ActivityWorldSavedDataTest {
         assertTrue(state.consumeSynthetic(Level.OVERWORLD, SOURCE));
         assertFalse(state.consumeSynthetic(Level.NETHER, SOURCE));
     }
+
+    @Test
+    void restoreReplacesOnlyTheSnapshotDimensionMarkers() {
+        ActivityWorldSavedData state = new ActivityWorldSavedData();
+        BlockPos restored = SOURCE.offset(8, 0, 8);
+        state.markSynthetic(Level.OVERWORLD, SOURCE);
+        state.markSynthetic(Level.NETHER, SOURCE);
+        ActivityWorldSavedData.DimensionSnapshot snapshot = new ActivityWorldSavedData.DimensionSnapshot(
+                Level.NETHER, java.util.Set.of(restored.asLong()));
+
+        assertTrue(state.replaceDimension(snapshot));
+
+        assertTrue(state.consumeSynthetic(Level.OVERWORLD, SOURCE));
+        assertFalse(state.consumeSynthetic(Level.NETHER, SOURCE));
+        assertTrue(state.consumeSynthetic(Level.NETHER, restored));
+    }
 }

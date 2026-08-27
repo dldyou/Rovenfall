@@ -25,10 +25,12 @@ import net.minecraft.nbt.NbtIo;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.storage.LevelResource;
+import org.dldyou.rovenfall.rpg.ActivityWorldSavedData;
 import org.dldyou.rovenfall.world.WorldTopology;
 
 final class WildernessResetStore {
     static final int MAX_SNAPSHOTS = 8;
+    private static final String ACTIVITY_MARKERS_FILE = "activity-markers.nbt";
     private static final long MAX_FILES = 1_000_000L;
     private static final long MAX_MANIFEST_BYTES = 1L * 1024L * 1024L;
     private final Path root;
@@ -49,7 +51,10 @@ final class WildernessResetStore {
                 worldRoot.resolve("rovenfall").resolve("wilderness-resets"), worldRoot);
     }
 
-    SnapshotEvidence createSnapshot(UUID snapshotId, Path wildernessPath) throws StoreException {
+    SnapshotEvidence createSnapshot(
+            UUID snapshotId,
+            Path wildernessPath,
+            ActivityWorldSavedData.DimensionSnapshot activityMarkers) throws StoreException {
         Path target = snapshotWorld(snapshotId);
         Path temporary = snapshotDirectory(snapshotId).resolveSibling(snapshotId + ".tmp");
         try {
@@ -59,11 +64,15 @@ final class WildernessResetStore {
             requireManagedPath(temporary);
             requireWorldDirectory(wildernessPath);
             Files.createDirectories(root.resolve("snapshots"));
-            if (Files.exists(target) || Files.exists(temporary) || snapshotCount() >= MAX_SNAPSHOTS) {
+            if (Files.exists(snapshotDirectory(snapshotId))
+                    || Files.exists(temporary)
+                    || snapshotCount() >= MAX_SNAPSHOTS) {
                 throw new StoreException("snapshot_unavailable");
             }
             copyTree(wildernessPath, temporary.resolve("world"));
-            SnapshotEvidence evidence = inspectTree(temporary.resolve("world"));
+            writeAtomic(temporary.resolve(ACTIVITY_MARKERS_FILE),
+                    ActivityWorldSavedData.DimensionSnapshot.CODEC, activityMarkers);
+            SnapshotEvidence evidence = inspectTree(temporary);
             moveAtomic(temporary, snapshotDirectory(snapshotId));
             return evidence;
         } catch (IOException | StoreException exception) {
@@ -72,13 +81,24 @@ final class WildernessResetStore {
         }
     }
 
+    SnapshotEvidence createSnapshot(UUID snapshotId, Path wildernessPath) throws StoreException {
+        return createSnapshot(snapshotId, wildernessPath,
+                ActivityWorldSavedData.DimensionSnapshot.empty(WorldTopology.WILDERNESS));
+    }
+
     void discardSnapshot(UUID snapshotId) {
         deleteQuietly(snapshotDirectory(snapshotId));
     }
 
     SnapshotEvidence snapshotEvidence(UUID snapshotId) throws StoreException {
-        requireManagedPath(snapshotWorld(snapshotId));
-        return inspectTree(snapshotWorld(snapshotId));
+        requireManagedPath(snapshotDirectory(snapshotId));
+        return inspectTree(snapshotDirectory(snapshotId));
+    }
+
+    ActivityWorldSavedData.DimensionSnapshot activityMarkers(UUID snapshotId) throws StoreException {
+        Path source = snapshotDirectory(snapshotId).resolve(ACTIVITY_MARKERS_FILE).normalize();
+        requireManagedPath(source);
+        return read(source, ActivityWorldSavedData.DimensionSnapshot.CODEC);
     }
 
     void prepareReset(WildernessResetState.Operation operation) throws StoreException {
@@ -86,21 +106,24 @@ final class WildernessResetStore {
     }
 
     void prepareRestore(WildernessResetState.Operation operation) throws StoreException {
-        Path source = snapshotWorld(operation.snapshotId());
+        Path sourceDirectory = snapshotDirectory(operation.snapshotId());
+        Path source = sourceDirectory.resolve("world");
         try {
-            requireManagedPath(source);
+            requireManagedPath(sourceDirectory);
             requireManagedPath(stagingDirectory(operation.transactionId()));
-            SnapshotEvidence evidence = inspectTree(source);
+            SnapshotEvidence evidence = inspectTree(sourceDirectory);
             if (!evidence.matches(operation)) {
                 throw new StoreException("snapshot_evidence_mismatch");
             }
+            activityMarkers(operation.snapshotId());
+            SnapshotEvidence worldEvidence = inspectTree(source);
             Path staging = stagingWorld(operation.transactionId());
             if (Files.exists(stagingDirectory(operation.transactionId()))) {
                 throw new StoreException("staging_exists");
             }
             Files.createDirectories(stagingDirectory(operation.transactionId()));
             copyTree(source, staging);
-            if (!inspectTree(staging).matches(operation)) {
+            if (!inspectTree(staging).equals(worldEvidence)) {
                 throw new StoreException("staging_evidence_mismatch");
             }
         } catch (IOException | StoreException exception) {
@@ -117,6 +140,7 @@ final class WildernessResetStore {
                 || Files.exists(retiredWorld(operation.transactionId()))) {
             throw new StoreException("staging_missing");
         }
+        validatePreparedArtifacts(operation, stagingWorld(operation.transactionId()));
         writeAtomic(pendingPath(), WildernessResetState.Operation.CODEC, operation);
     }
 
@@ -144,8 +168,21 @@ final class WildernessResetStore {
         try {
             Files.createDirectories(retired.getParent());
             if (Files.exists(retired) && Files.exists(target) && !Files.exists(staging)) {
+                validateAppliedWorld(operation, target);
                 markApplied(operation);
                 return Optional.of(new LifecycleResult(operation, true, "completed"));
+            }
+            if (Files.exists(retired) && Files.exists(target)) {
+                throw new StoreException("ambiguous_swap_state");
+            }
+            try {
+                validatePreparedArtifacts(operation, staging);
+            } catch (StoreException validationFailure) {
+                if (!Files.exists(retired) && Files.exists(target)) {
+                    markFailed(operation, "artifact_validation_failed");
+                    return Optional.of(new LifecycleResult(operation, false, "artifact_validation_failed"));
+                }
+                throw validationFailure;
             }
             if (!Files.exists(retired)) {
                 requireWorldDirectory(target);
@@ -169,6 +206,54 @@ final class WildernessResetStore {
                 return Optional.of(new LifecycleResult(operation, false, "filesystem_apply_failed"));
             }
             throw new StoreException(exception);
+        }
+    }
+
+    private void validatePreparedArtifacts(WildernessResetState.Operation operation, Path staging)
+            throws StoreException {
+        validateSnapshot(operation.snapshotId(), operation, false);
+        if (!operation.recoverySnapshotId().equals(operation.snapshotId())) {
+            validateSnapshot(operation.recoverySnapshotId(), operation, true);
+        }
+        SnapshotEvidence stagingEvidence = inspectTree(staging);
+        if (operation.kind() == WildernessResetState.Kind.RESET) {
+            if (stagingEvidence.fileCount() != 0L || stagingEvidence.byteCount() != 0L) {
+                throw new StoreException("reset_staging_not_empty");
+            }
+            return;
+        }
+        SnapshotEvidence sourceEvidence = inspectTree(snapshotWorld(operation.snapshotId()));
+        if (!stagingEvidence.equals(sourceEvidence)) {
+            throw new StoreException("staging_evidence_mismatch");
+        }
+    }
+
+    private void validateAppliedWorld(WildernessResetState.Operation operation, Path appliedWorld)
+            throws StoreException {
+        SnapshotEvidence appliedEvidence = inspectTree(appliedWorld);
+        if (operation.kind() == WildernessResetState.Kind.RESET) {
+            if (appliedEvidence.fileCount() != 0L || appliedEvidence.byteCount() != 0L) {
+                throw new StoreException("reset_world_not_empty");
+            }
+            return;
+        }
+        if (!appliedEvidence.equals(inspectTree(snapshotWorld(operation.snapshotId())))) {
+            throw new StoreException("applied_world_evidence_mismatch");
+        }
+    }
+
+    private void validateSnapshot(
+            UUID snapshotId,
+            WildernessResetState.Operation operation,
+            boolean recovery) throws StoreException {
+        SnapshotEvidence evidence = inspectTree(snapshotDirectory(snapshotId));
+        boolean matches = recovery ? evidence.matchesRecovery(operation) : evidence.matches(operation);
+        if (!matches) {
+            throw new StoreException(recovery
+                    ? "recovery_snapshot_evidence_mismatch" : "snapshot_evidence_mismatch");
+        }
+        if (!activityMarkers(snapshotId).dimension().equals(WorldTopology.WILDERNESS)) {
+            throw new StoreException("activity_marker_dimension_mismatch");
         }
     }
 
@@ -334,8 +419,17 @@ final class WildernessResetStore {
             long files = 0;
             long bytes = 0;
             try (Stream<Path> paths = Files.walk(source)) {
-                for (Path path : paths.filter(Files::isRegularFile).sorted().toList()) {
-                    if (Files.isSymbolicLink(path) || ++files > MAX_FILES) {
+                for (Path path : paths.sorted().toList()) {
+                    if (path.equals(source)) {
+                        continue;
+                    }
+                    if (Files.isSymbolicLink(path)) {
+                        throw new StoreException("snapshot_entry_rejected");
+                    }
+                    if (Files.isDirectory(path)) {
+                        continue;
+                    }
+                    if (!Files.isRegularFile(path) || ++files > MAX_FILES) {
                         throw new StoreException("snapshot_entry_rejected");
                     }
                     byte[] name = source.relativize(path).toString().replace('\\', '/').getBytes(StandardCharsets.UTF_8);
@@ -517,6 +611,12 @@ final class WildernessResetStore {
         boolean matches(WildernessResetState.Operation operation) {
             return fileCount == operation.fileCount() && byteCount == operation.byteCount()
                     && sha256.equals(operation.sha256());
+        }
+
+        boolean matchesRecovery(WildernessResetState.Operation operation) {
+            return fileCount == operation.recoveryFileCount()
+                    && byteCount == operation.recoveryByteCount()
+                    && sha256.equals(operation.recoverySha256());
         }
     }
 
