@@ -126,6 +126,8 @@
   "config.rovenfall.rpg.activity_xp.max_window_awards": "Maximum activity outcomes per window",
   "config.rovenfall.rpg.activity_xp.window_seconds": "Activity XP rate window (seconds)",
   "config.rovenfall.rpg.activity_xp.cooldown_millis": "Activity source cooldown (milliseconds)",
+  "config.rovenfall.rpg.activity_xp.combat_target_xp_cap": "Maximum combat XP per player and target",
+  "config.rovenfall.rpg.activity_xp.exploration_advancements": "Advancements eligible for exploration XP",
   "economy_transaction_kind.rovenfall.claim_purchase": "Claim purchase",
   "economy_transaction_kind.rovenfall.claim_sale": "Claim sale",
   "claim_role.rovenfall.owner": "Owner",

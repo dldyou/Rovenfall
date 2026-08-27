@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
@@ -32,6 +33,7 @@ final class RpgPlayerStateTest {
                 Optional.of(NOVICE),
                 Map.of(3, POWER),
                 Map.of(POWER, 1_000L),
+                Set.of(Identifier.parse("minecraft:adventure/adventuring_time")),
                 List.of(new RpgPlayerState.ProgressionProvenance(
                         RpgPlayerState.ProgressionProvenance.Kind.ACTIVITY_XP,
                         COMBAT, 500, 42, idUuid(10), "gametest")));

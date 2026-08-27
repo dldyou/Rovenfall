@@ -126,6 +126,8 @@
   "config.rovenfall.rpg.activity_xp.max_window_awards": "시간 창당 최대 활동 결과 수",
   "config.rovenfall.rpg.activity_xp.window_seconds": "활동 경험치 제한 시간 창(초)",
   "config.rovenfall.rpg.activity_xp.cooldown_millis": "활동 출처 재사용 대기 시간(밀리초)",
+  "config.rovenfall.rpg.activity_xp.combat_target_xp_cap": "플레이어별 대상당 최대 전투 경험치",
+  "config.rovenfall.rpg.activity_xp.exploration_advancements": "탐험 경험치 대상 발전 과제",
   "economy_transaction_kind.rovenfall.claim_purchase": "토지 구매",
   "economy_transaction_kind.rovenfall.claim_sale": "토지 판매",
   "claim_role.rovenfall.owner": "소유자",
