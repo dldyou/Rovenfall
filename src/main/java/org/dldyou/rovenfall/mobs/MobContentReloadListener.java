@@ -9,7 +9,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import net.minecraft.resources.FileToIdConverter;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
@@ -20,7 +19,6 @@ import net.minecraft.server.packs.resources.SimplePreparableReloadListener;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.neoforged.neoforge.resource.ListenerKey;
 import org.dldyou.rovenfall.Rovenfall;
-import org.dldyou.rovenfall.world.WorldTopology;
 import org.slf4j.Logger;
 
 public final class MobContentReloadListener extends SimplePreparableReloadListener<MobContentSnapshot> {
@@ -97,8 +95,9 @@ public final class MobContentReloadListener extends SimplePreparableReloadListen
     }
 
     private MobContentSnapshot.RuntimeBindings runtimeBindings() {
-        return MobContentSnapshot.RuntimeBindings.strict(
-                getRegistryLookup(), WorldTopology.HUB, Set.of(WorldTopology.WILDERNESS));
+        // World levels are created after datapack reload. Static validation permits only the canonical
+        // Wilderness key here; arbitrary dimensions and every unknown loot table still fail closed.
+        return MobContentSnapshot.RuntimeBindings.awaitingWildernessRegistration(getRegistryLookup());
     }
 
     public MobContentSnapshot snapshot() {

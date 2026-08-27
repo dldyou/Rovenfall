@@ -344,6 +344,11 @@ public final class PlatformSavedData extends SavedData {
         return auditEntries.size();
     }
 
+    boolean hasAuditTransaction(UUID transactionId) {
+        return transactionId != null && auditEntries.stream()
+                .anyMatch(entry -> transactionId.equals(entry.transactionId()));
+    }
+
     public AuditPage auditPage(int page, int pageSize) {
         if (page < 0 || pageSize < 1 || pageSize > MAX_AUDIT_PAGE_SIZE) {
             throw new IllegalArgumentException("Invalid audit page request");

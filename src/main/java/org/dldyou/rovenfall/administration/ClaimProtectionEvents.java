@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -36,6 +37,7 @@ import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.common.util.FakePlayer;
 import net.neoforged.neoforge.event.entity.EntityMountEvent;
 import net.neoforged.neoforge.event.entity.EntityInvulnerabilityCheckEvent;
 import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
@@ -565,6 +567,10 @@ public final class ClaimProtectionEvents {
             ClaimProtectionService.Action action) {
         PlatformSavedData state = PlatformSavedData.get(level.getServer());
         ClaimKey key = ClaimKey.at(level.dimension(), position);
+        if (player instanceof FakePlayer) {
+            return new Access(state, key, action, new ClaimProtectionService.Decision(
+                    false, ClaimProtectionService.Reason.FAKE_PLAYER, ClaimRole.VISITOR, Optional.empty()));
+        }
         var hub = level.getServer().overworld();
         boolean nativeOverride = player.permissions().hasPermission(Permissions.COMMANDS_OWNER)
                 && !state.hasAnyAdminRoles();

@@ -869,7 +869,7 @@ public final class RovenfallCommands {
             CommandSourceStack source,
             ProtectedRegionService.Status status) {
         return switch (status) {
-            case INVALID_REQUEST, INVALID_TRANSACTION -> failure(
+            case INVALID_REQUEST, INVALID_TRANSACTION, DUPLICATE_TRANSACTION -> failure(
                     source, "command.rovenfall.admin.region.error.invalid_request");
             case INVALID_REASON -> failure(
                     source, "command.rovenfall.admin.error.invalid_reason", AdministrationService.MAX_REASON_LENGTH);

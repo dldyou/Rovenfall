@@ -152,6 +152,7 @@ public final class ClaimProtectionService {
 
     public enum Reason {
         INVALID_REQUEST("invalid_request"),
+        FAKE_PLAYER("fake_player"),
         OUTSIDE_HUB("outside_hub"),
         ADMINISTRATOR_OVERRIDE("administrator_override"),
         PROTECTED_PUBLIC_ENTRY("protected_public_entry"),

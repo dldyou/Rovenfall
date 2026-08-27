@@ -95,6 +95,9 @@ public final class ProtectedRegionService {
             return denied(state, actorId, regionId, requested, Status.INVALID_REQUEST, "administrator_mismatch",
                     timestampEpochMillis, transactionId);
         }
+        if (state.hasAuditTransaction(transactionId)) {
+            return new MutationResult(Status.DUPLICATE_TRANSACTION, transactionId, false);
+        }
 
         Optional<ProtectedRegion> previous = state.protectedRegion(regionId);
         if (create && previous.isPresent()) {
@@ -171,6 +174,7 @@ public final class ProtectedRegionService {
         SUCCESS,
         INVALID_REQUEST,
         INVALID_TRANSACTION,
+        DUPLICATE_TRANSACTION,
         INVALID_REASON,
         READ_ONLY_SCHEMA,
         UNAUTHORIZED,

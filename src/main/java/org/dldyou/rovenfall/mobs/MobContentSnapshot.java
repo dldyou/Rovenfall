@@ -415,8 +415,8 @@ public final class MobContentSnapshot {
         Source source = sources.get(id);
         if (dimension.equals(bindings.hubDimension())) {
             problems.add(problem(source, id, "mob content cannot target the Hub dimension"));
-        } else if (!bindings.configuredDimensions().contains(dimension)
-                && bindings.registries().get(dimension).isEmpty()) {
+        } else if (bindings.registries().get(dimension).isEmpty()
+                && !(bindings.allowUnboundWilderness() && dimension.equals(WILDERNESS_DIMENSION))) {
             problems.add(problem(source, id, "unknown dimension: " + dimension.identifier()));
         }
     }
@@ -431,18 +431,18 @@ public final class MobContentSnapshot {
     public record RuntimeBindings(
             HolderLookup.Provider registries,
             ResourceKey<Level> hubDimension,
-            Set<ResourceKey<Level>> configuredDimensions) {
+            boolean allowUnboundWilderness) {
         public RuntimeBindings {
             Objects.requireNonNull(registries, "registries");
             Objects.requireNonNull(hubDimension, "hubDimension");
-            configuredDimensions = Set.copyOf(configuredDimensions);
         }
 
-        public static RuntimeBindings strict(
-                HolderLookup.Provider registries,
-                ResourceKey<Level> hubDimension,
-                Set<ResourceKey<Level>> configuredDimensions) {
-            return new RuntimeBindings(registries, hubDimension, configuredDimensions);
+        public static RuntimeBindings awaitingWildernessRegistration(HolderLookup.Provider registries) {
+            return new RuntimeBindings(registries, Level.OVERWORLD, true);
+        }
+
+        public static RuntimeBindings strict(HolderLookup.Provider registries, ResourceKey<Level> hubDimension) {
+            return new RuntimeBindings(registries, hubDimension, false);
         }
     }
 

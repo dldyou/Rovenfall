@@ -44,6 +44,13 @@ final class ProtectedRegionServiceTest {
                 + state.protectedRegionsAt(new ClaimKey(WorldTopology.HUB, 41, 50)).size()
                 + state.protectedRegionsAt(new ClaimKey(WorldTopology.HUB, 40, 51)).size()
                 + state.protectedRegionsAt(new ClaimKey(WorldTopology.HUB, 41, 51)).size());
+        int auditsBeforeReplay = state.auditCount();
+        assertEquals(ProtectedRegionService.Status.DUPLICATE_TRANSACTION, ProtectedRegionService.edit(
+                state, owner, false, regionId,
+                new ProtectedRegion(owner, WorldTopology.HUB, 60, 60, 60, 60),
+                "replay", 6_100, id(104)).status());
+        assertEquals(hubRegion, state.protectedRegion(regionId).orElseThrow());
+        assertEquals(auditsBeforeReplay, state.auditCount());
 
         int auditsBeforeNullCreate = state.auditCount();
         var nullCreate = ProtectedRegionService.create(

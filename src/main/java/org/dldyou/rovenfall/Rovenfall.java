@@ -1,5 +1,6 @@
 package org.dldyou.rovenfall;
 
+import com.mojang.authlib.GameProfile;
 import com.google.gson.JsonParser;
 import com.mojang.serialization.JsonOps;
 import java.util.ArrayList;
@@ -419,6 +420,12 @@ public final class Rovenfall {
                         level, ownedPosition, level.getBlockState(ownedPosition), fakePlayer);
                 NeoForge.EVENT_BUS.post(fakeBreak);
                 helper.assertTrue(fakeBreak.isCanceled(), "Untrusted fake-player break event was allowed");
+                var spoofedOwner = FakePlayerFactory.get(
+                        level, new GameProfile(owner.getUUID(), "[SpoofedOwner]"));
+                var spoofedBreak = new BreakBlockEvent(
+                        level, ownedPosition, level.getBlockState(ownedPosition), spoofedOwner);
+                NeoForge.EVENT_BUS.post(spoofedBreak);
+                helper.assertTrue(spoofedBreak.isCanceled(), "Fake player spoofed the claim owner's UUID");
 
                 BlockPos sameOwnerSource = new BlockPos(
                         (ownerKey.chunkX() << 4) + 15, 70, (ownerKey.chunkZ() << 4) + 8);
