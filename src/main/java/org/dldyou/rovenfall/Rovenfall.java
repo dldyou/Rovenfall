@@ -70,6 +70,9 @@ import org.dldyou.rovenfall.administration.ClaimPurchaseService;
 import org.dldyou.rovenfall.administration.ClaimProtectionEvents;
 import org.dldyou.rovenfall.administration.ClaimProtectionService;
 import org.dldyou.rovenfall.administration.ProtectedRegionService;
+import org.dldyou.rovenfall.administration.PortalEvents;
+import org.dldyou.rovenfall.administration.PortalService;
+import org.dldyou.rovenfall.administration.PortalTravelService;
 import org.dldyou.rovenfall.claims.ClaimConfig;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimRole;
@@ -83,6 +86,7 @@ import org.dldyou.rovenfall.mobs.MobContentSnapshot;
 import org.dldyou.rovenfall.rpg.RpgDefinitionReloadListener;
 import org.dldyou.rovenfall.rpg.SkillDefinition;
 import org.dldyou.rovenfall.world.ProtectedRegion;
+import org.dldyou.rovenfall.world.PortalDefinition;
 import org.dldyou.rovenfall.world.WorldTopology;
 
 @Mod(Rovenfall.MOD_ID)
@@ -99,6 +103,7 @@ public final class Rovenfall {
         NeoForge.EVENT_BUS.addListener(RovenfallCommands::register);
         NeoForge.EVENT_BUS.addListener(EconomyService::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(PlayerRecordService::onPlayerLoggedIn);
+        PortalEvents.register(NeoForge.EVENT_BUS);
         ClaimProtectionEvents.register(NeoForge.EVENT_BUS);
         NeoForge.EVENT_BUS.addListener(this::addServerReloadListeners);
         NeoForge.EVENT_BUS.addListener(shopTemplates::onDefaultDataComponentsBound);
@@ -943,6 +948,101 @@ public final class Rovenfall {
                 ShopInstanceService.delete(
                         state, AdministrationService.SYSTEM_ACTOR, true, shopId,
                         "gametest reversal cleanup", timestamp + 4, UUID.randomUUID());
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("portal_safe_arrival"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var level = helper.getLevel();
+                var state = PlatformSavedData.get(level.getServer());
+                BlockPos origin = helper.absolutePos(new BlockPos(1, 2, 1));
+                BlockPos destination = helper.absolutePos(new BlockPos(4, 2, 4));
+                BlockPos unsafeDestination = helper.absolutePos(new BlockPos(6, 2, 6));
+                level.setBlock(origin, Blocks.OBSIDIAN.defaultBlockState(), 3);
+                level.setBlock(destination.below(), Blocks.STONE.defaultBlockState(), 3);
+                level.setBlock(destination, Blocks.AIR.defaultBlockState(), 3);
+                level.setBlock(destination.above(), Blocks.AIR.defaultBlockState(), 3);
+                level.setBlock(unsafeDestination.below(), Blocks.STONE.defaultBlockState(), 3);
+                level.setBlock(unsafeDestination, Blocks.STONE.defaultBlockState(), 3);
+                level.setBlock(unsafeDestination.above(), Blocks.AIR.defaultBlockState(), 3);
+
+                Identifier portalId = id("gametest_portal_" + UUID.randomUUID());
+                long timestamp = System.currentTimeMillis();
+                PortalDefinition definition = new PortalDefinition(
+                        AdministrationService.SYSTEM_ACTOR,
+                        new PortalDefinition.Endpoint(level.dimension(), origin),
+                        new PortalDefinition.Endpoint(level.dimension(), destination),
+                        0,
+                        5_000,
+                        PortalDefinition.SafeArrivalPolicy.EXACT,
+                        true);
+                helper.assertTrue(PortalService.create(
+                        state,
+                        AdministrationService.SYSTEM_ACTOR,
+                        true,
+                        portalId,
+                        definition,
+                        endpoint -> level.dimension().equals(endpoint.dimension())
+                                && level.isInWorldBounds(endpoint.position()),
+                        "gametest portal",
+                        timestamp,
+                        UUID.randomUUID()).status() == PortalService.Status.SUCCESS,
+                        "Portal GameTest setup failed");
+
+                UUID safePlayer = UUID.randomUUID();
+                helper.assertTrue(PortalTravelService.resolveSafeDestination(
+                                level, state, safePlayer, portalId, definition).equals(Optional.of(destination)),
+                        "Server blocks did not produce the configured safe arrival");
+
+                PortalDefinition unsafe = new PortalDefinition(
+                        AdministrationService.SYSTEM_ACTOR,
+                        definition.origin(),
+                        new PortalDefinition.Endpoint(level.dimension(), unsafeDestination),
+                        0,
+                        5_000,
+                        PortalDefinition.SafeArrivalPolicy.EXACT,
+                        true);
+                helper.assertTrue(PortalService.edit(
+                        state,
+                        AdministrationService.SYSTEM_ACTOR,
+                        true,
+                        portalId,
+                        unsafe,
+                        endpoint -> level.dimension().equals(endpoint.dimension())
+                                && level.isInWorldBounds(endpoint.position()),
+                        "gametest unsafe target",
+                        timestamp + 2_000,
+                        UUID.randomUUID()).status() == PortalService.Status.SUCCESS,
+                        "Unsafe-target portal edit failed");
+                var blocked = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                blocked.setPos(origin.getX() + 0.5, origin.getY(), origin.getZ() + 0.5);
+                var blockedUse = new PlayerInteractEvent.RightClickBlock(
+                        blocked,
+                        InteractionHand.MAIN_HAND,
+                        origin,
+                        new BlockHitResult(Vec3.atCenterOf(origin), Direction.UP, origin, false));
+                NeoForge.EVENT_BUS.post(blockedUse);
+                helper.assertTrue(blockedUse.isCanceled(), "Unsafe portal interaction was not consumed");
+                helper.assertTrue(blocked.blockPosition().equals(origin),
+                        "Unsafe destination changed the player position");
+                helper.assertTrue(state.portalCooldownUntil(blocked.getUUID(), portalId) == 0,
+                        "Unsafe destination applied a partial cooldown");
+                helper.assertTrue(PortalTravelService.resolveSafeDestination(
+                                level, state, blocked.getUUID(), portalId, unsafe).isEmpty(),
+                        "Obstructed server blocks were accepted as a safe arrival");
+
+                helper.assertTrue(PortalService.delete(
+                        state,
+                        AdministrationService.SYSTEM_ACTOR,
+                        true,
+                        portalId,
+                        "gametest cleanup",
+                        timestamp + 4_000,
+                        UUID.randomUUID()).status() == PortalService.Status.SUCCESS,
+                        "Portal GameTest cleanup failed");
                 helper.succeed();
             }
         });
