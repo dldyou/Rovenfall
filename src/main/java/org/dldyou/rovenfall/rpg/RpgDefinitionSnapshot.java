@@ -221,6 +221,17 @@ public final class RpgDefinitionSnapshot {
             } else if (definition.kind() == SkillDefinition.Kind.PASSIVE && definition.cooldownTicks().isPresent()) {
                 problems.add(problem(source, "passive skill cannot define cooldown_ticks"));
             }
+            if (definition.kind() == SkillDefinition.Kind.PASSIVE && definition.passiveEffect().isEmpty()) {
+                problems.add(problem(source, "passive skill requires passive_effect"));
+            } else if (definition.kind() == SkillDefinition.Kind.ACTIVE && definition.passiveEffect().isPresent()) {
+                problems.add(problem(source, "active skill cannot define passive_effect"));
+            }
+            definition.passiveEffect().ifPresent(effect -> {
+                if (effect.type() == null || effect.basisPointsPerRank() < 1
+                        || effect.basisPointsPerRank() > SkillDefinition.PassiveEffect.MAX_BASIS_POINTS_PER_RANK) {
+                    problems.add(problem(source, "passive effect is invalid"));
+                }
+            });
             definition.cooldownTicks().ifPresent(cooldown -> {
                 if (cooldown < 1 || cooldown > SkillDefinition.MAX_COOLDOWN_TICKS) {
                     problems.add(problem(source, "cooldown must be between 1 and " + SkillDefinition.MAX_COOLDOWN_TICKS));

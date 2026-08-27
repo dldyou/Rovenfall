@@ -32,12 +32,13 @@ import org.dldyou.rovenfall.world.WorldTopology;
 
 public final class PlatformSavedData extends SavedData {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
-    public static final int CURRENT_SCHEMA_VERSION = 10;
+    public static final int CURRENT_SCHEMA_VERSION = 11;
     public static final int MAX_PROTECTED_REGIONS = 128;
     public static final int MAX_INDEXED_PROTECTED_CHUNKS = 131_072;
     public static final int MAX_AUDIT_PAGE_SIZE = 50;
     static final int MAX_ECONOMY_TRANSACTIONS = 250_000;
     static final int MAX_ECONOMY_ALERTS = 10_000;
+    static final int MAX_RPG_SKILL_OPERATIONS = 10_000;
     static final int MAX_RATE_INDEX_PER_PLAYER = 10_000;
     static final long ECONOMY_TRANSACTION_RETENTION_MILLIS = Duration.ofDays(30).toMillis();
     private static final long NON_EXPIRING_RECEIPT = -1L;
@@ -68,6 +69,10 @@ public final class PlatformSavedData extends SavedData {
             boundedClaimReceiptsCodec(MAX_ECONOMY_TRANSACTIONS);
     private static final Codec<Map<Identifier, ProtectedRegion>> PROTECTED_REGIONS_CODEC =
             boundedProtectedRegionsCodec(MAX_PROTECTED_REGIONS, MAX_INDEXED_PROTECTED_CHUNKS);
+    private static final Codec<Map<UUID, RpgSkillOperation>> RPG_SKILL_OPERATIONS_CODEC =
+            RpgSkillOperationEntry.CODEC.listOf(0, MAX_RPG_SKILL_OPERATIONS)
+                    .flatXmap(PlatformSavedData::rpgSkillOperationsFromEntries,
+                            PlatformSavedData::rpgSkillOperationEntries);
 
     public static final Codec<PlatformSavedData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.optionalFieldOf("schema_version", 0).forGetter(data -> data.schemaVersion),
@@ -87,7 +92,9 @@ public final class PlatformSavedData extends SavedData {
                     .forGetter(data -> data.protectedRegions),
             PortalState.CODEC.optionalFieldOf("portal_state", PortalState.EMPTY).forGetter(PlatformSavedData::portalState),
             WildernessResetState.CODEC.optionalFieldOf("wilderness_reset", WildernessResetState.EMPTY)
-                    .forGetter(PlatformSavedData::wildernessResetState)
+                    .forGetter(PlatformSavedData::wildernessResetState),
+            RPG_SKILL_OPERATIONS_CODEC.optionalFieldOf("rpg_skill_operations", Map.of())
+                    .forGetter(data -> data.rpgSkillOperations)
     ).apply(instance, PlatformSavedData::decode));
 
     public static final SavedDataType<PlatformSavedData> TYPE = new SavedDataType<>(
@@ -114,6 +121,7 @@ public final class PlatformSavedData extends SavedData {
     private final Map<UUID, PortalState.TravelReceipt> portalTravelReceipts;
     private final Map<UUID, Long> portalCombatTimestamps;
     private WildernessResetState wildernessResetState;
+    private final Map<UUID, RpgSkillOperation> rpgSkillOperations;
     private final Map<PortalDefinition.Endpoint, Identifier> portalOriginIndex = new HashMap<>();
     private final Map<ClaimKey, Set<Identifier>> protectedRegionIndex = new HashMap<>();
     private final Map<UUID, Integer> claimCountsByOwner = new HashMap<>();
@@ -136,7 +144,7 @@ public final class PlatformSavedData extends SavedData {
 
     public PlatformSavedData() {
         this(CURRENT_SCHEMA_VERSION, Map.of(), List.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), List.of(),
-                Map.of(), Map.of(), Map.of(), PortalState.EMPTY, WildernessResetState.EMPTY, true);
+                Map.of(), Map.of(), Map.of(), PortalState.EMPTY, WildernessResetState.EMPTY, Map.of(), true);
     }
 
     private PlatformSavedData(
@@ -154,6 +162,7 @@ public final class PlatformSavedData extends SavedData {
             Map<Identifier, ProtectedRegion> protectedRegions,
             PortalState portalState,
             WildernessResetState wildernessResetState,
+            Map<UUID, RpgSkillOperation> rpgSkillOperations,
             boolean writable) {
         this.schemaVersion = schemaVersion;
         this.writable = writable;
@@ -178,6 +187,7 @@ public final class PlatformSavedData extends SavedData {
         this.portalTravelReceipts = new HashMap<>(portalState.receipts());
         this.portalCombatTimestamps = new HashMap<>(portalState.combatTimestamps());
         this.wildernessResetState = wildernessResetState == null ? WildernessResetState.EMPTY : wildernessResetState;
+        this.rpgSkillOperations = new HashMap<>(rpgSkillOperations);
         rebuildRecentTransactionIndex();
         rebuildReceiptExpiryIndex();
         rebuildClaimOwnerIndex();
@@ -200,7 +210,8 @@ public final class PlatformSavedData extends SavedData {
             Map<UUID, ClaimMutationReceipt> claimReceipts,
             Map<Identifier, ProtectedRegion> protectedRegions,
             PortalState portalState,
-            WildernessResetState wildernessResetState) {
+            WildernessResetState wildernessResetState,
+            Map<UUID, RpgSkillOperation> rpgSkillOperations) {
         var migration = PlatformDataMigrations.migrate(
                 schemaVersion,
                 adminRoles,
@@ -216,9 +227,12 @@ public final class PlatformSavedData extends SavedData {
                 protectedRegions,
                 portalState,
                 wildernessResetState,
+                rpgSkillOperations,
                 CURRENT_SCHEMA_VERSION
         );
         var state = migration.state();
+        boolean rpgSkillEvidenceValid = rpgSkillEvidenceValid(
+                state.rpgSkillOperations(), state.economyReceipts(), state.economyTransactions());
         return new PlatformSavedData(
                 state.schemaVersion(),
                 state.adminRoles(),
@@ -234,7 +248,8 @@ public final class PlatformSavedData extends SavedData {
                 state.protectedRegions(),
                 state.portalState(),
                 state.wildernessResetState(),
-                migration.writable()
+                state.rpgSkillOperations(),
+                migration.writable() && rpgSkillEvidenceValid
         );
     }
 
@@ -355,6 +370,19 @@ public final class PlatformSavedData extends SavedData {
 
     public WildernessResetState wildernessResetState() {
         return wildernessResetState;
+    }
+
+    public Optional<RpgSkillOperation> rpgSkillOperation(UUID transactionId) {
+        return Optional.ofNullable(rpgSkillOperations.get(transactionId));
+    }
+
+    public List<Map.Entry<UUID, RpgSkillOperation>> pendingRpgSkillOperations(UUID playerId) {
+        return rpgSkillOperations.entrySet().stream()
+                .filter(entry -> entry.getValue().playerId().equals(playerId))
+                .filter(entry -> entry.getValue().phase() == RpgSkillOperation.Phase.PENDING)
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
+                .toList();
     }
 
     public boolean isWildernessOperationLocked() {
@@ -534,6 +562,10 @@ public final class PlatformSavedData extends SavedData {
         if (receiptLinkError(receipts).isPresent()) {
             return new RestorePreparation(RestorePreparationStatus.EVIDENCE_CONFLICT, Optional.empty());
         }
+        if (!rpgSkillEvidenceValid(
+                snapshot.rpgSkillOperations, receipts, transactions.orElseThrow())) {
+            return new RestorePreparation(RestorePreparationStatus.EVIDENCE_CONFLICT, Optional.empty());
+        }
         List<EconomyAlert> alerts = new ArrayList<>(economyAlerts);
         for (EconomyAlert alert : snapshot.economyAlerts) {
             if (!alerts.contains(alert)) {
@@ -608,6 +640,8 @@ public final class PlatformSavedData extends SavedData {
         portalTravelReceipts.putAll(snapshot.portalTravelReceipts);
         portalCombatTimestamps.clear();
         portalCombatTimestamps.putAll(snapshot.portalCombatTimestamps);
+        rpgSkillOperations.clear();
+        rpgSkillOperations.putAll(snapshot.rpgSkillOperations);
         rebuildRecentTransactionIndex();
         rebuildReceiptExpiryIndex();
         rebuildClaimOwnerIndex();
@@ -666,6 +700,21 @@ public final class PlatformSavedData extends SavedData {
         return canCommitReceiptTransaction(transactionId, timestampEpochMillis);
     }
 
+    boolean canCommitRpgSkillPayment(UUID transactionId, long timestampEpochMillis) {
+        if (rpgSkillOperations.containsKey(transactionId)
+                || !canCommitReceiptTransaction(transactionId, timestampEpochMillis)) {
+            return false;
+        }
+        long cutoff = timestampEpochMillis <= ECONOMY_TRANSACTION_RETENTION_MILLIS
+                ? 0
+                : timestampEpochMillis - ECONOMY_TRANSACTION_RETENTION_MILLIS;
+        long retained = rpgSkillOperations.values().stream()
+                .filter(operation -> operation.phase() == RpgSkillOperation.Phase.PENDING
+                        || operation.timestampEpochMillis() >= cutoff)
+                .count();
+        return retained < MAX_RPG_SKILL_OPERATIONS;
+    }
+
     void commitEconomyTransaction(
             UUID playerId,
             long balance,
@@ -683,6 +732,46 @@ public final class PlatformSavedData extends SavedData {
         economyBalances.put(playerId, balance);
         economyTransactions.put(transactionId, timestampEpochMillis);
         commitReceiptEvidence(transactionId, receipt, alerts);
+        commitAudit(auditEntry);
+    }
+
+    void commitRpgSkillPayment(
+            UUID playerId,
+            long balance,
+            UUID transactionId,
+            long timestampEpochMillis,
+            EconomyTransactionReceipt receipt,
+            List<EconomyAlert> alerts,
+            RpgSkillOperation operation,
+            AuditEntry auditEntry) {
+        validateEvidence(playerId, transactionId, timestampEpochMillis, receipt, alerts);
+        if (!operation.playerId().equals(playerId)
+                || operation.timestampEpochMillis() != timestampEpochMillis
+                || receipt.kind() != EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT
+                || !canCommitRpgSkillPayment(transactionId, timestampEpochMillis)) {
+            throw new IllegalStateException("RPG skill payment cannot be committed");
+        }
+        prepareLedgerForCommit(timestampEpochMillis);
+        trimCompletedRpgSkillOperations(timestampEpochMillis);
+        economyBalances.put(playerId, balance);
+        economyTransactions.put(transactionId, timestampEpochMillis);
+        rpgSkillOperations.put(transactionId, operation);
+        commitReceiptEvidence(transactionId, receipt, alerts);
+        commitAudit(auditEntry);
+    }
+
+    void completeRpgSkillOperation(UUID transactionId, RpgSkillOperation expected, AuditEntry auditEntry) {
+        RpgSkillOperation current = rpgSkillOperations.get(transactionId);
+        EconomyTransactionReceipt receipt = economyReceipts.get(transactionId);
+        if (current == null || !current.equals(expected)
+                || current.phase() != RpgSkillOperation.Phase.PENDING
+                || receipt == null || receipt.kind() != EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT
+                || !receipt.playerId().equals(current.playerId()) || receipt.amount() != current.cost()) {
+            throw new IllegalStateException("RPG skill operation cannot be completed");
+        }
+        rpgSkillOperations.put(transactionId, current.completed());
+        EconomyTransactionReceipt retained = economyReceipts.get(transactionId);
+        recordReceiptExpiry(transactionId, receiptExpiry(retained.timestampEpochMillis()));
         commitAudit(auditEntry);
     }
 
@@ -1043,6 +1132,38 @@ public final class PlatformSavedData extends SavedData {
         }
     }
 
+    private static boolean rpgSkillEvidenceValid(
+            Map<UUID, RpgSkillOperation> operations,
+            Map<UUID, EconomyTransactionReceipt> receipts,
+            Map<UUID, Long> transactions) {
+        for (Map.Entry<UUID, RpgSkillOperation> entry : operations.entrySet()) {
+            RpgSkillOperation operation = entry.getValue();
+            EconomyTransactionReceipt receipt = receipts.get(entry.getKey());
+            Long timestamp = transactions.get(entry.getKey());
+            if (receipt == null || receipt.kind() != EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT
+                    || !receipt.playerId().equals(operation.playerId()) || receipt.amount() != operation.cost()
+                    || timestamp == null || timestamp != operation.timestampEpochMillis()
+                    || receipt.timestampEpochMillis() != operation.timestampEpochMillis()) {
+                return false;
+            }
+        }
+        return receipts.entrySet().stream()
+                .filter(entry -> entry.getValue().kind() == EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT)
+                .allMatch(entry -> operations.containsKey(entry.getKey()));
+    }
+
+    private void trimCompletedRpgSkillOperations(long timestampEpochMillis) {
+        long cutoff = timestampEpochMillis <= ECONOMY_TRANSACTION_RETENTION_MILLIS
+                ? 0
+                : timestampEpochMillis - ECONOMY_TRANSACTION_RETENTION_MILLIS;
+        rpgSkillOperations.entrySet().stream()
+                .filter(entry -> entry.getValue().phase() == RpgSkillOperation.Phase.COMPLETED)
+                .filter(entry -> entry.getValue().timestampEpochMillis() < cutoff)
+                .map(Map.Entry::getKey)
+                .toList()
+                .forEach(this::evictReceipt);
+    }
+
     boolean hasReceiptCapacity(long timestampEpochMillis, int maximumEntries) {
         if (economyReceipts.size() < maximumEntries) {
             return true;
@@ -1077,7 +1198,11 @@ public final class PlatformSavedData extends SavedData {
     }
 
     private void registerReceiptExpiry(UUID transactionId, EconomyTransactionReceipt receipt) {
-        long expiry = receiptExpiry(receipt.timestampEpochMillis());
+        long expiry = receipt.kind() == EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT
+                && rpgSkillOperations.get(transactionId) != null
+                && rpgSkillOperations.get(transactionId).phase() == RpgSkillOperation.Phase.PENDING
+                ? NON_EXPIRING_RECEIPT
+                : receiptExpiry(receipt.timestampEpochMillis());
         recordReceiptExpiry(transactionId, expiry);
         if (receipt.kind() != EconomyTransactionReceipt.Kind.REVERSAL) {
             return;
@@ -1129,15 +1254,26 @@ public final class PlatformSavedData extends SavedData {
     }
 
     private void removeReceipt(UUID transactionId) {
+        RpgSkillOperation operation = rpgSkillOperations.get(transactionId);
+        if (operation != null && operation.phase() == RpgSkillOperation.Phase.PENDING) {
+            throw new IllegalStateException("Pending RPG skill payment receipt cannot be evicted");
+        }
         economyReceipts.remove(transactionId);
         receiptEvictionTimes.remove(transactionId);
+        rpgSkillOperations.remove(transactionId);
     }
 
     private void rebuildReceiptExpiryIndex() {
         receiptEvictionTimes.clear();
         receiptExpiryQueue.clear();
-        economyReceipts.forEach((transactionId, receipt) ->
-                receiptEvictionTimes.put(transactionId, receiptExpiry(receipt.timestampEpochMillis())));
+        economyReceipts.forEach((transactionId, receipt) -> {
+            RpgSkillOperation operation = rpgSkillOperations.get(transactionId);
+            long expiry = receipt.kind() == EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT
+                    && operation != null && operation.phase() == RpgSkillOperation.Phase.PENDING
+                    ? NON_EXPIRING_RECEIPT
+                    : receiptExpiry(receipt.timestampEpochMillis());
+            receiptEvictionTimes.put(transactionId, expiry);
+        });
         economyReceipts.forEach((transactionId, receipt) -> {
             if (receipt.kind() == EconomyTransactionReceipt.Kind.REVERSAL) {
                 UUID originalId = receipt.originalTransactionId().orElseThrow();
@@ -1314,6 +1450,32 @@ public final class PlatformSavedData extends SavedData {
                 Identifier.CODEC.fieldOf("id").forGetter(ProtectedRegionEntry::id),
                 ProtectedRegion.CODEC.fieldOf("region").forGetter(ProtectedRegionEntry::region)
         ).apply(instance, ProtectedRegionEntry::new));
+    }
+
+    private static DataResult<Map<UUID, RpgSkillOperation>> rpgSkillOperationsFromEntries(
+            List<RpgSkillOperationEntry> entries) {
+        Map<UUID, RpgSkillOperation> operations = new LinkedHashMap<>();
+        for (RpgSkillOperationEntry entry : entries) {
+            if (ZERO_UUID.equals(entry.id()) || operations.putIfAbsent(entry.id(), entry.operation()) != null) {
+                return DataResult.error(() -> "Duplicate or zero RPG skill operation ID " + entry.id());
+            }
+        }
+        return DataResult.success(Map.copyOf(operations));
+    }
+
+    private static DataResult<List<RpgSkillOperationEntry>> rpgSkillOperationEntries(
+            Map<UUID, RpgSkillOperation> operations) {
+        return DataResult.success(operations.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> new RpgSkillOperationEntry(entry.getKey(), entry.getValue()))
+                .toList());
+    }
+
+    private record RpgSkillOperationEntry(UUID id, RpgSkillOperation operation) {
+        private static final Codec<RpgSkillOperationEntry> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                UUIDUtil.STRING_CODEC.fieldOf("id").forGetter(RpgSkillOperationEntry::id),
+                RpgSkillOperation.CODEC.fieldOf("operation").forGetter(RpgSkillOperationEntry::operation)
+        ).apply(instance, RpgSkillOperationEntry::new));
     }
 
     private static DataResult<Map<UUID, ClaimMutationReceipt>> claimReceiptsFromEntries(

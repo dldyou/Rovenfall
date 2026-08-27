@@ -103,6 +103,8 @@ import org.dldyou.rovenfall.rpg.ActivityWorldSavedData;
 import org.dldyou.rovenfall.rpg.RpgActivityEvents;
 import org.dldyou.rovenfall.rpg.RpgPlayerSavedData;
 import org.dldyou.rovenfall.rpg.SkillDefinition;
+import org.dldyou.rovenfall.rpg.RpgSkillEvents;
+import org.dldyou.rovenfall.rpg.RpgSkillResetCoordinator;
 import org.dldyou.rovenfall.world.ProtectedRegion;
 import org.dldyou.rovenfall.world.PortalDefinition;
 import org.dldyou.rovenfall.world.WorldTopology;
@@ -121,10 +123,12 @@ public final class Rovenfall {
         modBus.addListener(this::registerGameTests);
         NeoForge.EVENT_BUS.addListener(RovenfallCommands::register);
         NeoForge.EVENT_BUS.addListener(EconomyService::onPlayerLoggedIn);
+        NeoForge.EVENT_BUS.addListener(RpgSkillResetCoordinator::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(PlayerRecordService::onPlayerLoggedIn);
         PortalEvents.register(NeoForge.EVENT_BUS);
         WildernessResetEvents.register(NeoForge.EVENT_BUS);
         ClaimProtectionEvents.register(NeoForge.EVENT_BUS);
+        RpgSkillEvents.register(NeoForge.EVENT_BUS);
         NeoForge.EVENT_BUS.addListener(this::addServerReloadListeners);
         NeoForge.EVENT_BUS.addListener(shopTemplates::onDefaultDataComponentsBound);
         NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onDamage);
@@ -229,6 +233,11 @@ public final class Rovenfall {
                 var active = snapshot.skill(id("power_strike")).orElseThrow();
                 helper.assertTrue(active.kind() == SkillDefinition.Kind.ACTIVE && active.cooldownTicks().isPresent(),
                         "Active skill metadata was not preserved");
+                var passive = snapshot.skill(id("battle_fury")).orElseThrow();
+                helper.assertTrue(passive.kind() == SkillDefinition.Kind.PASSIVE
+                                && passive.passiveEffect().orElseThrow().type()
+                                == SkillDefinition.EffectType.DAMAGE_DEALT,
+                        "Passive skill effect metadata was not preserved");
                 helper.succeed();
             }
         });

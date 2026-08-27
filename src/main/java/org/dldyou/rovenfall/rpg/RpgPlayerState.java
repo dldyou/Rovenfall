@@ -320,7 +320,7 @@ public record RpgPlayerState(
 
         public enum Kind implements net.minecraft.util.StringRepresentable {
             ACTIVITY_XP("activity_xp"), CAREER_XP("career_xp"), SKILL_UNLOCK("skill_unlock"),
-            CAREER_PROMOTION("career_promotion"), CAREER_SWITCH("career_switch");
+            CAREER_PROMOTION("career_promotion"), CAREER_SWITCH("career_switch"), SKILL_RESET("skill_reset");
 
             public static final Codec<Kind> CODEC = net.minecraft.util.StringRepresentable.fromEnum(Kind::values);
             private final String id;

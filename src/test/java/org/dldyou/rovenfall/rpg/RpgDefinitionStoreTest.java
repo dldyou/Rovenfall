@@ -134,6 +134,28 @@ final class RpgDefinitionStoreTest {
     }
 
     @Test
+    void passiveEffectsAreRequiredOnlyForPassiveSkills() {
+        var passiveWithoutEffect = new RpgDefinitionSnapshot.SkillSource(
+                file("missing_effect"), "test", id("missing_effect"),
+                new SkillDefinition("skill.rovenfall.missing_effect", id("novice"),
+                        SkillDefinition.Kind.PASSIVE, 1, 1, List.of(), Optional.empty(), Optional.empty()));
+        var activeWithEffect = new RpgDefinitionSnapshot.SkillSource(
+                file("active_effect"), "test", id("active_effect"),
+                new SkillDefinition("skill.rovenfall.active_effect", id("novice"),
+                        SkillDefinition.Kind.ACTIVE, 1, 1, List.of(), Optional.of(20),
+                        Optional.of(new SkillDefinition.PassiveEffect(
+                                SkillDefinition.EffectType.DAMAGE_DEALT, 100))));
+
+        var error = assertThrows(RpgDefinitionSnapshot.ValidationException.class, () ->
+                RpgDefinitionSnapshot.compile(
+                        List.of(), List.of(career("novice", 1, List.of(), List.of())),
+                        List.of(passiveWithoutEffect, activeWithEffect)));
+
+        assertTrue(error.getMessage().contains("passive skill requires passive_effect"));
+        assertTrue(error.getMessage().contains("active skill cannot define passive_effect"));
+    }
+
+    @Test
     void rejectsPrerequisiteOutsideCareerLineage() {
         var error = assertThrows(RpgDefinitionSnapshot.ValidationException.class, () ->
                 RpgDefinitionSnapshot.compile(
@@ -205,7 +227,11 @@ final class RpgDefinitionStoreTest {
         return new RpgDefinitionSnapshot.SkillSource(
                 file(path), "test", id(path),
                 new SkillDefinition("skill.rovenfall." + path, id(career), kind, 3, 1, prerequisites,
-                        kind == SkillDefinition.Kind.ACTIVE ? Optional.of(100) : Optional.empty()));
+                        kind == SkillDefinition.Kind.ACTIVE ? Optional.of(100) : Optional.empty(),
+                        kind == SkillDefinition.Kind.PASSIVE
+                                ? Optional.of(new SkillDefinition.PassiveEffect(
+                                        SkillDefinition.EffectType.DAMAGE_TAKEN_REDUCTION, 100))
+                                : Optional.empty()));
     }
 
     private static CareerDefinition.ActivityRequirement requirement(String activity, int level) {

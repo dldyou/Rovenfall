@@ -39,10 +39,29 @@ bounded authoritative query for operator-facing career audit views; Milestone 4'
 RPG administration view consumes this trail rather than the separate platform
 configuration audit root.
 
-`promotion_cost` remains definition metadata until an economy/RPG transaction
-coordinator can debit and promote atomically across their separate persistence
-roots. Skill learning and active-skill activation are introduced by their own
-milestone issues. The `Snapshot` view is
+Each career rank gained from authoritative activity XP grants one skill point.
+`RpgSkillService` spends points only after validating the owning promoted career,
+the requested skill rank, and every prerequisite across the complete career graph.
+Definitions form a validated prerequisite DAG. Passive effect metadata is data-driven;
+the initial effects modify dealt damage or reduce incoming damage, and only learned
+passives in the active career and its ancestors apply on the server.
+
+Branch reset removes the selected learned skill and every transitive learned
+dependent. Full reset starts with every learned skill owned by the selected career
+and then applies the same dependent closure, so no surviving skill has a dangling
+prerequisite. The exact removal/refund plan is validated before any payment.
+`RpgSkillPaymentService` atomically debits the economy root and stores that plan as
+a pending platform operation; `RpgSkillService` then commits the reset and its RPG
+provenance, after which the platform operation is completed. A login recovery pass
+finishes either save-order interruption using the same transaction UUID. The
+dedicated `rpg_skill_payment` receipt is never accepted by generic economy reversal.
+Branch and full prices are configurable in `rovenfall-rpg-server.toml`.
+
+Player commands are `/rovenfall skill learn <skill>`,
+`/rovenfall skill reset branch <skill>`, and
+`/rovenfall skill reset full <career>`. Active-skill activation is introduced by
+its own milestone issue. `promotion_cost` remains definition metadata until career
+promotion receives its own cross-root payment policy. The `Snapshot` view is
 immutable and suitable for administration queries or background read-only work.
 `RpgPlayerSnapshotStore` can persist an atomic compressed NBT copy under
 `rovenfall/snapshots/rpg`; it refuses overwrite, size violations, malformed data,

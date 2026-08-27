@@ -127,6 +127,8 @@
   "config.rovenfall.rpg.activity_xp.window_seconds": "Activity XP rate window (seconds)",
   "config.rovenfall.rpg.activity_xp.cooldown_millis": "Activity source cooldown (milliseconds)",
   "config.rovenfall.rpg.activity_xp.combat_target_xp_cap": "Maximum combat XP per player and target",
+  "config.rovenfall.rpg.skill_reset.branch_cost": "Branch skill reset cost",
+  "config.rovenfall.rpg.skill_reset.full_cost": "Full career skill reset cost",
   "config.rovenfall.rpg.activity_xp.exploration_advancements": "Advancements eligible for exploration XP",
   "economy_transaction_kind.rovenfall.claim_purchase": "Claim purchase",
   "economy_transaction_kind.rovenfall.claim_sale": "Claim sale",
@@ -280,5 +282,16 @@
   "command.rovenfall.career.error.read_only": "Career changes are disabled because RPG persistence is read-only.",
   "command.rovenfall.career.error.state_full": "No more RPG progression or audit evidence can be stored.",
   "command.rovenfall.career.error.duplicate": "That career transaction was already processed.",
-  "command.rovenfall.career.error.failed": "Career operation failed: %s"
+  "command.rovenfall.career.error.failed": "Career operation failed: %s",
+  "command.rovenfall.skill.learn.success": "Learned %1$s at rank %2$s. Remaining skill points: %3$s",
+  "command.rovenfall.skill.learn.error.prerequisite": "%1$s requires rank %2$s; current rank is %3$s.",
+  "command.rovenfall.skill.learn.error.points": "Not enough skill points. Available: %s",
+  "command.rovenfall.skill.learn.error.max_rank": "%1$s is already at maximum rank %2$s.",
+  "command.rovenfall.skill.learn.error.career": "Promote into the skill's career before learning it.",
+  "command.rovenfall.skill.reset.success": "Skill reset purchased for %1$s. Balance: %2$s. Audit transaction: %3$s",
+  "command.rovenfall.skill.reset.error.funds": "The reset costs %1$s, but your balance is %2$s.",
+  "command.rovenfall.skill.reset.error.empty": "There are no learned skills in that reset scope.",
+  "command.rovenfall.skill.error.unknown": "Unknown skill or career: %s",
+  "command.rovenfall.skill.error.read_only": "Skill changes are disabled because persistence is read-only.",
+  "command.rovenfall.skill.error.failed": "Skill operation failed: %s"
 }

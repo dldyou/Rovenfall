@@ -4,6 +4,10 @@
   "kind": "passive",
   "max_rank": 3,
   "point_cost": 3,
+  "passive_effect": {
+    "type": "damage_dealt",
+    "basis_points_per_rank": 500
+  },
   "prerequisites": [
     {"skill": "rovenfall:power_strike", "rank": 2}
   ]
