@@ -44,6 +44,19 @@ jobs:
       - name: Run required GameTests
         run: ./gradlew runGameTestServer
 
+      - name: Upload performance budget report
+        if: ${{ always() && hashFiles('build/reports/performance-budget.md') != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: performance-budget-${{ github.sha }}
+          path: build/reports/performance-budget.md
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish performance budget summary
+        if: ${{ always() && hashFiles('build/reports/performance-budget.md') != '' }}
+        run: cat build/reports/performance-budget.md >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload mod JAR
         uses: actions/upload-artifact@v7
         with:

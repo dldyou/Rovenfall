@@ -74,6 +74,7 @@ import org.dldyou.rovenfall.administration.EconomyService;
 import org.dldyou.rovenfall.administration.EconomyReversalService;
 import org.dldyou.rovenfall.administration.EconomyTransactionReceipt;
 import org.dldyou.rovenfall.administration.AdministrationService;
+import org.dldyou.rovenfall.administration.AdminRole;
 import org.dldyou.rovenfall.administration.BossRewardService;
 import org.dldyou.rovenfall.administration.BossAdministrationService;
 import org.dldyou.rovenfall.administration.PlatformSavedData;
@@ -179,6 +180,8 @@ public final class Rovenfall {
 
     private void registerGameTests(RegisterGameTestsEvent event) {
         var environment = event.registerEnvironment(id("empty"), new TestEnvironmentDefinition.AllOf(List.of()));
+        var activeSkillEnvironment = event.registerEnvironment(
+                id("active_skill"), new TestEnvironmentDefinition.AllOf(List.of()));
         var testData = new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 1, 0, true);
         event.registerTest(id("foundation"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData));
         event.registerTest(id("operations_metrics_snapshot"), new FunctionGameTestInstance(
@@ -640,25 +643,25 @@ public final class Rovenfall {
         });
         event.registerTest(id("rpg_active_skill"), new FunctionGameTestInstance(
                 BuiltinTestFunctions.ALWAYS_PASS,
-                new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 10, 0, true)) {
+                new TestData<>(activeSkillEnvironment, Identifier.withDefaultNamespace("empty"), 10, 0, true)) {
             @Override
             public void run(GameTestHelper helper) {
                 var server = helper.getLevel().getServer();
                 var definitions = RpgDefinitionReloadListener.snapshot(server);
                 var state = RpgPlayerSavedData.get(server);
-                var player = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
-                        net.minecraft.world.level.GameType.SURVIVAL);
+                var player = helper.makeMockServerPlayerInLevel();
                 var activeSkillLevel = helper.getLevel();
-                BlockPos playerPosition = helper.absolutePos(new BlockPos(1_000, 2, 1_000));
-                BlockPos targetPosition = playerPosition.east(2);
-                activeSkillLevel.getChunkAt(playerPosition);
+                BlockPos playerPosition = helper.absolutePos(new BlockPos(1, 2, 1));
                 player.setPos(
                         playerPosition.getX() + 0.5, playerPosition.getY(), playerPosition.getZ() + 0.5);
-                var target = EntityTypes.COW.create(activeSkillLevel, EntitySpawnReason.COMMAND);
-                helper.assertTrue(target != null, "Could not create the power-strike target");
-                target.setPos(
-                        targetPosition.getX() + 0.5, targetPosition.getY(), targetPosition.getZ() + 0.5);
-                activeSkillLevel.addFreshEntity(target);
+                server.getCommands().performPrefixedCommand(
+                        server.createCommandSourceStack(),
+                        "rovenfall admin role set " + player.getScoreboardName()
+                                + " moderator gametest active skill");
+                helper.assertTrue(PlatformSavedData.get(server).roleOf(player.getUUID()).orElse(null)
+                                == AdminRole.MODERATOR,
+                        "Could not grant the GameTest actor a protected-region override");
+                var target = helper.spawn(EntityTypes.COW, new BlockPos(3, 2, 1));
                 long timestamp = System.currentTimeMillis();
 
                 helper.assertTrue(CareerProgressionService.promote(
@@ -708,7 +711,8 @@ public final class Rovenfall {
                         "Could not bind power strike");
 
                 helper.runAfterDelay(1, () -> {
-                    long gameTime = activeSkillLevel.getGameTime();
+                    try {
+                        long gameTime = activeSkillLevel.getGameTime();
                     helper.assertTrue(player.isAlive() && !player.isSpectator(),
                             "Power-strike actor was not an eligible live player");
                     helper.assertTrue(activeSkillLevel.getEntity(target.getId()) == target && target.isAlive(),
@@ -795,7 +799,11 @@ public final class Rovenfall {
                     helper.assertTrue(RpgActiveSkillRuntime.modifyDamage(
                                     null, player, activeSkillLevel.dimension().identifier(), gameTime + 100, 10F) == 10F,
                             "Shield wall did not expire at its server-defined duration");
-                    helper.succeed();
+                        helper.succeed();
+                    } finally {
+                        target.discard();
+                        server.getPlayerList().remove(player);
+                    }
                 });
             }
         });

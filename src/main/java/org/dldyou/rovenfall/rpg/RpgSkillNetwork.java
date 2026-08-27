@@ -12,12 +12,13 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
+import net.neoforged.neoforge.network.registration.NetworkRegistry;
 import org.slf4j.Logger;
 
 /** Versioned active-skill payload registration and replay/rate-limit adapter. */
 public final class RpgSkillNetwork {
     private static final String NETWORK_VERSION = "1";
-    private static final int MAX_REQUESTS_PER_SECOND = 20;
+    public static final int MAX_REQUESTS_PER_SECOND = 20;
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final Map<UUID, Session> SESSIONS = new HashMap<>();
 
@@ -50,6 +51,10 @@ public final class RpgSkillNetwork {
     }
 
     public static void sync(ServerPlayer player) {
+        if (player == null || player.connection == null
+                || !NetworkRegistry.hasChannel(player.connection, RpgSkillPayloads.StateSync.TYPE.id())) {
+            return;
+        }
         Session session = SESSIONS.computeIfAbsent(player.getUUID(), ignored -> new Session(UUID.randomUUID()));
         MinecraftServer server = player.level().getServer();
         RpgPlayerState state = RpgPlayerSavedData.get(server).state(player.getUUID());

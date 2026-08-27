@@ -164,6 +164,15 @@ tasks.withType(JavaCompile).configureEach {
 
 tasks.named('test', Test).configure {
     useJUnitPlatform()
+    def performanceReport = layout.buildDirectory.file('reports/performance-budget.md')
+    systemProperty 'rovenfall.performanceReport', performanceReport.get().asFile.absolutePath
+    outputs.file(performanceReport)
+}
+
+tasks.register('performanceBudget') {
+    group = 'verification'
+    description = 'Runs the deterministic 20/50-player load fixture and writes its CI report.'
+    dependsOn tasks.named('test')
 }
 
 tasks.named('jacocoTestReport', JacocoReport).configure {
