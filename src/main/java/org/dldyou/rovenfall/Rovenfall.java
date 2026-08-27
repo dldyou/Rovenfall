@@ -77,6 +77,7 @@ import org.dldyou.rovenfall.administration.AdministrationService;
 import org.dldyou.rovenfall.administration.BossRewardService;
 import org.dldyou.rovenfall.administration.BossAdministrationService;
 import org.dldyou.rovenfall.administration.PlatformSavedData;
+import org.dldyou.rovenfall.administration.OperationsMetricsService;
 import org.dldyou.rovenfall.administration.PlayerRecordService;
 import org.dldyou.rovenfall.administration.RpgAdministrationService;
 import org.dldyou.rovenfall.administration.RovenfallCommands;
@@ -180,6 +181,25 @@ public final class Rovenfall {
         var environment = event.registerEnvironment(id("empty"), new TestEnvironmentDefinition.AllOf(List.of()));
         var testData = new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 1, 0, true);
         event.registerTest(id("foundation"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData));
+        event.registerTest(id("operations_metrics_snapshot"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var platform = PlatformSavedData.get(server);
+                int auditCount = platform.auditCount();
+                var result = OperationsMetricsService.snapshot(
+                        server, AdministrationService.SYSTEM_ACTOR, true,
+                        System.currentTimeMillis(), OperationsMetricsService.DEFAULT_WINDOW_MILLIS);
+                helper.assertTrue(result.status() == OperationsMetricsService.Status.SUCCESS,
+                        "Operations metrics did not read the live server-owned stores");
+                helper.assertTrue(result.scannedRpgPlayers() <= OperationsMetricsService.MAX_RPG_PLAYERS,
+                        "Operations metrics exceeded the RPG player scan cap");
+                helper.assertTrue(platform.auditCount() == auditCount,
+                        "Read-only operations metrics mutated platform state");
+                helper.succeed();
+            }
+        });
         event.registerTest(id("wilderness_reset_preflight"), new FunctionGameTestInstance(
                 BuiltinTestFunctions.ALWAYS_PASS, testData) {
             @Override

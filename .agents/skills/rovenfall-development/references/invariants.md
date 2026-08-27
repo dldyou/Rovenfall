@@ -82,6 +82,8 @@ Audit at minimum:
 
 Keep audit entries append-only for ordinary administrators, searchable with AND-composed bounded filters, paginated newest-first, and retained for 30 days with rotation. Log mod-relevant state only; never collect chat, private messages, or key input. Audit export is `OWNER`-only, selects the exact bounded query, writes only below explicit row and byte caps to a server-owned fixed-name path through a temporary file and atomic move, and audits both success and rate-limited denial. Monitoring thresholds produce GUI and console alerts, not automatic sanctions.
 
+Cross-domain operations snapshots run only on explicit administrator queries or coarse scheduled batches. They consume immutable owning-domain projections, publish freshness/window/cap metadata, deduplicate transaction evidence, and never mutate gameplay state or punish players.
+
 Support targeted reversal for economy, shops, claims, permissions, careers, and skills. A reversal is a new authorized transaction referencing the original; it never erases history. A shop-purchase reversal reclaims the exact granted items only when they remain available; otherwise it requires an explicit compensating administrator decision and records that decision. It never silently duplicates currency or deletes unrelated items. Use snapshots rather than a general block-history engine for Wilderness reset and bulk migrations.
 
 Generic economy reversal must reject cross-domain payments such as a paid skill reset. Reversing one side without its owning domain's compensation protocol is state corruption, not recovery.

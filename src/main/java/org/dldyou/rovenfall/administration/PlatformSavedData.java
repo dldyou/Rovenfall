@@ -503,6 +503,21 @@ public final class PlatformSavedData extends SavedData {
         return List.copyOf(economyAlerts);
     }
 
+    List<AuditEntry> auditEntriesView() {
+        return List.copyOf(auditEntries);
+    }
+
+    int pendingRecoveryOperationCount() {
+        int pending = wildernessResetState.activeOperation().isPresent() ? 1 : 0;
+        pending += (int) rpgSkillOperations.values().stream()
+                .filter(operation -> operation.phase() == RpgSkillOperation.Phase.PENDING)
+                .count();
+        pending += (int) rpgAdminOperations.values().stream()
+                .filter(operation -> operation.phase() == RpgAdminOperation.Phase.PENDING)
+                .count();
+        return pending;
+    }
+
     int recentTransactionCount(UUID playerId, long timestampEpochMillis, long windowMillis) {
         ArrayDeque<Long> timestamps = recentTransactionsByPlayer.get(playerId);
         if (timestamps == null) {

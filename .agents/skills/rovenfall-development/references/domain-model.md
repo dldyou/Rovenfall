@@ -109,6 +109,8 @@ Administrator roles are independent of claim roles:
 
 The first admin interface combines permission-gated mutation commands with read-only searchable views for player state, balances, transactions, claims, shops, denied actions, and alerts. Audit queries combine bounded time, actor, action, target-prefix, and transaction filters with AND semantics and deterministic newest-first pagination. Only `OWNER` may export the exact result as capped JSON Lines under the server-owned operations directory; callers never choose a filesystem path. External dashboards and automatic punishment are outside the initial scope.
 
+An **operations snapshot** is an explicit, role-gated, immutable cross-domain projection. It combines bounded persisted economy, audit, RPG, boss encounter, reward, and recovery evidence, records its freshness and query window, and produces informational alerts only.
+
 Boss operations use a caller-supplied transaction ID. They append an immutable request audit before changing state and a deterministic completion audit only after cleanup or recovery is verifiably complete. Exact retries resume an incomplete request or return duplicate after completion.
 
 ## Localization

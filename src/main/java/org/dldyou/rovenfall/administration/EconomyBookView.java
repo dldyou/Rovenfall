@@ -75,6 +75,24 @@ final class EconomyBookView {
         return List.copyOf(pages);
     }
 
+    static List<Component> operations(OperationsMetricsService.Result metrics) {
+        return List.of(
+                Component.translatable("gui.rovenfall.admin.operations.summary",
+                        java.time.Instant.ofEpochMilli(metrics.generatedAtEpochMillis()).toString(),
+                        metrics.windowMillis() / 60_000L, metrics.scannedRpgPlayers(),
+                        OperationsMetricsService.MAX_RPG_PLAYERS, metrics.rpgTruncated()),
+                Component.translatable("gui.rovenfall.admin.operations.requests",
+                        metrics.economyTransactionCount(), metrics.amountAlertCount(), metrics.rateAlertCount(),
+                        metrics.deniedRequestCount(), metrics.malformedRequestCount()),
+                Component.translatable("gui.rovenfall.admin.operations.gameplay",
+                        metrics.suspiciousRpgAwardCount(), metrics.activeEncounterCount(),
+                        metrics.pendingRewardCount(), metrics.pendingRecoveryCount()),
+                Component.translatable("gui.rovenfall.admin.operations.evidence",
+                        metrics.evidenceTransactionIds().isEmpty()
+                                ? Component.translatable("gui.rovenfall.admin.economy.none")
+                                : Component.literal(metrics.evidenceTransactionIds().toString())));
+    }
+
     private static ArrayList<Component> summary(String titleKey, EconomyObservabilityService.Page<?> page) {
         ArrayList<Component> pages = new ArrayList<>();
         pages.add(Component.translatable("gui.rovenfall.admin.economy.summary", Component.translatable(titleKey),

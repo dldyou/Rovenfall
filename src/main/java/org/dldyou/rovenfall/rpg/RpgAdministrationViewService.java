@@ -142,7 +142,21 @@ public final class RpgAdministrationViewService {
                 || page < 0 || pageSize < 1 || pageSize > MAX_PAGE_SIZE || config == null) {
             return new AwardPage(0, 0, 0, List.of());
         }
-        List<RpgPlayerState.ProgressionProvenance> chronological = state.state(playerId).provenance().stream()
+        return awardHistory(state.state(playerId), activity, suspiciousOnly, page, pageSize, config);
+    }
+
+    public static AwardPage awardHistory(
+            RpgPlayerState player,
+            Optional<Identifier> activity,
+            boolean suspiciousOnly,
+            int page,
+            int pageSize,
+            ActivityXpConfig.ConfigSnapshot config) {
+        if (player == null || activity == null || page < 0 || pageSize < 1 || pageSize > MAX_PAGE_SIZE
+                || config == null) {
+            return new AwardPage(0, 0, 0, List.of());
+        }
+        List<RpgPlayerState.ProgressionProvenance> chronological = player.provenance().stream()
                 .filter(entry -> entry.kind() == RpgPlayerState.ProgressionProvenance.Kind.ACTIVITY_XP)
                 .sorted(Comparator.comparingLong(RpgPlayerState.ProgressionProvenance::timestamp)
                         .thenComparing(RpgPlayerState.ProgressionProvenance::transactionId))
