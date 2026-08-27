@@ -88,6 +88,14 @@ Support targeted reversal for economy, shops, claims, permissions, careers, and 
 
 Generic economy reversal must reject cross-domain payments such as a paid skill reset. Reversing one side without its owning domain's compensation protocol is state corruption, not recovery.
 
+Generic economy reversal must also reject account creation, claim purchase/sale, boss rewards, and
+reversal receipts. Each is either an identity boundary or a cross-domain operation whose owning
+recovery protocol must reconcile every side of the mutation.
+
+Recovery rehearsal runs only on isolated copies and immutable projections. Hash every source
+fixture before and after the rehearsal, fail when a hash changes, and never overwrite recovery
+evidence merely to make the rehearsal pass.
+
 Create a snapshot before Wilderness reset, bulk economy adjustment, destructive migration, or restore. Evacuate players and block concurrent affected operations during reset/restore.
 
 Boss administration is `OWNER`-only for mutation. Persist the reset/recovery request audit before touching encounter, entity, arena, or reward state; record completion under a deterministic related transaction only after postconditions are verified. Retain `REWARD_PENDING` encounters until contribution, loot, currency, XP, item, and cooldown evidence is durable. Offline item delivery remains pending and recoverable; it is never treated as disposable stuck state. Exact transaction retries resume pending work without duplicating rewards or cleanup.
@@ -124,3 +132,8 @@ For each state-changing feature, cover:
 - relevant localized error keys.
 
 Finish with the focused tests, relevant GameTests, and `gradlew build` on JDK 25. Verify the distributable Rovenfall JAR in `build/libs`, not merely the Minecraft development artifacts.
+
+A manually dispatched release workflow is an RC dry run only: it uploads the exact versioned JAR,
+SHA-256 file, and performance report as a temporary Actions artifact and never creates a GitHub
+Release. Public publication requires an annotated SemVer `v*` tag whose commit is contained in
+`main`; the tag workflow repeats the JDK 25 gate and publishes the verified JAR and checksum.

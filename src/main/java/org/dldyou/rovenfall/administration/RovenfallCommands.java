@@ -59,7 +59,10 @@ public final class RovenfallCommands {
                                                         context.getSource(),
                                                         EntityArgument.getPlayer(context, "player"),
                                                         StringArgumentType.getString(context, "role"),
-                                                        StringArgumentType.getString(context, "reason")))))));
+                                                StringArgumentType.getString(context, "reason")))))));
+
+        var helpCommand = Commands.literal("help")
+                .executes(context -> showAdminHelp(context.getSource()));
 
         var auditCommand = Commands.literal("audit")
                 .then(Commands.literal("list")
@@ -104,11 +107,13 @@ public final class RovenfallCommands {
                                         StringArgumentType.getString(context, "reason")))))
                 .then(Commands.literal("restore")
                         .then(Commands.argument("snapshot_id", UuidArgument.uuid())
-                                .then(Commands.argument("reason", StringArgumentType.greedyString())
-                                        .executes(context -> restoreSnapshot(
-                                                context.getSource(),
-                                                UuidArgument.getUuid(context, "snapshot_id"),
-                                                StringArgumentType.getString(context, "reason"))))));
+                                .then(Commands.argument("transaction_id", UuidArgument.uuid())
+                                        .then(Commands.argument("reason", StringArgumentType.greedyString())
+                                                .executes(context -> restoreSnapshot(
+                                                        context.getSource(),
+                                                        UuidArgument.getUuid(context, "snapshot_id"),
+                                                        UuidArgument.getUuid(context, "transaction_id"),
+                                                        StringArgumentType.getString(context, "reason")))))));
 
         var wildernessCommand = Commands.literal("wilderness")
                 .requires(RovenfallCommands::canResetWilderness)
@@ -463,6 +468,7 @@ public final class RovenfallCommands {
                 .then(portalCommand)
                 .then(Commands.literal("admin")
                         .requires(RovenfallCommands::canUseAdministration)
+                        .then(helpCommand)
                         .then(roleCommand)
                         .then(economyCommand)
                         .then(operationsCommand)
@@ -1723,7 +1729,8 @@ public final class RovenfallCommands {
         };
     }
 
-    private static int restoreSnapshot(CommandSourceStack source, UUID snapshotId, String reason) {
+    private static int restoreSnapshot(
+            CommandSourceStack source, UUID snapshotId, UUID transactionId, String reason) {
         PlatformSavedData state = PlatformSavedData.get(source.getServer());
         var result = AdministrationService.restoreSnapshot(
                 state,
@@ -1733,7 +1740,7 @@ public final class RovenfallCommands {
                 snapshotId,
                 reason,
                 Instant.now().toEpochMilli(),
-                UUID.randomUUID(),
+                transactionId,
                 UUID.randomUUID()
         );
 
@@ -1840,6 +1847,24 @@ public final class RovenfallCommands {
                     failure(source, "command.rovenfall.admin.wilderness.error.invalid_request");
             case SUCCESS -> 1;
         };
+    }
+
+    private static int showAdminHelp(CommandSourceStack source) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var player = source.getPlayer();
+        AdminRole role = player == null
+                ? AdminRole.OWNER
+                : state.roleOf(player.getUUID()).orElse(AdminRole.OWNER);
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.admin.help.header",
+                Component.translatable(role.translationKey())), false);
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.admin.help.diagnostics"), false);
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.admin.help.privacy"), false);
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.admin.help.role." + role.getSerializedName()), false);
+        return 1;
     }
 
     private static boolean canUseAdministration(CommandSourceStack source) {

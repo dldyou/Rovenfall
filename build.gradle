@@ -175,6 +175,12 @@ tasks.register('performanceBudget') {
     dependsOn tasks.named('test')
 }
 
+tasks.register('recoveryRehearsal') {
+    group = 'verification'
+    description = 'Runs unit recovery fixtures, the performance budget, and the server GameTests.'
+    dependsOn tasks.named('test'), tasks.named('performanceBudget'), tasks.named('runGameTestServer')
+}
+
 tasks.named('jacocoTestReport', JacocoReport).configure {
     dependsOn tasks.named('test')
     reports {

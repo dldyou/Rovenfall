@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.google.gson.JsonParser;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -82,6 +83,14 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.admin.operations.summary",
             "command.rovenfall.admin.operations.summary",
             "command.rovenfall.admin.operations.anomalies",
+            "command.rovenfall.admin.help.header",
+            "command.rovenfall.admin.help.diagnostics",
+            "command.rovenfall.admin.help.privacy",
+            "command.rovenfall.admin.help.role.viewer",
+            "command.rovenfall.admin.help.role.moderator",
+            "command.rovenfall.admin.help.role.economy_manager",
+            "command.rovenfall.admin.help.role.content_manager",
+            "command.rovenfall.admin.help.role.owner",
             "mob.rovenfall.grove_stalker",
             "mob.rovenfall.orebound_beetle",
             "mob.rovenfall.rift_warden_vessel",
@@ -111,6 +120,25 @@ final class LocalizationCatalogTest {
             "command.rovenfall.admin.boss.error.recovery_pending",
             "command.rovenfall.admin.boss.error.transaction_conflict"
     );
+    private static final Set<String> BALANCE_DEFINITION_PATHS = Set.of(
+            "/data/rovenfall/rovenfall/activities/building.json",
+            "/data/rovenfall/rovenfall/activities/combat.json",
+            "/data/rovenfall/rovenfall/activities/cooking.json",
+            "/data/rovenfall/rovenfall/activities/exploration.json",
+            "/data/rovenfall/rovenfall/activities/farming.json",
+            "/data/rovenfall/rovenfall/activities/hunting.json",
+            "/data/rovenfall/rovenfall/activities/mining.json",
+            "/data/rovenfall/rovenfall/careers/berserker.json",
+            "/data/rovenfall/rovenfall/careers/guardian.json",
+            "/data/rovenfall/rovenfall/careers/novice.json",
+            "/data/rovenfall/rovenfall/careers/warrior.json",
+            "/data/rovenfall/rovenfall/skills/battle_fury.json",
+            "/data/rovenfall/rovenfall/skills/power_strike.json",
+            "/data/rovenfall/rovenfall/skills/shield_wall.json",
+            "/data/rovenfall/rovenfall/skills/sturdy_body.json",
+            "/data/rovenfall/rovenfall/shop_templates/foundation.json",
+            "/data/rovenfall/rovenfall/mob_content/foundation.json"
+    );
 
     @Test
     void supportedLanguageCatalogsHaveEqualKeySets() {
@@ -118,6 +146,42 @@ final class LocalizationCatalogTest {
         assertEquals(english, keys("ko_kr"));
         assertEquals(english, keys("ja_jp"));
         assertTrue(english.containsAll(REQUIRED_KEYS));
+    }
+
+    @Test
+    void shippedBalanceDefinitionTranslationKeysExistInEveryCatalog() {
+        Set<String> definitionKeys = new HashSet<>();
+        for (String path : BALANCE_DEFINITION_PATHS) {
+            var stream = LocalizationCatalogTest.class.getResourceAsStream(path);
+            assertNotNull(stream, path);
+            try (var reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
+                collectTranslationKeys(JsonParser.parseReader(reader), definitionKeys);
+            } catch (java.io.IOException exception) {
+                throw new AssertionError(exception);
+            }
+        }
+        assertTrue(!definitionKeys.isEmpty(), "No shipped translation keys were discovered");
+        for (String locale : Set.of("en_us", "ko_kr", "ja_jp")) {
+            Set<String> missing = new HashSet<>(definitionKeys);
+            missing.removeAll(keys(locale));
+            assertTrue(missing.isEmpty(), locale + " is missing shipped definition keys: " + missing);
+        }
+    }
+
+    private static void collectTranslationKeys(com.google.gson.JsonElement element, Set<String> keys) {
+        if (element.isJsonArray()) {
+            element.getAsJsonArray().forEach(child -> collectTranslationKeys(child, keys));
+            return;
+        }
+        if (!element.isJsonObject()) {
+            return;
+        }
+        for (var entry : element.getAsJsonObject().entrySet()) {
+            if (entry.getKey().endsWith("translation_key") && entry.getValue().isJsonPrimitive()) {
+                keys.add(entry.getValue().getAsString());
+            }
+            collectTranslationKeys(entry.getValue(), keys);
+        }
     }
 
     private static Set<String> keys(String locale) {
