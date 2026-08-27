@@ -119,7 +119,7 @@ final class MobContentSnapshotTest {
         var mob = valid.mobs().getFirst();
         var unknownEntityMob = new MobContentCatalog.MobDefinition(
                 mob.id(), mob.translationKey(), id("missing_entity_type"), mob.maxHealth(), mob.attackDamage(),
-                mob.movementSpeed(), mob.behaviorModifiers(), mob.loot());
+                mob.movementSpeed(), mob.behaviorModifiers(), mob.loot(), mob.spawn());
         var mobs = new java.util.ArrayList<>(valid.mobs());
         mobs.set(0, unknownEntityMob);
         MobContentCatalog invalid = new MobContentCatalog(
@@ -168,7 +168,7 @@ final class MobContentSnapshotTest {
         var hubError = assertThrows(MobContentSnapshot.ValidationException.class,
                 () -> listener.prepare(resourceManager(hubJson.toString()), null));
         assertTrue(hubError.problems().stream().anyMatch(
-                problem -> problem.cause().contains("mutation spawn dimension must be rovenfall:wilderness")));
+                problem -> problem.cause().contains("spawn dimension must be rovenfall:wilderness")));
         assertTrue(hubError.problems().stream().anyMatch(
                 problem -> problem.cause().contains("boss arena cannot target the Hub dimension")));
         assertSame(previous, listener.snapshot());
