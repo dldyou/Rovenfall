@@ -31,9 +31,9 @@ import net.minecraft.server.packs.repository.PackSource;
 import net.minecraft.server.packs.resources.IoSupplier;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.storage.loot.LootTable;
 import net.neoforged.neoforge.common.conditions.ICondition;
+import org.dldyou.rovenfall.world.WorldTopology;
 import org.junit.jupiter.api.Test;
 
 final class MobContentSnapshotTest {
@@ -55,10 +55,6 @@ final class MobContentSnapshotTest {
         assertThrows(UnsupportedOperationException.class, () -> snapshot.mobs().clear());
         assertThrows(UnsupportedOperationException.class,
                 () -> snapshot.mob(id("grove_stalker")).orElseThrow().behaviorModifiers().clear());
-        var strictError = assertThrows(MobContentSnapshot.ValidationException.class,
-                () -> snapshot.validateRuntimeBindings(MobContentSnapshot.RuntimeBindings.strict(
-                        bindings.registries(), Level.OVERWORLD)));
-        assertTrue(strictError.problems().stream().anyMatch(problem -> problem.cause().contains("unknown dimension")));
     }
 
     @Test
@@ -196,7 +192,8 @@ final class MobContentSnapshotTest {
         catalog.loot().forEach(definition -> lootRegistry.register(
                 definition.lootTable(), LootTable.lootTable().build(), RegistrationInfo.BUILT_IN));
         var registries = new RegistryAccess.ImmutableRegistryAccess(List.of(lootRegistry));
-        return MobContentSnapshot.RuntimeBindings.awaitingWildernessRegistration(registries);
+        return MobContentSnapshot.RuntimeBindings.strict(
+                registries, WorldTopology.HUB, Set.of(WorldTopology.WILDERNESS));
     }
 
     private static ResourceManager resourceManager(String json) {

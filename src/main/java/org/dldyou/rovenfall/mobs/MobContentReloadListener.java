@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import net.minecraft.resources.FileToIdConverter;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
@@ -19,6 +20,7 @@ import net.minecraft.server.packs.resources.SimplePreparableReloadListener;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.neoforged.neoforge.resource.ListenerKey;
 import org.dldyou.rovenfall.Rovenfall;
+import org.dldyou.rovenfall.world.WorldTopology;
 import org.slf4j.Logger;
 
 public final class MobContentReloadListener extends SimplePreparableReloadListener<MobContentSnapshot> {
@@ -95,9 +97,8 @@ public final class MobContentReloadListener extends SimplePreparableReloadListen
     }
 
     private MobContentSnapshot.RuntimeBindings runtimeBindings() {
-        // Issue #30 will switch this single seam to strict(...) once the Wilderness dimension is registered.
-        // Until then only the canonical Wilderness key may be unbound; Hub/unknown dimensions and every loot table fail.
-        return MobContentSnapshot.RuntimeBindings.awaitingWildernessRegistration(getRegistryLookup());
+        return MobContentSnapshot.RuntimeBindings.strict(
+                getRegistryLookup(), WorldTopology.HUB, Set.of(WorldTopology.WILDERNESS));
     }
 
     public MobContentSnapshot snapshot() {
