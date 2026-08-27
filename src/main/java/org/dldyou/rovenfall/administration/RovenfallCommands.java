@@ -5,6 +5,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.logging.LogUtils;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -36,8 +37,10 @@ import org.dldyou.rovenfall.rpg.RpgCommands;
 import org.dldyou.rovenfall.world.ProtectedRegion;
 import org.dldyou.rovenfall.world.PortalDefinition;
 import org.dldyou.rovenfall.world.WorldTopology;
+import org.slf4j.Logger;
 
 public final class RovenfallCommands {
+    private static final Logger LOGGER = LogUtils.getLogger();
     private static final int AUDIT_PAGE_SIZE = 10;
     private static final int PROTECTED_REGION_PAGE_SIZE = 10;
     private static final int PORTAL_PAGE_SIZE = 10;
@@ -180,6 +183,15 @@ public final class RovenfallCommands {
                                                                         UuidArgument.getUuid(context, "reversal_transaction_id"),
                                                                         StringArgumentType.getString(context, "decision"),
                                                                         StringArgumentType.getString(context, "reason")))))))));
+
+        var operationsCommand = Commands.literal("operations")
+                .executes(context -> openOperations(
+                        context.getSource(), OperationsMetricsService.DEFAULT_WINDOW_MILLIS))
+                .then(Commands.argument("window_minutes", IntegerArgumentType.integer(
+                                1, (int) (OperationsMetricsService.MAX_WINDOW_MILLIS / 60_000L)))
+                        .executes(context -> openOperations(
+                                context.getSource(),
+                                IntegerArgumentType.getInteger(context, "window_minutes") * 60_000L)));
 
         var setOfferReason = Commands.argument("reason", StringArgumentType.greedyString())
                 .executes(context -> setShopOffer(
@@ -453,6 +465,7 @@ public final class RovenfallCommands {
                         .requires(RovenfallCommands::canUseAdministration)
                         .then(roleCommand)
                         .then(economyCommand)
+                        .then(operationsCommand)
                         .then(adminShopCommand)
                         .then(adminClaimCommand)
                         .then(protectedRegionCommand)
@@ -1582,6 +1595,41 @@ public final class RovenfallCommands {
                     EconomyObservabilityService.shops(state, actorId, override, page, EconomyBookView.PAGE_SIZE)));
             case ALERTS -> EconomyBookView.open(player, EconomyBookView.alerts(
                     EconomyObservabilityService.alerts(state, actorId, override, page, EconomyBookView.PAGE_SIZE)));
+        }
+        return 1;
+    }
+
+    private static int openOperations(CommandSourceStack source, long windowMillis) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = OperationsMetricsService.snapshot(
+                source.getServer(), actorId(source), authorizationOverride(source, state),
+                Instant.now().toEpochMilli(), windowMillis);
+        if (result.status() == OperationsMetricsService.Status.UNAUTHORIZED) {
+            return failure(source, "command.rovenfall.admin.operations.error.unauthorized");
+        }
+        if (result.status() != OperationsMetricsService.Status.SUCCESS) {
+            return failure(source, "command.rovenfall.admin.operations.error.invalid_request");
+        }
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.admin.operations.summary",
+                Instant.ofEpochMilli(result.generatedAtEpochMillis()).toString(),
+                result.windowMillis() / 60_000L,
+                result.economyTransactionCount(), result.deniedRequestCount(),
+                result.suspiciousRpgAwardCount(), result.activeEncounterCount(),
+                result.pendingRewardCount(), result.pendingRecoveryCount()), false);
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.admin.operations.anomalies",
+                result.amountAlertCount(), result.rateAlertCount(), result.malformedRequestCount(),
+                result.evidenceTransactionIds().isEmpty()
+                        ? Component.translatable("gui.rovenfall.admin.economy.none")
+                        : Component.literal(result.evidenceTransactionIds().toString())), false);
+        ServerPlayer player = source.getPlayer();
+        if (player != null) {
+            EconomyBookView.open(player, EconomyBookView.operations(result));
+        }
+        if (result.hasAnomaly()) {
+            LOGGER.warn("Rovenfall operations anomalies at {} (window={}ms, evidence={}): inspect audit, economy alerts, RPG history, and boss rewards",
+                    result.generatedAtEpochMillis(), result.windowMillis(), result.evidenceTransactionIds());
         }
         return 1;
     }
