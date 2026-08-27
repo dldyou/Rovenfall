@@ -19,8 +19,10 @@ import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
 import net.minecraft.commands.arguments.item.ItemArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.Permissions;
+import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import org.dldyou.rovenfall.economy.ShopInstance;
 import org.dldyou.rovenfall.economy.ShopTemplateReloadListener;
@@ -30,9 +32,12 @@ import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimRegionPolicy;
 import org.dldyou.rovenfall.claims.ClaimRole;
 import org.dldyou.rovenfall.claims.ClaimSettings;
+import org.dldyou.rovenfall.world.ProtectedRegion;
+import org.dldyou.rovenfall.world.WorldTopology;
 
 public final class RovenfallCommands {
     private static final int AUDIT_PAGE_SIZE = 10;
+    private static final int PROTECTED_REGION_PAGE_SIZE = 10;
 
     private RovenfallCommands() {
     }
@@ -339,6 +344,28 @@ public final class RovenfallCommands {
                 .then(adminClaimUntrustCommand())
                 .then(adminClaimSettingsCommand());
 
+        var protectedRegionCommand = Commands.literal("region")
+                .then(protectedRegionMutationCommand("create", true))
+                .then(protectedRegionMutationCommand("edit", false))
+                .then(Commands.literal("delete")
+                        .then(Commands.argument("region_id", IdentifierArgument.id())
+                                .then(Commands.argument("reason", StringArgumentType.greedyString())
+                                        .executes(context -> deleteProtectedRegion(
+                                                context.getSource(),
+                                                IdentifierArgument.getId(context, "region_id"),
+                                                StringArgumentType.getString(context, "reason"))))))
+                .then(Commands.literal("info")
+                        .then(Commands.argument("region_id", IdentifierArgument.id())
+                                .executes(context -> viewProtectedRegion(
+                                        context.getSource(),
+                                        IdentifierArgument.getId(context, "region_id")))))
+                .then(Commands.literal("list")
+                        .executes(context -> listProtectedRegions(context.getSource(), 0))
+                        .then(Commands.argument("page", IntegerArgumentType.integer(1))
+                                .executes(context -> listProtectedRegions(
+                                        context.getSource(),
+                                        IntegerArgumentType.getInteger(context, "page") - 1))));
+
         event.getDispatcher().register(Commands.literal("rovenfall")
                 .then(playerShopCommand)
                 .then(playerClaimCommand)
@@ -348,8 +375,43 @@ public final class RovenfallCommands {
                         .then(economyCommand)
                         .then(adminShopCommand)
                         .then(adminClaimCommand)
+                        .then(protectedRegionCommand)
                         .then(auditCommand)
                         .then(snapshotCommand)));
+    }
+
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack>
+            protectedRegionMutationCommand(String literal, boolean create) {
+        return Commands.literal(literal)
+                .then(Commands.argument("region_id", IdentifierArgument.id())
+                        .then(Commands.argument("dimension", DimensionArgument.dimension())
+                                .then(Commands.argument("min_chunk_x", IntegerArgumentType.integer())
+                                        .then(Commands.argument("min_chunk_z", IntegerArgumentType.integer())
+                                                .then(Commands.argument("max_chunk_x", IntegerArgumentType.integer())
+                                                        .then(Commands.argument(
+                                                                        "max_chunk_z",
+                                                                        IntegerArgumentType.integer())
+                                                                .then(Commands.argument(
+                                                                                "reason",
+                                                                                StringArgumentType.greedyString())
+                                                                        .executes(context -> mutateProtectedRegion(
+                                                                                context.getSource(),
+                                                                                IdentifierArgument.getId(
+                                                                                        context, "region_id"),
+                                                                                DimensionArgument.getDimension(
+                                                                                                context, "dimension")
+                                                                                        .dimension(),
+                                                                                IntegerArgumentType.getInteger(
+                                                                                        context, "min_chunk_x"),
+                                                                                IntegerArgumentType.getInteger(
+                                                                                        context, "min_chunk_z"),
+                                                                                IntegerArgumentType.getInteger(
+                                                                                        context, "max_chunk_x"),
+                                                                                IntegerArgumentType.getInteger(
+                                                                                        context, "max_chunk_z"),
+                                                                                StringArgumentType.getString(
+                                                                                        context, "reason"),
+                                                                                create)))))))));
     }
 
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> tradeCommand(
@@ -712,13 +774,122 @@ public final class RovenfallCommands {
         };
     }
 
+    private static int mutateProtectedRegion(
+            CommandSourceStack source,
+            Identifier regionId,
+            ResourceKey<Level> dimension,
+            int minChunkX,
+            int minChunkZ,
+            int maxChunkX,
+            int maxChunkZ,
+            String reason,
+            boolean create) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        UUID actorId = actorId(source);
+        var region = new ProtectedRegion(
+                actorId, dimension, minChunkX, minChunkZ, maxChunkX, maxChunkZ);
+        var result = create
+                ? ProtectedRegionService.create(
+                        state, actorId, authorizationOverride(source, state), regionId, region,
+                        reason, Instant.now().toEpochMilli(), UUID.randomUUID())
+                : ProtectedRegionService.edit(
+                        state, actorId, authorizationOverride(source, state), regionId, region,
+                        reason, Instant.now().toEpochMilli(), UUID.randomUUID());
+        if (result.status() == ProtectedRegionService.Status.SUCCESS) {
+            source.sendSuccess(() -> Component.translatable(
+                    create
+                            ? "command.rovenfall.admin.region.create.success"
+                            : "command.rovenfall.admin.region.edit.success",
+                    regionId.toString()), true);
+            return 1;
+        }
+        return protectedRegionFailure(source, result.status());
+    }
+
+    private static int deleteProtectedRegion(
+            CommandSourceStack source,
+            Identifier regionId,
+            String reason) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = ProtectedRegionService.delete(
+                state,
+                actorId(source),
+                authorizationOverride(source, state),
+                regionId,
+                reason,
+                Instant.now().toEpochMilli(),
+                UUID.randomUUID());
+        if (result.status() == ProtectedRegionService.Status.SUCCESS) {
+            source.sendSuccess(() -> Component.translatable(
+                    "command.rovenfall.admin.region.delete.success", regionId.toString()), true);
+            return 1;
+        }
+        return protectedRegionFailure(source, result.status());
+    }
+
+    private static int viewProtectedRegion(CommandSourceStack source, Identifier regionId) {
+        ProtectedRegion region = PlatformSavedData.get(source.getServer()).protectedRegion(regionId).orElse(null);
+        if (region == null) {
+            return failure(source, "command.rovenfall.admin.region.error.not_found");
+        }
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.admin.region.info",
+                regionId.toString(),
+                region.dimension().identifier().toString(),
+                region.minChunkX(),
+                region.minChunkZ(),
+                region.maxChunkX(),
+                region.maxChunkZ(),
+                region.administratorId().toString()), false);
+        return 1;
+    }
+
+    private static int listProtectedRegions(CommandSourceStack source, int page) {
+        var regions = PlatformSavedData.get(source.getServer()).protectedRegions();
+        int totalPages = Math.max(1, (regions.size() + PROTECTED_REGION_PAGE_SIZE - 1)
+                / PROTECTED_REGION_PAGE_SIZE);
+        long offset = (long) page * PROTECTED_REGION_PAGE_SIZE;
+        var pageEntries = offset >= regions.size()
+                ? java.util.List.<java.util.Map.Entry<Identifier, ProtectedRegion>>of()
+                : regions.subList((int) offset, Math.min((int) offset + PROTECTED_REGION_PAGE_SIZE, regions.size()));
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.admin.region.list.header", regions.size(), page + 1, totalPages), false);
+        pageEntries.forEach(entry -> source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.admin.region.list.entry",
+                entry.getKey().toString(),
+                entry.getValue().dimension().identifier().toString(),
+                entry.getValue().minChunkX(),
+                entry.getValue().minChunkZ(),
+                entry.getValue().maxChunkX(),
+                entry.getValue().maxChunkZ()), false));
+        return 1;
+    }
+
+    private static int protectedRegionFailure(
+            CommandSourceStack source,
+            ProtectedRegionService.Status status) {
+        return switch (status) {
+            case INVALID_REQUEST, INVALID_TRANSACTION, DUPLICATE_TRANSACTION -> failure(
+                    source, "command.rovenfall.admin.region.error.invalid_request");
+            case INVALID_REASON -> failure(
+                    source, "command.rovenfall.admin.error.invalid_reason", AdministrationService.MAX_REASON_LENGTH);
+            case READ_ONLY_SCHEMA -> failure(source, "command.rovenfall.admin.error.read_only_schema",
+                    PlatformSavedData.get(source.getServer()).schemaVersion());
+            case UNAUTHORIZED -> failure(source, "command.rovenfall.admin.region.error.unauthorized");
+            case ALREADY_EXISTS -> failure(source, "command.rovenfall.admin.region.error.already_exists");
+            case NOT_FOUND -> failure(source, "command.rovenfall.admin.region.error.not_found");
+            case LIMIT_EXCEEDED -> failure(source, "command.rovenfall.admin.region.error.limit");
+            case SUCCESS -> throw new IllegalStateException("Successful protected region result reached failure handling");
+        };
+    }
+
     private static int buyClaim(CommandSourceStack source) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         UUID transactionId = UUID.randomUUID();
         var result = ClaimPurchaseService.purchase(
                 PlatformSavedData.get(source.getServer()),
                 player.getUUID(),
-                source.getServer().overworld().dimension(),
+                WorldTopology.HUB,
                 player.level().dimension(),
                 player.blockPosition(),
                 ignored -> true,
@@ -905,9 +1076,10 @@ public final class RovenfallCommands {
 
     private static boolean isProtectedClaimRegion(CommandSourceStack source, ClaimKey key) {
         var hub = source.getServer().overworld();
-        return ClaimRegionPolicy.isProtectedHubRegion(
+        return PlatformSavedData.get(source.getServer()).isProtectedRegion(key)
+                || ClaimRegionPolicy.isProtectedHubRegion(
                 key,
-                hub.dimension(),
+                WorldTopology.HUB,
                 hub.getRespawnData().pos(),
                 ClaimConfig.protectedSpawnRadiusChunks());
     }

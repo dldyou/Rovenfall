@@ -9,6 +9,7 @@ import org.dldyou.rovenfall.claims.Claim;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimMutationReceipt;
 import org.dldyou.rovenfall.economy.ShopInstance;
+import org.dldyou.rovenfall.world.ProtectedRegion;
 
 final class PlatformDataMigrations {
     private static final Map<Integer, UnaryOperator<PersistedState>> MIGRATIONS = Map.of(
@@ -18,7 +19,8 @@ final class PlatformDataMigrations {
             3, state -> state.atVersion(4),
             4, state -> state.atVersion(5),
             5, state -> state.atVersion(6),
-            6, PlatformDataMigrations::migrateClaimsToSeven
+            6, PlatformDataMigrations::migrateClaimsToSeven,
+            7, state -> state.atVersion(8)
     );
 
     private PlatformDataMigrations() {
@@ -50,7 +52,7 @@ final class PlatformDataMigrations {
         return new PersistedState(
                 7, state.adminRoles(), state.auditEntries(), state.playerRecords(), state.economyBalances(),
                 state.economyTransactions(), state.shopInstances(), state.economyReceipts(), state.economyAlerts(),
-                migratedClaims, state.claimReceipts());
+                migratedClaims, state.claimReceipts(), state.protectedRegions());
     }
 
     static MigrationResult migrate(
@@ -65,10 +67,11 @@ final class PlatformDataMigrations {
             List<EconomyAlert> economyAlerts,
             Map<ClaimKey, Claim> claims,
             Map<UUID, ClaimMutationReceipt> claimReceipts,
+            Map<Identifier, ProtectedRegion> protectedRegions,
             int targetVersion) {
         PersistedState original = new PersistedState(
                 schemaVersion, adminRoles, auditEntries, playerRecords, economyBalances, economyTransactions,
-                shopInstances, economyReceipts, economyAlerts, claims, claimReceipts);
+                shopInstances, economyReceipts, economyAlerts, claims, claimReceipts, protectedRegions);
         if (schemaVersion < 0 || schemaVersion > targetVersion) {
             return MigrationResult.readOnly(original);
         }
@@ -100,7 +103,8 @@ final class PlatformDataMigrations {
             Map<UUID, EconomyTransactionReceipt> economyReceipts,
             List<EconomyAlert> economyAlerts,
             Map<ClaimKey, Claim> claims,
-            Map<UUID, ClaimMutationReceipt> claimReceipts) {
+            Map<UUID, ClaimMutationReceipt> claimReceipts,
+            Map<Identifier, ProtectedRegion> protectedRegions) {
         PersistedState {
             adminRoles = Map.copyOf(adminRoles);
             auditEntries = List.copyOf(auditEntries);
@@ -112,12 +116,13 @@ final class PlatformDataMigrations {
             economyAlerts = List.copyOf(economyAlerts);
             claims = Map.copyOf(claims);
             claimReceipts = Map.copyOf(claimReceipts);
+            protectedRegions = Map.copyOf(protectedRegions);
         }
 
         PersistedState atVersion(int version) {
             return new PersistedState(
                     version, adminRoles, auditEntries, playerRecords, economyBalances, economyTransactions,
-                    shopInstances, economyReceipts, economyAlerts, claims, claimReceipts);
+                    shopInstances, economyReceipts, economyAlerts, claims, claimReceipts, protectedRegions);
         }
     }
 

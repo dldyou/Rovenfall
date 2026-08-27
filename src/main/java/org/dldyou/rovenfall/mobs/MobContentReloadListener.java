@@ -95,8 +95,8 @@ public final class MobContentReloadListener extends SimplePreparableReloadListen
     }
 
     private MobContentSnapshot.RuntimeBindings runtimeBindings() {
-        // Issue #30 will switch this single seam to strict(...) once the Wilderness dimension is registered.
-        // Until then only the canonical Wilderness key may be unbound; Hub/unknown dimensions and every loot table fail.
+        // World levels are created after datapack reload. Static validation permits only the canonical
+        // Wilderness key here; arbitrary dimensions and every unknown loot table still fail closed.
         return MobContentSnapshot.RuntimeBindings.awaitingWildernessRegistration(getRegistryLookup());
     }
 

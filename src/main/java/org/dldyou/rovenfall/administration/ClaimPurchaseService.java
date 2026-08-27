@@ -11,6 +11,7 @@ import net.minecraft.world.level.Level;
 import org.dldyou.rovenfall.Rovenfall;
 import org.dldyou.rovenfall.claims.Claim;
 import org.dldyou.rovenfall.claims.ClaimKey;
+import org.dldyou.rovenfall.world.WorldTopology;
 
 public final class ClaimPurchaseService {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
@@ -70,7 +71,7 @@ public final class ClaimPurchaseService {
                     "invalid_configuration", 0, state.economyBalance(playerId).orElse(0L),
                     timestampEpochMillis, transactionId);
         }
-        if (!playerDimension.equals(hubDimension)) {
+        if (!WorldTopology.HUB.equals(hubDimension) || !WorldTopology.allowsClaims(playerDimension)) {
             return denied(state, playerId, Optional.of(key), playerPosition, Status.NOT_IN_HUB,
                     "not_in_hub", 0, state.economyBalance(playerId).orElse(0L), timestampEpochMillis, transactionId);
         }

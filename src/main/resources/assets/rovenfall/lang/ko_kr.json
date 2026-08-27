@@ -192,5 +192,16 @@
   "message.rovenfall.claim.denied.build": "이곳에서는 블록을 설치하거나 파괴할 수 없습니다.",
   "message.rovenfall.claim.denied.interact": "이곳에서는 블록이나 보관함을 사용할 수 없습니다.",
   "message.rovenfall.claim.denied.entity": "이곳에서는 엔티티와 상호작용할 수 없습니다.",
-  "message.rovenfall.claim.denied.entry": "토지 소유자가 출입을 제한했습니다."
+  "message.rovenfall.claim.denied.entry": "토지 소유자가 출입을 제한했습니다.",
+  "command.rovenfall.admin.region.create.success": "보호 구역 %s을(를) 생성했습니다.",
+  "command.rovenfall.admin.region.edit.success": "보호 구역 %s을(를) 수정했습니다.",
+  "command.rovenfall.admin.region.delete.success": "보호 구역 %s을(를) 삭제했습니다.",
+  "command.rovenfall.admin.region.info": "%1$s: %2$s 청크 %3$s,%4$s ~ %5$s,%6$s (관리자 %7$s)",
+  "command.rovenfall.admin.region.list.header": "보호 구역: %1$s개 (%2$s/%3$s 페이지)",
+  "command.rovenfall.admin.region.list.entry": "%1$s — %2$s 청크 %3$s,%4$s ~ %5$s,%6$s",
+  "command.rovenfall.admin.region.error.invalid_request": "보호 구역 요청이 올바르지 않습니다.",
+  "command.rovenfall.admin.region.error.unauthorized": "소유자 관리자만 보호 구역을 변경할 수 있습니다.",
+  "command.rovenfall.admin.region.error.already_exists": "해당 ID를 사용하는 보호 구역이 이미 있습니다.",
+  "command.rovenfall.admin.region.error.not_found": "해당 ID를 사용하는 보호 구역이 없습니다.",
+  "command.rovenfall.admin.region.error.limit": "보호 구역 개수 또는 인덱스 면적 제한을 초과합니다."
 }

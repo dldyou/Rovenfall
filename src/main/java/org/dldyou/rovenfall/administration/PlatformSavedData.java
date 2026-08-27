@@ -26,10 +26,14 @@ import org.dldyou.rovenfall.claims.Claim;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimMutationReceipt;
 import org.dldyou.rovenfall.economy.ShopInstance;
+import org.dldyou.rovenfall.world.ProtectedRegion;
+import org.dldyou.rovenfall.world.WorldTopology;
 
 public final class PlatformSavedData extends SavedData {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
-    public static final int CURRENT_SCHEMA_VERSION = 7;
+    public static final int CURRENT_SCHEMA_VERSION = 8;
+    public static final int MAX_PROTECTED_REGIONS = 128;
+    public static final int MAX_INDEXED_PROTECTED_CHUNKS = 131_072;
     public static final int MAX_AUDIT_PAGE_SIZE = 50;
     static final int MAX_ECONOMY_TRANSACTIONS = 250_000;
     static final int MAX_ECONOMY_ALERTS = 10_000;
@@ -61,6 +65,8 @@ public final class PlatformSavedData extends SavedData {
     private static final Codec<Map<ClaimKey, Claim>> CLAIMS_CODEC = boundedClaimsCodec(Claim.MAX_CLAIMS);
     private static final Codec<Map<UUID, ClaimMutationReceipt>> CLAIM_RECEIPTS_CODEC =
             boundedClaimReceiptsCodec(MAX_ECONOMY_TRANSACTIONS);
+    private static final Codec<Map<Identifier, ProtectedRegion>> PROTECTED_REGIONS_CODEC =
+            boundedProtectedRegionsCodec(MAX_PROTECTED_REGIONS, MAX_INDEXED_PROTECTED_CHUNKS);
 
     public static final Codec<PlatformSavedData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.optionalFieldOf("schema_version", 0).forGetter(data -> data.schemaVersion),
@@ -75,7 +81,9 @@ public final class PlatformSavedData extends SavedData {
             ECONOMY_RECEIPTS_CODEC.optionalFieldOf("economy_receipts", Map.of()).forGetter(data -> data.economyReceipts),
             ECONOMY_ALERTS_CODEC.optionalFieldOf("economy_alerts", List.of()).forGetter(data -> data.economyAlerts),
             CLAIMS_CODEC.optionalFieldOf("claims", Map.of()).forGetter(data -> data.claims),
-            CLAIM_RECEIPTS_CODEC.optionalFieldOf("claim_receipts", Map.of()).forGetter(data -> data.claimReceipts)
+            CLAIM_RECEIPTS_CODEC.optionalFieldOf("claim_receipts", Map.of()).forGetter(data -> data.claimReceipts),
+            PROTECTED_REGIONS_CODEC.optionalFieldOf("protected_regions", Map.of())
+                    .forGetter(data -> data.protectedRegions)
     ).apply(instance, PlatformSavedData::decode));
 
     public static final SavedDataType<PlatformSavedData> TYPE = new SavedDataType<>(
@@ -96,6 +104,8 @@ public final class PlatformSavedData extends SavedData {
     private final List<EconomyAlert> economyAlerts;
     private final Map<ClaimKey, Claim> claims;
     private final Map<UUID, ClaimMutationReceipt> claimReceipts;
+    private final Map<Identifier, ProtectedRegion> protectedRegions;
+    private final Map<ClaimKey, Set<Identifier>> protectedRegionIndex = new HashMap<>();
     private final Map<UUID, Integer> claimCountsByOwner = new HashMap<>();
     private final Map<UUID, ArrayDeque<Long>> recentTransactionsByPlayer = new HashMap<>();
     private final Map<UUID, Long> receiptEvictionTimes = new HashMap<>();
@@ -108,7 +118,7 @@ public final class PlatformSavedData extends SavedData {
 
     public PlatformSavedData() {
         this(CURRENT_SCHEMA_VERSION, Map.of(), List.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), List.of(),
-                Map.of(), Map.of(), true);
+                Map.of(), Map.of(), Map.of(), true);
     }
 
     private PlatformSavedData(
@@ -123,6 +133,7 @@ public final class PlatformSavedData extends SavedData {
             List<EconomyAlert> economyAlerts,
             Map<ClaimKey, Claim> claims,
             Map<UUID, ClaimMutationReceipt> claimReceipts,
+            Map<Identifier, ProtectedRegion> protectedRegions,
             boolean writable) {
         this.schemaVersion = schemaVersion;
         this.writable = writable;
@@ -139,9 +150,11 @@ public final class PlatformSavedData extends SavedData {
         this.economyAlerts = new ArrayList<>(economyAlerts);
         this.claims = new HashMap<>(claims);
         this.claimReceipts = new HashMap<>(claimReceipts);
+        this.protectedRegions = new HashMap<>(protectedRegions);
         rebuildRecentTransactionIndex();
         rebuildReceiptExpiryIndex();
         rebuildClaimOwnerIndex();
+        rebuildProtectedRegionIndex();
     }
 
     private static PlatformSavedData decode(
@@ -155,7 +168,8 @@ public final class PlatformSavedData extends SavedData {
             Map<UUID, EconomyTransactionReceipt> economyReceipts,
             List<EconomyAlert> economyAlerts,
             Map<ClaimKey, Claim> claims,
-            Map<UUID, ClaimMutationReceipt> claimReceipts) {
+            Map<UUID, ClaimMutationReceipt> claimReceipts,
+            Map<Identifier, ProtectedRegion> protectedRegions) {
         var migration = PlatformDataMigrations.migrate(
                 schemaVersion,
                 adminRoles,
@@ -168,6 +182,7 @@ public final class PlatformSavedData extends SavedData {
                 economyAlerts,
                 claims,
                 claimReceipts,
+                protectedRegions,
                 CURRENT_SCHEMA_VERSION
         );
         var state = migration.state();
@@ -183,6 +198,7 @@ public final class PlatformSavedData extends SavedData {
                 state.economyAlerts(),
                 state.claims(),
                 state.claimReceipts(),
+                state.protectedRegions(),
                 migration.writable()
         );
     }
@@ -251,6 +267,44 @@ public final class PlatformSavedData extends SavedData {
         return Optional.ofNullable(claimReceipts.get(transactionId));
     }
 
+    public Optional<ProtectedRegion> protectedRegion(Identifier regionId) {
+        return Optional.ofNullable(protectedRegions.get(regionId));
+    }
+
+    public Set<Identifier> protectedRegionsAt(ClaimKey key) {
+        Set<Identifier> regionIds = protectedRegionIndex.get(key);
+        return regionIds == null ? Set.of() : Set.copyOf(regionIds);
+    }
+
+    public boolean isProtectedRegion(ClaimKey key) {
+        return protectedRegionIndex.containsKey(key);
+    }
+
+    public int protectedRegionCount() {
+        return protectedRegions.size();
+    }
+
+    public List<Map.Entry<Identifier, ProtectedRegion>> protectedRegions() {
+        return protectedRegions.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
+    boolean canStoreProtectedRegion(Identifier regionId, ProtectedRegion region) {
+        if (regionId == null || region == null || !region.isValid()) {
+            return false;
+        }
+        if (!protectedRegions.containsKey(regionId) && protectedRegions.size() >= MAX_PROTECTED_REGIONS) {
+            return false;
+        }
+        long indexed = protectedRegions.entrySet().stream()
+                .filter(entry -> !entry.getKey().equals(regionId))
+                .mapToLong(entry -> entry.getValue().areaChunks())
+                .sum();
+        return indexed + region.areaChunks() <= MAX_INDEXED_PROTECTED_CHUNKS;
+    }
+
     public Optional<EconomyTransactionReceipt> economyReceipt(UUID transactionId) {
         return Optional.ofNullable(economyReceipts.get(transactionId));
     }
@@ -288,6 +342,11 @@ public final class PlatformSavedData extends SavedData {
 
     public int auditCount() {
         return auditEntries.size();
+    }
+
+    boolean hasAuditTransaction(UUID transactionId) {
+        return transactionId != null && auditEntries.stream()
+                .anyMatch(entry -> transactionId.equals(entry.transactionId()));
     }
 
     public AuditPage auditPage(int page, int pageSize) {
@@ -421,9 +480,12 @@ public final class PlatformSavedData extends SavedData {
         claims.putAll(snapshot.claims);
         claimReceipts.clear();
         claimReceipts.putAll(snapshot.claimReceipts);
+        protectedRegions.clear();
+        protectedRegions.putAll(snapshot.protectedRegions);
         rebuildRecentTransactionIndex();
         rebuildReceiptExpiryIndex();
         rebuildClaimOwnerIndex();
+        rebuildProtectedRegionIndex();
         commitAudit(auditEntry);
     }
 
@@ -508,6 +570,7 @@ public final class PlatformSavedData extends SavedData {
             AuditEntry auditEntry) {
         validateEvidence(playerId, transactionId, timestampEpochMillis, receipt, alerts);
         if (claims.containsKey(claimKey)
+                || !WorldTopology.allowsClaims(claimKey.dimension())
                 || economyReceipts.containsKey(transactionId)
                 || !canCommitReceiptTransaction(transactionId, timestampEpochMillis)
                 || receipt.kind() != EconomyTransactionReceipt.Kind.CLAIM_PURCHASE
@@ -542,6 +605,19 @@ public final class PlatformSavedData extends SavedData {
         replaceClaim(claimKey, claim);
         economyTransactions.put(transactionId, timestampEpochMillis);
         claimReceipts.put(transactionId, receipt);
+        commitAudit(auditEntry);
+    }
+
+    void commitProtectedRegionMutation(
+            Identifier regionId,
+            Optional<ProtectedRegion> region,
+            AuditEntry auditEntry) {
+        if (region.isPresent()) {
+            protectedRegions.put(regionId, region.orElseThrow());
+        } else {
+            protectedRegions.remove(regionId);
+        }
+        rebuildProtectedRegionIndex();
         commitAudit(auditEntry);
     }
 
@@ -947,6 +1023,47 @@ public final class PlatformSavedData extends SavedData {
                 .flatXmap(PlatformSavedData::claimReceiptsFromEntries, PlatformSavedData::claimReceiptEntries);
     }
 
+    static Codec<Map<Identifier, ProtectedRegion>> boundedProtectedRegionsCodec(
+            int maximumRegions,
+            int maximumIndexedChunks) {
+        return ProtectedRegionEntry.CODEC.listOf(0, maximumRegions)
+                .flatXmap(
+                        entries -> protectedRegionsFromEntries(entries, maximumIndexedChunks),
+                        PlatformSavedData::protectedRegionEntries);
+    }
+
+    private static DataResult<Map<Identifier, ProtectedRegion>> protectedRegionsFromEntries(
+            List<ProtectedRegionEntry> entries,
+            int maximumIndexedChunks) {
+        Map<Identifier, ProtectedRegion> regions = new LinkedHashMap<>();
+        long indexedChunks = 0;
+        for (ProtectedRegionEntry entry : entries) {
+            if (regions.putIfAbsent(entry.id(), entry.region()) != null) {
+                return DataResult.error(() -> "Duplicate protected region ID " + entry.id());
+            }
+            indexedChunks += entry.region().areaChunks();
+            if (indexedChunks > maximumIndexedChunks) {
+                return DataResult.error(() -> "Protected region index exceeds " + maximumIndexedChunks + " chunks");
+            }
+        }
+        return DataResult.success(Map.copyOf(regions));
+    }
+
+    private static DataResult<List<ProtectedRegionEntry>> protectedRegionEntries(
+            Map<Identifier, ProtectedRegion> regions) {
+        return DataResult.success(regions.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> new ProtectedRegionEntry(entry.getKey(), entry.getValue()))
+                .toList());
+    }
+
+    private record ProtectedRegionEntry(Identifier id, ProtectedRegion region) {
+        private static final Codec<ProtectedRegionEntry> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                Identifier.CODEC.fieldOf("id").forGetter(ProtectedRegionEntry::id),
+                ProtectedRegion.CODEC.fieldOf("region").forGetter(ProtectedRegionEntry::region)
+        ).apply(instance, ProtectedRegionEntry::new));
+    }
+
     private static DataResult<Map<UUID, ClaimMutationReceipt>> claimReceiptsFromEntries(
             List<ClaimReceiptEntry> entries) {
         Map<UUID, ClaimMutationReceipt> receipts = new LinkedHashMap<>();
@@ -976,6 +1093,9 @@ public final class PlatformSavedData extends SavedData {
     private static DataResult<Map<ClaimKey, Claim>> claimsFromEntries(List<ClaimEntry> entries) {
         Map<ClaimKey, Claim> claims = new LinkedHashMap<>();
         for (ClaimEntry entry : entries) {
+            if (!WorldTopology.allowsClaims(entry.key().dimension())) {
+                return DataResult.error(() -> "Claim is outside the Hub " + entry.key().auditTarget());
+            }
             if (claims.putIfAbsent(entry.key(), entry.claim()) != null) {
                 return DataResult.error(() -> "Duplicate claim key " + entry.key().auditTarget());
             }
@@ -1141,6 +1261,21 @@ public final class PlatformSavedData extends SavedData {
     private void rebuildClaimOwnerIndex() {
         claimCountsByOwner.clear();
         claims.values().forEach(claim -> claimCountsByOwner.merge(claim.ownerId(), 1, Math::addExact));
+    }
+
+    private void rebuildProtectedRegionIndex() {
+        protectedRegionIndex.clear();
+        protectedRegions.forEach((regionId, region) -> {
+            int width = region.maxChunkX() - region.minChunkX() + 1;
+            int height = region.maxChunkZ() - region.minChunkZ() + 1;
+            for (int offsetX = 0; offsetX < width; offsetX++) {
+                for (int offsetZ = 0; offsetZ < height; offsetZ++) {
+                    ClaimKey key = new ClaimKey(
+                            region.dimension(), region.minChunkX() + offsetX, region.minChunkZ() + offsetZ);
+                    protectedRegionIndex.computeIfAbsent(key, ignored -> new HashSet<>()).add(regionId);
+                }
+            }
+        });
     }
 
     boolean commitPlayerLogin(UUID playerId, long timestampEpochMillis) {

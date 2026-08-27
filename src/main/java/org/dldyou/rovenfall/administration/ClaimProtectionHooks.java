@@ -6,6 +6,7 @@ import net.minecraft.server.level.ServerLevel;
 import org.dldyou.rovenfall.claims.ClaimConfig;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimRole;
+import org.dldyou.rovenfall.world.WorldTopology;
 
 public final class ClaimProtectionHooks {
     private ClaimProtectionHooks() {
@@ -22,7 +23,7 @@ public final class ClaimProtectionHooks {
         var hub = level.getServer().overworld();
         return ClaimProtectionService.environmentMayModify(
                 PlatformSavedData.get(level.getServer()),
-                hub.dimension(),
+                WorldTopology.HUB,
                 hub.getRespawnData().pos(),
                 ClaimConfig.protectedSpawnRadiusChunks(),
                 source,
@@ -39,7 +40,7 @@ public final class ClaimProtectionHooks {
                 PlatformSavedData.get(level.getServer()),
                 AdministrationService.SYSTEM_ACTOR,
                 false,
-                hub.dimension(),
+                WorldTopology.HUB,
                 hub.getRespawnData().pos(),
                 ClaimConfig.protectedSpawnRadiusChunks(),
                 target,
