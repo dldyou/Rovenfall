@@ -81,6 +81,8 @@ import org.dldyou.rovenfall.administration.BossAdministrationService;
 import org.dldyou.rovenfall.administration.PlatformSavedData;
 import org.dldyou.rovenfall.administration.OperationsMetricsService;
 import org.dldyou.rovenfall.administration.PlayerRecordService;
+import org.dldyou.rovenfall.administration.PlayerMenuNetwork;
+import org.dldyou.rovenfall.administration.RovenfallInventoryClient;
 import org.dldyou.rovenfall.administration.RpgAdministrationService;
 import org.dldyou.rovenfall.administration.RovenfallCommands;
 import org.dldyou.rovenfall.administration.ShopInstanceService;
@@ -147,9 +149,11 @@ public final class Rovenfall {
         modContainer.registerConfig(ModConfig.Type.SERVER, ClaimConfig.SPEC, "rovenfall-claims-server.toml");
         modBus.addListener(this::registerGameTests);
         modBus.addListener(RpgSkillNetwork::registerPayloads);
+        modBus.addListener(PlayerMenuNetwork::registerPayloads);
         if (FMLEnvironment.getDist() == Dist.CLIENT) {
             RpgSkillClient.register(modBus);
             RovenfallMobClient.register(modBus);
+            RovenfallInventoryClient.register();
         }
         NeoForge.EVENT_BUS.addListener(RovenfallCommands::register);
         NeoForge.EVENT_BUS.addListener(EconomyService::onPlayerLoggedIn);
@@ -157,6 +161,7 @@ public final class Rovenfall {
         NeoForge.EVENT_BUS.addListener(RpgAdministrationService::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(RpgSkillNetwork::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(RpgSkillNetwork::onPlayerLoggedOut);
+        NeoForge.EVENT_BUS.addListener(PlayerMenuNetwork::onPlayerLoggedOut);
         NeoForge.EVENT_BUS.addListener(PlayerRecordService::onPlayerLoggedIn);
         PortalEvents.register(NeoForge.EVENT_BUS);
         WildernessResetEvents.register(NeoForge.EVENT_BUS);

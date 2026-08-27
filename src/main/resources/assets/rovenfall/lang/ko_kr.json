@@ -481,5 +481,10 @@
   "gui.rovenfall.shop.direction.sell": "판매",
   "gui.rovenfall.shop.confirm_title": "거래 확인",
   "gui.rovenfall.shop.confirm": "확인",
-  "gui.rovenfall.shop.cancel": "취소"
+  "gui.rovenfall.shop.cancel": "취소",
+  "gui.rovenfall.inventory.inventory": "인벤토리",
+  "gui.rovenfall.inventory.overview": "정보",
+  "gui.rovenfall.inventory.claims": "토지",
+  "gui.rovenfall.inventory.skills": "스킬",
+  "gui.rovenfall.inventory.shops": "상점"
 }

@@ -481,5 +481,10 @@
   "gui.rovenfall.shop.direction.sell": "Sell",
   "gui.rovenfall.shop.confirm_title": "Confirm Trade",
   "gui.rovenfall.shop.confirm": "Confirm",
-  "gui.rovenfall.shop.cancel": "Cancel"
+  "gui.rovenfall.shop.cancel": "Cancel",
+  "gui.rovenfall.inventory.inventory": "Inventory",
+  "gui.rovenfall.inventory.overview": "Overview",
+  "gui.rovenfall.inventory.claims": "Claims",
+  "gui.rovenfall.inventory.skills": "Skills",
+  "gui.rovenfall.inventory.shops": "Shops"
 }
