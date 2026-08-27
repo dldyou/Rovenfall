@@ -48,6 +48,10 @@ final class LocalizationCatalogTest {
             "skill.rovenfall.power_strike",
             "skill.rovenfall.shield_wall",
             "skill.rovenfall.battle_fury",
+            "message.rovenfall.claim.denied.build",
+            "message.rovenfall.claim.denied.interact",
+            "message.rovenfall.claim.denied.entity",
+            "message.rovenfall.claim.denied.entry",
             "command.rovenfall.admin.audit.header",
             "gui.rovenfall.admin.audit.summary",
             "gui.rovenfall.admin.audit.reason"

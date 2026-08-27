@@ -176,5 +176,9 @@
   "skill.rovenfall.sturdy_body": "強靭な肉体",
   "skill.rovenfall.power_strike": "強打",
   "skill.rovenfall.shield_wall": "シールドウォール",
-  "skill.rovenfall.battle_fury": "戦いの激怒"
+  "skill.rovenfall.battle_fury": "戦いの激怒",
+  "message.rovenfall.claim.denied.build": "ここではブロックを設置または破壊できません。",
+  "message.rovenfall.claim.denied.interact": "ここではブロックやコンテナを使用できません。",
+  "message.rovenfall.claim.denied.entity": "ここではエンティティと対話できません。",
+  "message.rovenfall.claim.denied.entry": "土地の所有者が立ち入りを制限しています。"
 }

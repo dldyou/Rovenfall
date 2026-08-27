@@ -37,6 +37,8 @@ public final class PlatformSavedData extends SavedData {
     static final long ECONOMY_TRANSACTION_RETENTION_MILLIS = Duration.ofDays(30).toMillis();
     private static final long NON_EXPIRING_RECEIPT = -1L;
     private static final Duration AUDIT_RETENTION = Duration.ofDays(30);
+    static final int MAX_AUDIT_ENTRIES = 100_000;
+    static final int MAX_DENIED_AUDIT_ACTORS = 10_000;
     private static final Codec<Map<UUID, AdminRole>> ADMIN_ROLES_CODEC = Codec.unboundedMap(UUIDUtil.STRING_CODEC, AdminRole.CODEC);
     private static final Codec<Map<UUID, PlayerRecord>> PLAYER_RECORDS_CODEC =
             Codec.unboundedMap(UUIDUtil.STRING_CODEC, PlayerRecord.CODEC);
@@ -63,7 +65,8 @@ public final class PlatformSavedData extends SavedData {
     public static final Codec<PlatformSavedData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.optionalFieldOf("schema_version", 0).forGetter(data -> data.schemaVersion),
             ADMIN_ROLES_CODEC.optionalFieldOf("admin_roles", Map.of()).forGetter(data -> data.adminRoles),
-            AuditEntry.CODEC.listOf().optionalFieldOf("audit_entries", List.of()).forGetter(data -> data.auditEntries),
+            AuditEntry.CODEC.listOf(0, MAX_AUDIT_ENTRIES).optionalFieldOf("audit_entries", List.of())
+                    .forGetter(data -> List.copyOf(data.auditEntries)),
             PLAYER_RECORDS_CODEC.optionalFieldOf("player_records", Map.of()).forGetter(data -> data.playerRecords),
             ECONOMY_BALANCES_CODEC.optionalFieldOf("economy_balances", Map.of()).forGetter(data -> data.economyBalances),
             ECONOMY_TRANSACTIONS_CODEC.optionalFieldOf("economy_transactions", Map.of())
@@ -84,7 +87,7 @@ public final class PlatformSavedData extends SavedData {
     private final int schemaVersion;
     private final boolean writable;
     private final Map<UUID, AdminRole> adminRoles;
-    private final List<AuditEntry> auditEntries;
+    private final ArrayDeque<AuditEntry> auditEntries;
     private final Map<UUID, PlayerRecord> playerRecords;
     private final Map<UUID, Long> economyBalances;
     private final Map<UUID, Long> economyTransactions;
@@ -101,7 +104,7 @@ public final class PlatformSavedData extends SavedData {
                     .thenComparing(ReceiptExpiry::reversal, Comparator.reverseOrder())
                     .thenComparing(ReceiptExpiry::transactionId));
     private final java.util.Set<Identifier> shopDependencyLocks = new HashSet<>();
-    private final Map<UUID, Long> lastDeniedAuditByActor = new HashMap<>();
+    private final Map<UUID, Long> lastDeniedAuditByActor = new LinkedHashMap<>(16, 0.75F, true);
 
     public PlatformSavedData() {
         this(CURRENT_SCHEMA_VERSION, Map.of(), List.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), List.of(),
@@ -124,7 +127,10 @@ public final class PlatformSavedData extends SavedData {
         this.schemaVersion = schemaVersion;
         this.writable = writable;
         this.adminRoles = new HashMap<>(adminRoles);
-        this.auditEntries = new ArrayList<>(auditEntries);
+        this.auditEntries = new ArrayDeque<>(auditEntries);
+        while (this.auditEntries.size() > MAX_AUDIT_ENTRIES) {
+            this.auditEntries.removeFirst();
+        }
         this.playerRecords = new HashMap<>(playerRecords);
         this.economyBalances = new HashMap<>(economyBalances);
         this.economyTransactions = new HashMap<>(economyTransactions);
@@ -296,11 +302,13 @@ public final class PlatformSavedData extends SavedData {
             return new AuditPage(page, totalPages, totalEntries, List.of());
         }
 
-        int newestIndex = totalEntries - 1 - (int) offset;
-        int oldestIndex = Math.max(-1, newestIndex - pageSize);
-        List<AuditEntry> entries = new ArrayList<>(newestIndex - oldestIndex);
-        for (int index = newestIndex; index > oldestIndex; index--) {
-            entries.add(auditEntries.get(index));
+        var iterator = auditEntries.descendingIterator();
+        for (long index = 0; index < offset && iterator.hasNext(); index++) {
+            iterator.next();
+        }
+        List<AuditEntry> entries = new ArrayList<>(Math.min(pageSize, totalEntries - (int) offset));
+        while (iterator.hasNext() && entries.size() < pageSize) {
+            entries.add(iterator.next());
         }
         return new AuditPage(page, totalPages, totalEntries, entries);
     }
@@ -616,8 +624,8 @@ public final class PlatformSavedData extends SavedData {
             restoreEntry(economyBalances, playerId, previousBalance);
             restoreEntry(shopInstances, shopId, previousShop);
             restoreEntry(economyTransactions, transactionId, previousTransaction);
-            if (auditEntries.size() > previousAuditSize) {
-                auditEntries.subList(previousAuditSize, auditEntries.size()).clear();
+            while (auditEntries.size() > previousAuditSize) {
+                auditEntries.removeLast();
             }
             setDirty();
             throw exception;
@@ -1154,14 +1162,24 @@ public final class PlatformSavedData extends SavedData {
             return false;
         }
         lastDeniedAuditByActor.put(auditEntry.actorId(), auditEntry.timestampEpochMillis());
+        if (lastDeniedAuditByActor.size() > MAX_DENIED_AUDIT_ACTORS) {
+            var iterator = lastDeniedAuditByActor.keySet().iterator();
+            iterator.next();
+            iterator.remove();
+        }
         commitAudit(auditEntry);
         return true;
     }
 
     void commitAudit(AuditEntry auditEntry) {
-        auditEntries.add(auditEntry);
+        auditEntries.addLast(auditEntry);
         long cutoff = auditEntry.timestampEpochMillis() - AUDIT_RETENTION.toMillis();
-        auditEntries.removeIf(entry -> entry.timestampEpochMillis() < cutoff);
+        while (!auditEntries.isEmpty() && auditEntries.getFirst().timestampEpochMillis() < cutoff) {
+            auditEntries.removeFirst();
+        }
+        while (auditEntries.size() > MAX_AUDIT_ENTRIES) {
+            auditEntries.removeFirst();
+        }
         setDirty();
     }
 

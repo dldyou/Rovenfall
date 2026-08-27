@@ -176,5 +176,9 @@
   "skill.rovenfall.sturdy_body": "Sturdy Body",
   "skill.rovenfall.power_strike": "Power Strike",
   "skill.rovenfall.shield_wall": "Shield Wall",
-  "skill.rovenfall.battle_fury": "Battle Fury"
+  "skill.rovenfall.battle_fury": "Battle Fury",
+  "message.rovenfall.claim.denied.build": "You cannot place or break blocks here.",
+  "message.rovenfall.claim.denied.interact": "You cannot use blocks or containers here.",
+  "message.rovenfall.claim.denied.entity": "You cannot interact with entities here.",
+  "message.rovenfall.claim.denied.entry": "The owner has restricted entry to this land."
 }
