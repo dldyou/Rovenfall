@@ -51,6 +51,7 @@ Administrative RPG mutations use the same cross-root ordering without an economy
 - Validate duplicate IDs, missing references, career cycles, skill cycles, invalid ranks, impossible prerequisites, invalid prices/stocks, portal links, translation keys, and numeric bounds.
 - Swap the complete validated snapshot atomically. A single error keeps the prior snapshot and reports file, definition ID, and cause.
 - Balance and content values belong in data unless they enforce a safety invariant.
+- Extend activities, arbitrary career tiers/branches, and skills through stable namespaced data IDs and the typed definition snapshot. Event adapters only validate completed server outcomes and delegate to domain services; new effect or resource-cost types require an explicit code contract and milestone-gate coverage.
 
 ## Authorization and protection
 

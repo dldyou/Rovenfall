@@ -108,3 +108,10 @@ immutable and suitable for administration queries or background read-only work.
 `RpgPlayerSnapshotStore` can persist an atomic compressed NBT copy under
 `rovenfall/snapshots/rpg`; it refuses overwrite, size violations, malformed data,
 and unsupported schemas.
+
+The stable data, reload, persistence, effect, and verification seams for adding
+activities, arbitrary career tiers and branches, and passive or active skills are
+documented in [`rpg-extension-contracts.md`](rpg-extension-contracts.md).
+`RpgMilestoneWorkflowTest` is the single connected regression gate for this
+progression lifecycle; the dedicated-server RPG GameTests retain the Minecraft
+event, entity, targeting, and runtime boundaries.
