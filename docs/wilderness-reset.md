@@ -31,6 +31,10 @@ captures Wilderness placed-resource provenance so restored ores cannot be treate
 most eight snapshot directories are accepted; reaching the limit fails before evacuation or world
 replacement so an operator can archive old snapshots deliberately.
 
+World-only snapshots created before provenance tracking are accepted only when their recorded hash
+still matches. They are upgraded atomically with an empty Wilderness marker set, which is safe
+because those snapshots predate placed-resource provenance.
+
 While an operation is staged, portal travel and Wilderness block, interaction, entity, fluid,
 piston, fire, and explosion mutations are denied. Preparation or evacuation failure leaves the
 current Wilderness authoritative and rolls back any partial evacuation; a failed return teleport is

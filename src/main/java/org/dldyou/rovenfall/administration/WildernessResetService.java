@@ -157,10 +157,7 @@ public final class WildernessResetService {
                 if (recorded.isEmpty()) {
                     throw new WildernessResetStore.StoreException("snapshot_not_recorded");
                 }
-                targetEvidence = store.snapshotEvidence(targetSnapshotId);
-                if (!targetEvidence.equals(recorded.orElseThrow())) {
-                    throw new WildernessResetStore.StoreException("snapshot_evidence_mismatch");
-                }
+                targetEvidence = store.validateOrMigrateSnapshot(targetSnapshotId, recorded.orElseThrow());
             }
         } catch (WildernessResetStore.StoreException | RuntimeException exception) {
             if (recoverySnapshotCreated) {
@@ -288,7 +285,14 @@ public final class WildernessResetService {
             MinecraftServer server,
             WildernessResetStore store,
             WildernessResetState.Operation operation) throws WildernessResetStore.StoreException {
-        ActivityWorldSavedData activityState = ActivityWorldSavedData.get(server);
+        reconcileActivityMarkers(ActivityWorldSavedData.get(server), store, operation);
+    }
+
+    static void reconcileActivityMarkers(
+            ActivityWorldSavedData activityState,
+            WildernessResetStore store,
+            WildernessResetState.Operation operation) throws WildernessResetStore.StoreException {
+        store.validateOrMigrateOperationSnapshots(operation);
         if (!activityState.isWritable() || activityState.isSaturated()) {
             return;
         }

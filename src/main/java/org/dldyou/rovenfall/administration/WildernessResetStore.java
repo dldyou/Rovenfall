@@ -32,7 +32,8 @@ final class WildernessResetStore {
     static final int MAX_SNAPSHOTS = 8;
     private static final String ACTIVITY_MARKERS_FILE = "activity-markers.nbt";
     private static final long MAX_FILES = 1_000_000L;
-    private static final long MAX_MANIFEST_BYTES = 1L * 1024L * 1024L;
+    private static final long MAX_OPERATION_MANIFEST_BYTES = 1L * 1024L * 1024L;
+    private static final long MAX_ACTIVITY_MARKERS_BYTES = 32L * 1024L * 1024L;
     private final Path root;
     private final Path trustedWorldRoot;
 
@@ -71,7 +72,7 @@ final class WildernessResetStore {
             }
             copyTree(wildernessPath, temporary.resolve("world"));
             writeAtomic(temporary.resolve(ACTIVITY_MARKERS_FILE),
-                    ActivityWorldSavedData.DimensionSnapshot.CODEC, activityMarkers);
+                    ActivityWorldSavedData.DimensionSnapshot.CODEC, activityMarkers, MAX_ACTIVITY_MARKERS_BYTES);
             SnapshotEvidence evidence = inspectTree(temporary);
             moveAtomic(temporary, snapshotDirectory(snapshotId));
             return evidence;
@@ -98,7 +99,39 @@ final class WildernessResetStore {
     ActivityWorldSavedData.DimensionSnapshot activityMarkers(UUID snapshotId) throws StoreException {
         Path source = snapshotDirectory(snapshotId).resolve(ACTIVITY_MARKERS_FILE).normalize();
         requireManagedPath(source);
-        return read(source, ActivityWorldSavedData.DimensionSnapshot.CODEC);
+        return read(source, ActivityWorldSavedData.DimensionSnapshot.CODEC, MAX_ACTIVITY_MARKERS_BYTES);
+    }
+
+    SnapshotEvidence validateOrMigrateSnapshot(UUID snapshotId, SnapshotEvidence recorded) throws StoreException {
+        if (recorded == null) {
+            throw new StoreException("snapshot_evidence_missing");
+        }
+        Path directory = snapshotDirectory(snapshotId);
+        Path markers = directory.resolve(ACTIVITY_MARKERS_FILE).normalize();
+        requireManagedPath(directory);
+        SnapshotEvidence combined = inspectTree(directory);
+        if (Files.isRegularFile(markers, LinkOption.NOFOLLOW_LINKS)) {
+            ActivityWorldSavedData.DimensionSnapshot snapshot = activityMarkers(snapshotId);
+            if (!snapshot.dimension().equals(WorldTopology.WILDERNESS)) {
+                throw new StoreException("activity_marker_dimension_mismatch");
+            }
+            if (combined.equals(recorded)) {
+                return combined;
+            }
+            SnapshotEvidence legacy = inspectTree(snapshotWorld(snapshotId));
+            if (legacy.equals(recorded) && snapshot.positions().isEmpty()) {
+                return combined;
+            }
+            throw new StoreException("snapshot_evidence_mismatch");
+        }
+        SnapshotEvidence legacy = inspectTree(snapshotWorld(snapshotId));
+        if (!legacy.equals(recorded)) {
+            throw new StoreException("snapshot_evidence_mismatch");
+        }
+        writeAtomic(markers, ActivityWorldSavedData.DimensionSnapshot.CODEC,
+                ActivityWorldSavedData.DimensionSnapshot.empty(WorldTopology.WILDERNESS),
+                MAX_ACTIVITY_MARKERS_BYTES);
+        return inspectTree(directory);
     }
 
     void prepareReset(WildernessResetState.Operation operation) throws StoreException {
@@ -111,11 +144,7 @@ final class WildernessResetStore {
         try {
             requireManagedPath(sourceDirectory);
             requireManagedPath(stagingDirectory(operation.transactionId()));
-            SnapshotEvidence evidence = inspectTree(sourceDirectory);
-            if (!evidence.matches(operation)) {
-                throw new StoreException("snapshot_evidence_mismatch");
-            }
-            activityMarkers(operation.snapshotId());
+            validateOrMigrateSnapshot(operation.snapshotId(), targetEvidence(operation));
             SnapshotEvidence worldEvidence = inspectTree(source);
             Path staging = stagingWorld(operation.transactionId());
             if (Files.exists(stagingDirectory(operation.transactionId()))) {
@@ -211,10 +240,7 @@ final class WildernessResetStore {
 
     private void validatePreparedArtifacts(WildernessResetState.Operation operation, Path staging)
             throws StoreException {
-        validateSnapshot(operation.snapshotId(), operation, false);
-        if (!operation.recoverySnapshotId().equals(operation.snapshotId())) {
-            validateSnapshot(operation.recoverySnapshotId(), operation, true);
-        }
+        validateOrMigrateOperationSnapshots(operation);
         SnapshotEvidence stagingEvidence = inspectTree(staging);
         if (operation.kind() == WildernessResetState.Kind.RESET) {
             if (stagingEvidence.fileCount() != 0L || stagingEvidence.byteCount() != 0L) {
@@ -242,19 +268,20 @@ final class WildernessResetStore {
         }
     }
 
-    private void validateSnapshot(
-            UUID snapshotId,
-            WildernessResetState.Operation operation,
-            boolean recovery) throws StoreException {
-        SnapshotEvidence evidence = inspectTree(snapshotDirectory(snapshotId));
-        boolean matches = recovery ? evidence.matchesRecovery(operation) : evidence.matches(operation);
-        if (!matches) {
-            throw new StoreException(recovery
-                    ? "recovery_snapshot_evidence_mismatch" : "snapshot_evidence_mismatch");
+    void validateOrMigrateOperationSnapshots(WildernessResetState.Operation operation) throws StoreException {
+        validateOrMigrateSnapshot(operation.snapshotId(), targetEvidence(operation));
+        if (!operation.recoverySnapshotId().equals(operation.snapshotId())) {
+            validateOrMigrateSnapshot(operation.recoverySnapshotId(), recoveryEvidence(operation));
         }
-        if (!activityMarkers(snapshotId).dimension().equals(WorldTopology.WILDERNESS)) {
-            throw new StoreException("activity_marker_dimension_mismatch");
-        }
+    }
+
+    private static SnapshotEvidence targetEvidence(WildernessResetState.Operation operation) {
+        return new SnapshotEvidence(operation.fileCount(), operation.byteCount(), operation.sha256());
+    }
+
+    private static SnapshotEvidence recoveryEvidence(WildernessResetState.Operation operation) {
+        return new SnapshotEvidence(
+                operation.recoveryFileCount(), operation.recoveryByteCount(), operation.recoverySha256());
     }
 
     Optional<LifecycleResult> lifecycleResult() throws StoreException {
@@ -454,6 +481,10 @@ final class WildernessResetStore {
     }
 
     private <T> void writeAtomic(Path target, Codec<T> codec, T value) throws StoreException {
+        writeAtomic(target, codec, value, MAX_OPERATION_MANIFEST_BYTES);
+    }
+
+    private <T> void writeAtomic(Path target, Codec<T> codec, T value, long maximumBytes) throws StoreException {
         Path temporary = null;
         try {
             requireManagedPath(target);
@@ -467,7 +498,7 @@ final class WildernessResetStore {
             }
             temporary = Files.createTempFile(target.getParent(), target.getFileName().toString(), ".tmp");
             NbtIo.writeCompressed(tag, temporary);
-            if (Files.size(temporary) > MAX_MANIFEST_BYTES) {
+            if (Files.size(temporary) > maximumBytes) {
                 throw new StoreException("manifest_too_large");
             }
             moveAtomic(temporary, target);
@@ -482,11 +513,15 @@ final class WildernessResetStore {
     }
 
     private static <T> T read(Path source, Codec<T> codec) throws StoreException {
+        return read(source, codec, MAX_OPERATION_MANIFEST_BYTES);
+    }
+
+    private static <T> T read(Path source, Codec<T> codec, long maximumBytes) throws StoreException {
         try {
-            if (!Files.isRegularFile(source) || Files.size(source) > MAX_MANIFEST_BYTES) {
+            if (!Files.isRegularFile(source) || Files.size(source) > maximumBytes) {
                 throw new StoreException("manifest_missing_or_large");
             }
-            CompoundTag tag = NbtIo.readCompressed(source, NbtAccounter.create(MAX_MANIFEST_BYTES));
+            CompoundTag tag = NbtIo.readCompressed(source, NbtAccounter.create(maximumBytes));
             return codec.parse(NbtOps.INSTANCE, tag).getOrThrow();
         } catch (IOException | RuntimeException exception) {
             throw new StoreException(exception);
@@ -613,11 +648,6 @@ final class WildernessResetStore {
                     && sha256.equals(operation.sha256());
         }
 
-        boolean matchesRecovery(WildernessResetState.Operation operation) {
-            return fileCount == operation.recoveryFileCount()
-                    && byteCount == operation.recoveryByteCount()
-                    && sha256.equals(operation.recoverySha256());
-        }
     }
 
     record LifecycleResult(WildernessResetState.Operation operation, boolean succeeded, String detail) {
