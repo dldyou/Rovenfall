@@ -3,5 +3,9 @@
   "career": "rovenfall:novice",
   "kind": "passive",
   "max_rank": 3,
-  "point_cost": 1
+  "point_cost": 1,
+  "passive_effect": {
+    "type": "damage_taken_reduction",
+    "basis_points_per_rank": 500
+  }
 }

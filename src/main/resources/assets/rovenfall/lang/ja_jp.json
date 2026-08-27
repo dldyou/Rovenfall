@@ -127,6 +127,8 @@
   "config.rovenfall.rpg.activity_xp.window_seconds": "活動経験値レート期間（秒）",
   "config.rovenfall.rpg.activity_xp.cooldown_millis": "活動ソースのクールダウン（ミリ秒）",
   "config.rovenfall.rpg.activity_xp.combat_target_xp_cap": "プレイヤーごとの対象別最大戦闘経験値",
+  "config.rovenfall.rpg.skill_reset.branch_cost": "スキル分岐リセット費用",
+  "config.rovenfall.rpg.skill_reset.full_cost": "職業全体スキルリセット費用",
   "config.rovenfall.rpg.activity_xp.exploration_advancements": "探索経験値の対象進捗",
   "economy_transaction_kind.rovenfall.claim_purchase": "土地購入",
   "economy_transaction_kind.rovenfall.claim_sale": "土地売却",
@@ -280,5 +282,16 @@
   "command.rovenfall.career.error.read_only": "RPG 保存データが読み取り専用のため、職業を変更できません。",
   "command.rovenfall.career.error.state_full": "RPG 進行状態または監査証拠をこれ以上保存できません。",
   "command.rovenfall.career.error.duplicate": "その職業トランザクションはすでに処理されています。",
-  "command.rovenfall.career.error.failed": "職業操作に失敗しました: %s"
+  "command.rovenfall.career.error.failed": "職業操作に失敗しました: %s",
+  "command.rovenfall.skill.learn.success": "%1$s をランク %2$s で習得しました。残りスキルポイント: %3$s",
+  "command.rovenfall.skill.learn.error.prerequisite": "%1$s はランク %2$s が必要です。現在は %3$s です。",
+  "command.rovenfall.skill.learn.error.points": "スキルポイントが足りません。所持: %s",
+  "command.rovenfall.skill.learn.error.max_rank": "%1$s はすでに最大ランク %2$s です。",
+  "command.rovenfall.skill.learn.error.career": "そのスキルの職業に転職してから習得してください。",
+  "command.rovenfall.skill.reset.success": "%1$s を支払ってスキルをリセットしました。残高: %2$s、監査トランザクション: %3$s",
+  "command.rovenfall.skill.reset.error.funds": "リセット費用は %1$s ですが、残高は %2$s です。",
+  "command.rovenfall.skill.reset.error.empty": "その範囲には習得済みスキルがありません。",
+  "command.rovenfall.skill.error.unknown": "不明なスキルまたは職業です: %s",
+  "command.rovenfall.skill.error.read_only": "保存データが読み取り専用のため、スキルを変更できません。",
+  "command.rovenfall.skill.error.failed": "スキル操作に失敗しました: %s"
 }

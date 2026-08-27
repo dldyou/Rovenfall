@@ -149,13 +149,54 @@ final class ActivityXpAwardServiceTest {
         var progress = state.state(PLAYER).careers().get(career);
         assertEquals(15, progress.experience());
         assertEquals(1, progress.rank());
-        assertEquals(7, progress.skillPoints());
+        assertEquals(8, progress.skillPoints());
         assertEquals(1, state.state(PLAYER).provenance().size());
         assertEquals(1, state.state(PLAYER).careerProvenance().size());
         assertEquals(RpgPlayerState.ProgressionProvenance.Kind.CAREER_XP,
                 state.state(PLAYER).careerProvenance().getLast().kind());
         assertTrue(!state.state(PLAYER).provenance().getFirst().transactionId()
                 .equals(state.state(PLAYER).careerProvenance().getLast().transactionId()));
+    }
+
+    @Test
+    void crossingMultipleCareerRanksGrantsOnlyTheRankDelta() {
+        Identifier career = id("warrior");
+        RpgPlayerSavedData state = new RpgPlayerSavedData();
+        assertTrue(state.commit(PLAYER, new RpgPlayerState(
+                java.util.Map.of(),
+                java.util.Map.of(career, new RpgPlayerState.CareerProgress(0, 0, 0, java.util.Map.of())),
+                Optional.of(career), java.util.Map.of(), java.util.Map.of(), List.of())));
+
+        assertEquals(ActivityXpAwardService.Status.SUCCESS,
+                ActivityXpAwardService.award(
+                        state, definitionsWithCareer(career), PLAYER, ACTIVITY, 10, 10_000,
+                        uuid(60), "combat:rank-jump", LIMITS).status());
+        assertEquals(2, state.state(PLAYER).careers().get(career).rank());
+        assertEquals(2, state.state(PLAYER).careers().get(career).skillPoints());
+
+        assertEquals(ActivityXpAwardService.Status.SUCCESS,
+                ActivityXpAwardService.award(
+                        state, definitionsWithCareer(career), PLAYER, ACTIVITY, 1, 11_000,
+                        uuid(61), "combat:same-rank", LIMITS).status());
+        assertEquals(2, state.state(PLAYER).careers().get(career).skillPoints());
+    }
+
+    @Test
+    void skillPointCapRejectsTheWholeActivityAndCareerAward() {
+        Identifier career = id("warrior");
+        RpgPlayerSavedData state = new RpgPlayerSavedData();
+        assertTrue(state.commit(PLAYER, new RpgPlayerState(
+                java.util.Map.of(),
+                java.util.Map.of(career, new RpgPlayerState.CareerProgress(
+                        0, 0, RpgPlayerState.MAX_SKILL_POINTS, java.util.Map.of())),
+                Optional.of(career), java.util.Map.of(), java.util.Map.of(), List.of())));
+        RpgPlayerState before = state.state(PLAYER);
+
+        assertEquals(ActivityXpAwardService.Status.OVERFLOW,
+                ActivityXpAwardService.award(
+                        state, definitionsWithCareer(career), PLAYER, ACTIVITY, 5, 20_000,
+                        uuid(62), "combat:point-cap", LIMITS).status());
+        assertEquals(before, state.state(PLAYER));
     }
 
     @Test

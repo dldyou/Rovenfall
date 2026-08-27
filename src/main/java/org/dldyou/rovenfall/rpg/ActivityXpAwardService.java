@@ -141,8 +141,17 @@ public final class ActivityXpAwardService {
             }
             int rank = Math.max(progress.rank(), CareerProgressionService.levelForXp(
                     careerExperience, activeCareerDefinition.orElseThrow().levelXp()));
+            final int skillPoints;
+            try {
+                skillPoints = Math.addExact(progress.skillPoints(), rank - progress.rank());
+            } catch (ArithmeticException exception) {
+                return new AwardResult(Status.OVERFLOW, total, false);
+            }
+            if (skillPoints > RpgPlayerState.MAX_SKILL_POINTS) {
+                return new AwardResult(Status.OVERFLOW, total, false);
+            }
             careers.put(careerId, new RpgPlayerState.CareerProgress(
-                    careerExperience, rank, progress.skillPoints(), progress.learnedSkills()));
+                    careerExperience, rank, skillPoints, progress.learnedSkills()));
             careerEvidence = List.of(new RpgPlayerState.ProgressionProvenance(
                     RpgPlayerState.ProgressionProvenance.Kind.CAREER_XP,
                     careerId, careerAward, timestamp, careerTransactionId.orElseThrow(), source));

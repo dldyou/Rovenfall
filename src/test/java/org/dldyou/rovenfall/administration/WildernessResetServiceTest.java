@@ -81,7 +81,7 @@ final class WildernessResetServiceTest {
 
         var encoded = PlatformSavedData.CODEC.encodeStart(JsonOps.INSTANCE, state).getOrThrow();
         PlatformSavedData decoded = PlatformSavedData.CODEC.parse(JsonOps.INSTANCE, encoded).getOrThrow();
-        assertEquals(10, decoded.schemaVersion());
+        assertEquals(PlatformSavedData.CURRENT_SCHEMA_VERSION, decoded.schemaVersion());
         assertEquals(warningId, decoded.wildernessResetState().warning().orElseThrow().warningId());
         assertFalse(decoded.isWildernessOperationLocked());
     }
@@ -95,7 +95,7 @@ final class WildernessResetServiceTest {
 
         PlatformSavedData migrated = PlatformSavedData.CODEC.parse(JsonOps.INSTANCE, encoded).getOrThrow();
 
-        assertEquals(10, migrated.schemaVersion());
+        assertEquals(PlatformSavedData.CURRENT_SCHEMA_VERSION, migrated.schemaVersion());
         assertEquals(WildernessResetState.EMPTY, migrated.wildernessResetState());
         assertTrue(migrated.isWritable());
     }

@@ -47,11 +47,13 @@ Activity proficiencies are permanent independent tracks:
 
 A **career definition** has a stable ID, arbitrary positive tier, zero or more parent career IDs, prerequisites, level curve, rewards, and skill tree. Career definitions form an acyclic graph and may branch at any tier.
 
-A player retains progress for learned careers but has exactly one active career. Sibling branches are mutually exclusive. Switching to a conflicting branch resets only that branch and its descendants after explicit cost and confirmation; common ancestors remain. Career-only effects work for the active career and its lineage. Only effects declared `GLOBAL` remain active across careers.
+A player retains progress for every promoted career but has exactly one active career. Any previously promoted career, including a sibling branch or ancestor, may be reactivated without resetting progress; an unpromoted career cannot be selected. Career and passive skill effects work only for the active career and its ancestor lineage unless a future effect type explicitly declares a broader scope.
 
 Promotion conditions can combine career level, activity levels, prerequisite skills, currency, and items. Validation and cost consumption are one transaction.
 
 Skill points belong to a career and come from career levels or promotion rewards. A **skill node** has a stable ID, prerequisite nodes, maximum rank, point cost, and typed effects. Tree definitions and balance live in data; reusable effects use registered effect types, while genuinely complex behavior uses a Java handler registered by ID. Arbitrary scripts are outside scope.
+
+One skill point is granted for each newly reached career rank. Learning spends points from the skill's owning promoted career and validates every prerequisite rank across the career lineage. A branch reset removes one learned skill plus every transitive learned dependent; a full reset starts with all learned skills owned by one career and applies the same dependent closure. Both refund the exact points originally implied by the current validated definitions. Paid resets use a durable cross-root operation and cannot be refunded through generic economy reversal.
 
 Players can equip four active skills. Client keybinds express intent; the server validates active career, learned rank, slot, cooldown, target, range, and context. The initial cost model is cooldown-only, with room for a future registered resource-cost type.
 

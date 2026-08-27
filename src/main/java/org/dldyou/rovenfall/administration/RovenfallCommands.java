@@ -426,6 +426,7 @@ public final class RovenfallCommands {
                 .then(playerShopCommand)
                 .then(playerClaimCommand)
                 .then(RpgCommands.careerCommand())
+                .then(RpgCommands.skillCommand())
                 .then(portalCommand)
                 .then(Commands.literal("admin")
                         .requires(RovenfallCommands::canUseAdministration)

@@ -24,7 +24,9 @@ career XP using that career's data-driven `career_xp_multiplier`. Activity XP,
 career XP, rank advancement, and their two distinct provenance transactions are
 committed together; activity evidence and career evidence use separate bounded
 ledgers so career progress cannot shorten activity duplicate/rate-limit history.
-Overflow or a missing active-career definition rejects the entire award.
+Every newly reached career rank grants one skill point in that same atomic commit.
+Overflow, a saturated point balance, or a missing active-career definition rejects
+the entire award.
 
 The server configuration lives in `rovenfall-rpg-server.toml`. Operators can
 change the maximum XP per result, maximum results per window, window duration,

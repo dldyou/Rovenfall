@@ -31,6 +31,8 @@ Required atomic operations include:
 
 Use `long` for currency and experience totals. Check addition, multiplication, conversion, negative values, and configured upper bounds before mutation. Assign a unique transaction ID to retryable or multi-domain operations so a retry cannot charge or reward twice.
 
+Paid skill resets cross the Platform and RPG persistence roots. Persist the exact validated reset plan with a non-reversible `RPG_SKILL_PAYMENT` receipt as `PENDING`, commit the RPG reset with the same transaction UUID, then mark the operation `COMPLETED`. Login recovery must handle either root reaching disk first without charging or refunding twice. Before applying a persisted plan, regenerate it from the current definitions and player state and require an exact match. Missing/mismatched receipts make Platform persistence read-only; a pending receipt never expires before completion.
+
 ## Persistence and migration
 
 - Store global player/economy/career state outside the resettable Wilderness dimension.
@@ -76,6 +78,8 @@ Audit at minimum:
 Keep audit entries append-only for ordinary administrators, searchable, paginated, and retained for 30 days with rotation. Log mod-relevant state only; never collect chat, private messages, or key input. Monitoring thresholds produce GUI and console alerts, not automatic sanctions.
 
 Support targeted reversal for economy, shops, claims, permissions, careers, and skills. A reversal is a new authorized transaction referencing the original; it never erases history. A shop-purchase reversal reclaims the exact granted items only when they remain available; otherwise it requires an explicit compensating administrator decision and records that decision. It never silently duplicates currency or deletes unrelated items. Use snapshots rather than a general block-history engine for Wilderness reset and bulk migrations.
+
+Generic economy reversal must reject cross-domain payments such as a paid skill reset. Reversing one side without its owning domain's compensation protocol is state corruption, not recovery.
 
 Create a snapshot before Wilderness reset, bulk economy adjustment, destructive migration, or restore. Evacuate players and block concurrent affected operations during reset/restore.
 

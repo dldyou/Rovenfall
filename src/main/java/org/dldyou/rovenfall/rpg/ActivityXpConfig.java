@@ -13,6 +13,8 @@ public final class ActivityXpConfig {
     public static final int DEFAULT_WINDOW_SECONDS = 60;
     public static final int DEFAULT_COOLDOWN_MILLIS = 1_000;
     public static final int DEFAULT_COMBAT_TARGET_XP_CAP = 10;
+    public static final long DEFAULT_BRANCH_SKILL_RESET_COST = 500L;
+    public static final long DEFAULT_FULL_SKILL_RESET_COST = 1_000L;
     public static final List<String> DEFAULT_EXPLORATION_ADVANCEMENTS = List.of(
             "minecraft:adventure/adventuring_time",
             "minecraft:nether/explore_nether");
@@ -22,6 +24,8 @@ public final class ActivityXpConfig {
     private static final ModConfigSpec.IntValue WINDOW_SECONDS;
     private static final ModConfigSpec.IntValue COOLDOWN_MILLIS;
     private static final ModConfigSpec.IntValue COMBAT_TARGET_XP_CAP;
+    private static final ModConfigSpec.LongValue BRANCH_SKILL_RESET_COST;
+    private static final ModConfigSpec.LongValue FULL_SKILL_RESET_COST;
     private static final ModConfigSpec.ConfigValue<List<? extends String>> EXPLORATION_ADVANCEMENTS;
 
     static {
@@ -36,6 +40,12 @@ public final class ActivityXpConfig {
                 .defineInRange("rpg.activity_xp.cooldown_millis", DEFAULT_COOLDOWN_MILLIS, 0, 86_400_000);
         COMBAT_TARGET_XP_CAP = builder.translation("config.rovenfall.rpg.activity_xp.combat_target_xp_cap")
                 .defineInRange("rpg.activity_xp.combat_target_xp_cap", DEFAULT_COMBAT_TARGET_XP_CAP, 1, 10_000);
+        BRANCH_SKILL_RESET_COST = builder.translation("config.rovenfall.rpg.skill_reset.branch_cost")
+                .defineInRange("rpg.skill_reset.branch_cost", DEFAULT_BRANCH_SKILL_RESET_COST, 1L,
+                        RpgPlayerState.MAX_XP);
+        FULL_SKILL_RESET_COST = builder.translation("config.rovenfall.rpg.skill_reset.full_cost")
+                .defineInRange("rpg.skill_reset.full_cost", DEFAULT_FULL_SKILL_RESET_COST, 1L,
+                        RpgPlayerState.MAX_XP);
         EXPLORATION_ADVANCEMENTS = builder.translation(
                         "config.rovenfall.rpg.activity_xp.exploration_advancements")
                 .defineListAllowEmpty("rpg.activity_xp.exploration_advancements", DEFAULT_EXPLORATION_ADVANCEMENTS,
@@ -75,6 +85,18 @@ public final class ActivityXpConfig {
             }
         }
         return Set.copyOf(result);
+    }
+
+    static long skillResetCost(SkillResetPlan.Mode mode) {
+        try {
+            return mode == SkillResetPlan.Mode.FULL
+                    ? FULL_SKILL_RESET_COST.get()
+                    : BRANCH_SKILL_RESET_COST.get();
+        } catch (IllegalStateException ignored) {
+            return mode == SkillResetPlan.Mode.FULL
+                    ? DEFAULT_FULL_SKILL_RESET_COST
+                    : DEFAULT_BRANCH_SKILL_RESET_COST;
+        }
     }
 
     private static boolean validIdentifier(Object value) {

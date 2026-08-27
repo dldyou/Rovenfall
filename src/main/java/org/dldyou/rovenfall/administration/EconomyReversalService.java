@@ -97,6 +97,7 @@ public final class EconomyReversalService {
                 || original.kind() == EconomyTransactionReceipt.Kind.ACCOUNT_CREATE
                 || original.kind() == EconomyTransactionReceipt.Kind.CLAIM_PURCHASE
                 || original.kind() == EconomyTransactionReceipt.Kind.CLAIM_SALE
+                || original.kind() == EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT
                 || original.kind() == EconomyTransactionReceipt.Kind.REVERSAL
                 || original.invalidatedByRestore().isPresent()) {
             return denied(state, actorId, originalTransactionId, reversalTransactionId,
