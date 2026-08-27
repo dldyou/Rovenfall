@@ -365,5 +365,6 @@
   "message.rovenfall.boss.started": "%s이(가) 깨어났습니다. 아레나가 보호됩니다.",
   "message.rovenfall.boss.phase": "보스 페이즈 변경: %s",
   "message.rovenfall.boss.telegraph": "보스 패턴 예고: %s",
-  "message.rovenfall.boss.ended": "보스 인카운터가 종료되었습니다(%s)."
+  "message.rovenfall.boss.ended": "보스 인카운터가 종료되었습니다(%s).",
+  "message.rovenfall.boss.reward_received": "보스 보상이 지급되었습니다: 화폐 %s, 사냥 경험치 %s."
 }

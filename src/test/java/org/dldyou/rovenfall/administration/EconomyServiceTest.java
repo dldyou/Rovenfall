@@ -166,6 +166,30 @@ final class EconomyServiceTest {
     }
 
     @Test
+    void bossRewardPreviewAndCommitUseASeparateIdempotentReceipt() {
+        PlatformSavedData state = new PlatformSavedData();
+        UUID playerId = id(63);
+        UUID transactionId = id(503);
+
+        assertEquals(EconomyService.TransactionStatus.SUCCESS,
+                EconomyService.previewBossReward(
+                        state, playerId, 25, "boss reward rovenfall:test", 1_000,
+                        transactionId, 10, 100));
+        assertTrue(state.economyBalance(playerId).isEmpty());
+        assertEquals(EconomyService.TransactionStatus.SUCCESS,
+                EconomyService.awardBossReward(
+                        state, playerId, 25, "boss reward rovenfall:test", 1_000,
+                        transactionId, 10, 100).status());
+        assertEquals(EconomyTransactionReceipt.Kind.BOSS_REWARD,
+                state.economyReceipt(transactionId).orElseThrow().kind());
+        assertEquals(EconomyService.TransactionStatus.DUPLICATE_TRANSACTION,
+                EconomyService.previewBossReward(
+                        state, playerId, 25, "boss reward rovenfall:test", 1_001,
+                        transactionId, 10, 100));
+        assertEquals(35, state.economyBalance(playerId).orElseThrow());
+    }
+
+    @Test
     void invalidBoundsAmountsReasonsAndTransactionsNeverChangeBalance() {
         PlatformSavedData overflow = new PlatformSavedData();
         UUID overflowPlayer = id(70);

@@ -365,5 +365,6 @@
   "message.rovenfall.boss.started": "%s が目覚めました。アリーナは保護されています。",
   "message.rovenfall.boss.phase": "ボスフェーズ変更: %s",
   "message.rovenfall.boss.telegraph": "ボスパターン予告: %s",
-  "message.rovenfall.boss.ended": "ボスエンカウンターが終了しました（%s）。"
+  "message.rovenfall.boss.ended": "ボスエンカウンターが終了しました（%s）。",
+  "message.rovenfall.boss.reward_received": "ボス報酬を受け取りました：通貨 %s、狩猟経験値 %s。"
 }

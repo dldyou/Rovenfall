@@ -307,6 +307,10 @@ public final class MobContentSnapshot {
         reference(source, boss.id(), "arena", boss.arena(), arenas, problems);
         reference(source, boss.id(), "contribution rule", boss.contributionRule(), contributionRules, problems);
         reference(source, boss.id(), "loot", boss.loot(), loot, problems);
+        MobContentCatalog.LootDefinition bossLoot = loot.get(boss.loot());
+        if (bossLoot != null && bossLoot.experience() > Integer.MAX_VALUE) {
+            problems.add(problem(source, boss.id(), "boss experience reward exceeds the RPG award limit"));
+        }
         range(source, boss.id(), "reward cooldown", boss.rewardCooldownTicks(), 1, MAX_TICKS, problems);
         count(source, boss.id(), "phases", boss.phases().size(), 1, MobContentCatalog.MAX_PHASES, problems);
 

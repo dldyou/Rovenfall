@@ -156,6 +156,24 @@ final class MobContentSnapshotTest {
     }
 
     @Test
+    void rejectsBossExperienceThatCannotBeAwardedAtomicallyToRpgState() {
+        MobContentCatalog valid = builtIn();
+        var loot = valid.loot().stream().map(definition -> definition.id().equals(id("rift_warden_loot"))
+                ? new MobContentCatalog.LootDefinition(
+                        definition.id(), definition.lootTable(), definition.rolls(), definition.currency(),
+                        (long) Integer.MAX_VALUE + 1L)
+                : definition).toList();
+        var invalid = new MobContentCatalog(
+                valid.mobs(), valid.mutations(), valid.arenas(), valid.contributionRules(), loot, valid.bosses());
+
+        var error = assertThrows(MobContentSnapshot.ValidationException.class,
+                () -> MobContentSnapshot.compile(List.of(source("boss_xp_overflow", invalid))));
+
+        assertTrue(error.problems().stream().anyMatch(
+                problem -> problem.cause().contains("boss experience reward exceeds the RPG award limit")));
+    }
+
+    @Test
     void failedReplacementPreservesTheLastBoundSnapshot() {
         var store = new MobContentStore();
         MobContentCatalog valid = builtIn();

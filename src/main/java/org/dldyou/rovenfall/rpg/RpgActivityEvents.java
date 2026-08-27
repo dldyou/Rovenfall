@@ -34,6 +34,7 @@ import org.dldyou.rovenfall.claims.Claim;
 import org.dldyou.rovenfall.claims.ClaimConfig;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimRole;
+import org.dldyou.rovenfall.mobs.BossEncounterRuntime;
 
 /** NeoForge adapters for server-observed activity outcomes. */
 public final class RpgActivityEvents {
@@ -64,6 +65,9 @@ public final class RpgActivityEvents {
         if (!(event.getEntity().level() instanceof ServerLevel level)) {
             return;
         }
+        if (BossEncounterRuntime.isManagedEncounterEntity(event.getEntity())) {
+            return;
+        }
         long timestamp = System.currentTimeMillis();
         ServerPlayer player = playerFrom(event.getSource().getEntity());
         if (event.getHealthDamage() > 0 && player != null
@@ -79,7 +83,8 @@ public final class RpgActivityEvents {
 
     public static void onDeath(LivingDeathEvent event) {
         if (event.isCanceled() || event.getEntity() instanceof ServerPlayer
-                || !(event.getEntity().level() instanceof ServerLevel)) {
+                || !(event.getEntity().level() instanceof ServerLevel)
+                || BossEncounterRuntime.isManagedEncounterEntity(event.getEntity())) {
             return;
         }
         COMBAT_CONTRIBUTIONS.markDeath(event.getEntity().getUUID(), System.currentTimeMillis());

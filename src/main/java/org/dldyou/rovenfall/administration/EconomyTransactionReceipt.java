@@ -135,6 +135,7 @@ public record EconomyTransactionReceipt(
         CLAIM_PURCHASE("claim_purchase"),
         CLAIM_SALE("claim_sale"),
         RPG_SKILL_PAYMENT("rpg_skill_payment"),
+        BOSS_REWARD("boss_reward"),
         REVERSAL("reversal");
 
         static final Codec<Kind> CODEC = StringRepresentable.fromEnum(Kind::values);
