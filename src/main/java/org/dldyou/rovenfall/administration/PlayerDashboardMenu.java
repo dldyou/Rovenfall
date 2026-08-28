@@ -108,7 +108,10 @@ public final class PlayerDashboardMenu extends ChestMenu {
                 PlayerClaimMenu.open(viewer);
                 return;
             }
-            case OPEN_RPG -> page = Page.RPG;
+            case OPEN_RPG -> {
+                PlayerRpgMenu.open(viewer);
+                return;
+            }
             case BACK -> page = Page.HOME;
             case UNAVAILABLE -> {
                 viewer.sendOverlayMessage(Component.translatable("gui.rovenfall.player.unavailable"));

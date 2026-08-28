@@ -97,6 +97,7 @@ public final class EconomyReversalService {
                 || original.kind() == EconomyTransactionReceipt.Kind.ACCOUNT_CREATE
                 || original.kind() == EconomyTransactionReceipt.Kind.CLAIM_PURCHASE
                 || original.kind() == EconomyTransactionReceipt.Kind.CLAIM_SALE
+                || original.kind() == EconomyTransactionReceipt.Kind.CAREER_PROMOTION_PAYMENT
                 || original.kind() == EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT
                 || original.kind() == EconomyTransactionReceipt.Kind.BOSS_REWARD
                 || original.kind() == EconomyTransactionReceipt.Kind.REVERSAL

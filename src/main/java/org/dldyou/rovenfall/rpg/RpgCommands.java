@@ -95,14 +95,14 @@ public final class RpgCommands {
     }
 
     private static int promote(CommandSourceStack source, Identifier careerId) throws CommandSyntaxException {
-        var result = CareerProgressionService.promote(
-                RpgPlayerSavedData.get(source.getServer()),
-                RpgDefinitionReloadListener.snapshot(source.getServer()),
-                source.getPlayerOrException().getUUID(),
-                careerId,
-                Instant.now().toEpochMilli(),
-                UUID.randomUUID(),
-                "player_command");
+        var coordinated = PlayerCareerPromotionService.promote(
+                source.getServer(), source.getPlayerOrException().getUUID(), careerId,
+                Instant.now().toEpochMilli());
+        if (coordinated.status() == PlayerCareerPromotionService.Status.PAYMENT_FAILED) {
+            return failure(source, "command.rovenfall.career.promote.error.funds",
+                    coordinated.cost(), coordinated.balance());
+        }
+        var result = coordinated.promotion();
         return switch (result.status()) {
             case SUCCESS -> success(source, "command.rovenfall.career.promote.success",
                     careerName(source, careerId), result.transactionId());

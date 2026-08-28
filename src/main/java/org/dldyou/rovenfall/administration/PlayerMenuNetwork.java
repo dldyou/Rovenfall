@@ -90,7 +90,7 @@ public final class PlayerMenuNetwork {
         switch (target.orElseThrow()) {
             case OVERVIEW -> PlayerDashboardMenu.open(player);
             case CLAIMS -> PlayerClaimMenu.open(player);
-            case SKILLS -> PlayerDashboardMenu.open(player, PlayerDashboardMenu.Page.RPG);
+            case SKILLS -> PlayerRpgMenu.open(player);
             case SHOPS -> PlayerShopMenu.open(player);
         }
     }

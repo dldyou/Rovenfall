@@ -92,7 +92,7 @@ public final class ActivityXpConfig {
         return Set.copyOf(result);
     }
 
-    static long skillResetCost(SkillResetPlan.Mode mode) {
+    public static long skillResetCost(SkillResetPlan.Mode mode) {
         try {
             return mode == SkillResetPlan.Mode.FULL
                     ? FULL_SKILL_RESET_COST.get()

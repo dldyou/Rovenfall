@@ -201,6 +201,20 @@ public final class EconomyService {
                 timestampEpochMillis, transactionId, initialBalance, maximumBalance, Operation.DEBIT);
     }
 
+    public static TransactionResult payCareerPromotion(
+            PlatformSavedData state,
+            UUID playerId,
+            long amount,
+            String reason,
+            long timestampEpochMillis,
+            UUID transactionId,
+            long initialBalance,
+            long maximumBalance) {
+        return mutate(state, AdministrationService.SYSTEM_ACTOR, true, playerId, amount, reason,
+                timestampEpochMillis, transactionId, initialBalance, maximumBalance,
+                Operation.CAREER_PROMOTION_PAYMENT);
+    }
+
     private static TransactionResult mutate(
             PlatformSavedData state,
             UUID actorId,
@@ -428,6 +442,8 @@ public final class EconomyService {
         ADMIN_DEBIT(true, false, "economy_admin_debit", EconomyTransactionReceipt.Kind.ADMIN_DEBIT),
         AWARD(false, true, "economy_award", EconomyTransactionReceipt.Kind.AWARD),
         BOSS_REWARD(false, true, "boss_reward", EconomyTransactionReceipt.Kind.BOSS_REWARD),
+        CAREER_PROMOTION_PAYMENT(false, false, "career_promotion_payment",
+                EconomyTransactionReceipt.Kind.CAREER_PROMOTION_PAYMENT),
         DEBIT(false, false, "economy_debit", EconomyTransactionReceipt.Kind.DEBIT);
 
         private final boolean administratorOnly;
