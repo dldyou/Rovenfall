@@ -80,7 +80,8 @@ public final class PlayerMenuNetwork {
                 || menu instanceof PlayerClaimMenu
                 || menu instanceof PlayerRpgMenu
                 || menu instanceof AdministrationControlCenterMenu
-                || menu instanceof AdministrationEconomyMenu;
+                || menu instanceof AdministrationEconomyMenu
+                || menu instanceof AdministrationWorldMenu;
     }
 
     public static boolean isCurrentSession(

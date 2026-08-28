@@ -116,6 +116,39 @@ final class ClaimManagementServiceTest {
     }
 
     @Test
+    void moderatorReclaimIsAtomicAuditedIdempotentAndDoesNotRefund() {
+        UUID claimOwner = id(90);
+        UUID moderator = id(91);
+        UUID viewer = id(92);
+        PlatformSavedData state = claimed(claimOwner, KEY, 5_000, 90);
+        role(state, moderator, AdminRole.MODERATOR, 91);
+        role(state, viewer, AdminRole.VIEWER, 92);
+        long ownerBalance = state.economyBalance(claimOwner).orElseThrow();
+        UUID transactionId = id(93);
+
+        assertEquals(ClaimManagementService.Status.UNAUTHORIZED, ClaimManagementService.reclaim(
+                state, viewer, false, KEY, "viewer denied", 10_000, id(94)).status());
+        assertTrue(state.claim(KEY).isPresent());
+        assertEquals(ClaimManagementService.Status.SUCCESS, ClaimManagementService.reclaim(
+                state, moderator, false, KEY, "abandoned claim", 11_100, transactionId).status());
+
+        assertTrue(state.claim(KEY).isEmpty());
+        assertEquals(0, state.claimCount(claimOwner));
+        assertEquals(ownerBalance, state.economyBalance(claimOwner).orElseThrow());
+        assertEquals(ClaimManagementService.Status.DUPLICATE_TRANSACTION, ClaimManagementService.reclaim(
+                state, moderator, false, KEY, "retry", 12_200, transactionId).status());
+        assertEquals(ClaimManagementService.Status.TRANSACTION_ID_CONFLICT, ClaimManagementService.setSettings(
+                state, moderator, false, KEY, ClaimSettings.defaults(), "conflict", 13_300, transactionId).status());
+
+        PlatformSavedData loaded = roundTrip(state);
+        assertTrue(loaded.claim(KEY).isEmpty());
+        assertEquals(ClaimMutationReceipt.Kind.RECLAIM, loaded.claimReceipt(transactionId).orElseThrow().kind());
+        assertTrue(loaded.auditTransaction(transactionId).orElseThrow().beforeValue().contains("owner=" + claimOwner));
+        assertEquals("unowned;operation=reclaim=admin",
+                loaded.auditTransaction(transactionId).orElseThrow().afterValue());
+    }
+
+    @Test
     void transferRequiresOfferRecipientCapacityAndUnprotectedChunk() {
         UUID owner = id(40);
         UUID recipient = id(41);

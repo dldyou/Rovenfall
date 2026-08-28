@@ -1060,6 +1060,29 @@ public final class PlatformSavedData extends SavedData {
         commitAudit(auditEntry);
     }
 
+    void commitClaimReclaim(
+            ClaimKey claimKey,
+            Claim expectedClaim,
+            UUID transactionId,
+            long timestampEpochMillis,
+            ClaimMutationReceipt receipt,
+            AuditEntry auditEntry) {
+        if (!canCommitClaimTransaction(transactionId, timestampEpochMillis)
+                || expectedClaim == null
+                || !receipt.claim().equals(claimKey)
+                || receipt.kind() != ClaimMutationReceipt.Kind.RECLAIM
+                || receipt.timestampEpochMillis() != timestampEpochMillis
+                || !expectedClaim.equals(claims.get(claimKey))) {
+            throw new IllegalStateException("Claim reclaim cannot be committed");
+        }
+        prepareLedgerForCommit(timestampEpochMillis);
+        claimReceipts.keySet().retainAll(economyTransactions.keySet());
+        replaceClaim(claimKey, null);
+        economyTransactions.put(transactionId, timestampEpochMillis);
+        claimReceipts.put(transactionId, receipt);
+        commitAudit(auditEntry);
+    }
+
     void commitProtectedRegionMutation(
             Identifier regionId,
             Optional<ProtectedRegion> region,

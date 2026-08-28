@@ -51,7 +51,8 @@ public final class RovenfallInventoryClient {
         return switch (contents.getKey()) {
             case "gui.rovenfall.player.title", "gui.rovenfall.shop.title",
                     "gui.rovenfall.claim.title", "gui.rovenfall.rpg.title",
-                    "gui.rovenfall.admin.title", "gui.rovenfall.admin.economy.title" -> true;
+                    "gui.rovenfall.admin.title", "gui.rovenfall.admin.economy.title",
+                    "gui.rovenfall.admin.world.title" -> true;
             default -> false;
         };
     }
@@ -59,13 +60,16 @@ public final class RovenfallInventoryClient {
     static boolean isAdminMenuTitle(net.minecraft.network.chat.Component title) {
         return title.getContents() instanceof TranslatableContents contents
                 && (contents.getKey().equals("gui.rovenfall.admin.title")
-                        || contents.getKey().equals("gui.rovenfall.admin.economy.title"));
+                        || contents.getKey().equals("gui.rovenfall.admin.economy.title")
+                        || contents.getKey().equals("gui.rovenfall.admin.world.title"));
     }
 
     static int adminInputLength(net.minecraft.network.chat.Component title) {
-        return title.getContents() instanceof TranslatableContents contents
-                && contents.getKey().equals("gui.rovenfall.admin.economy.title")
-                ? AdministrationTextInputMenu.MAX_INPUT_LENGTH
-                : AdministrationReadViewService.MAX_QUERY_LENGTH;
+        if (title.getContents() instanceof TranslatableContents contents
+                && (contents.getKey().equals("gui.rovenfall.admin.economy.title")
+                        || contents.getKey().equals("gui.rovenfall.admin.world.title"))) {
+            return AdministrationTextInputMenu.MAX_INPUT_LENGTH;
+        }
+        return AdministrationReadViewService.MAX_QUERY_LENGTH;
     }
 }

@@ -148,6 +148,42 @@ public final class ClaimManagementService {
                 ClaimMutationReceipt.Kind.SETTINGS_SET, payload, "claim_settings_set");
     }
 
+    /** Moderator-or-owner administrative removal without an economy refund. */
+    public static Result reclaim(
+            PlatformSavedData state,
+            UUID actorId,
+            boolean authorizationOverride,
+            ClaimKey key,
+            String reason,
+            long timestampEpochMillis,
+            UUID transactionId) {
+        String payload = "reclaim=admin";
+        Result rejected = precheck(
+                state, actorId, key, reason, timestampEpochMillis, transactionId,
+                ClaimMutationReceipt.Kind.RECLAIM, payload);
+        if (rejected != null) {
+            return rejected;
+        }
+        Claim claim = state.claim(key).orElse(null);
+        if (claim == null) {
+            return denied(state, actorId, key, Status.CLAIM_NOT_FOUND, "claim_not_found",
+                    payload, timestampEpochMillis, transactionId);
+        }
+        AdminRole role = state.roleOf(actorId).orElse(null);
+        if (!authorizationOverride && role != AdminRole.MODERATOR && role != AdminRole.OWNER) {
+            return denied(state, actorId, key, Status.UNAUTHORIZED, "owner_required",
+                    payload, timestampEpochMillis, transactionId);
+        }
+        ClaimMutationReceipt receipt = new ClaimMutationReceipt(
+                timestampEpochMillis, actorId, key, ClaimMutationReceipt.Kind.RECLAIM, payload);
+        state.commitClaimReclaim(key, claim, transactionId, timestampEpochMillis, receipt,
+                auditEntry(timestampEpochMillis, actorId, action("claim_reclaim"), key,
+                        summary(claim) + ";operation=" + payload,
+                        "unowned;operation=" + payload,
+                        validReason(reason).orElseThrow(), transactionId));
+        return result(Status.SUCCESS, transactionId, 0, state.economyBalance(actorId).orElse(0L), true);
+    }
+
     public static Result offerTransfer(
             PlatformSavedData state,
             UUID actorId,

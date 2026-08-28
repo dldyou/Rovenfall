@@ -26,8 +26,9 @@ and previous/next page controls. Search is case-insensitive over the identifiers
 summary fields shown by that domain. A request is limited to 64 characters, each
 page contains at most 36 rows, and a refresh scans at most 1,000 rows from bounded
 domain query services. The menu marks a result as truncated when the source exceeded
-that scan budget. Results outside that bounded window require the domain command
-fallback for a precise target lookup.
+that scan budget. Player UUID and economy transaction UUID searches use direct indexed
+lookup even when the target is outside the recent 1,000-row window. Other results outside
+that bounded window require the domain command fallback for a precise target lookup.
 
 ## Player, economy, and shop management
 
@@ -49,3 +50,28 @@ available. Only receipt kinds supported by generic economy reversal expose a con
 domain-owned receipts show a localized unavailable explanation. Receipt reversal follows
 the command boundary and therefore requires the target player to be online. Existing commands remain the precise fallback for records
 outside the 1,000-row GUI window.
+
+## Claim, protected-region, portal, and Wilderness management
+
+Claims and Portals open typed inventory management screens. Viewer roles can inspect the
+same bounded rows. Moderators and Owners can change claim trust and settings or reclaim an
+abandoned claim without issuing a refund. Only Owners can create, edit, or delete protected
+regions. Content managers and Owners can create, edit, or disable portals; disabling uses
+the existing portal delete service and atomically removes both derived protection regions.
+
+Claim detail lists every trusted role with pagination and shows owner, flags, purchase
+evidence, and pending transfer state. Protected-region and portal forms validate dimensions,
+chunk or block bounds, world borders, endpoint conflicts, protection dependencies,
+safe-arrival policy, cooldown, and combat policy. A selected row binds the exact claim,
+region, or portal snapshot to the preview. Confirming rechecks the current role and full
+snapshot before the owning domain service is called.
+
+The Wilderness screen shows Hub/Wilderness availability, safe Hub arrival readiness,
+players awaiting evacuation, encounter/filesystem locks, the active warning, any staged
+operation, and retained reset/restore evidence. Owners can issue a ten-minute reset warning,
+then preview and confirm a reset. Completed evidence exposes both the target snapshot and
+the safety snapshot for restore. Reset, restore, claim reclaim, region deletion, and portal
+disable are labeled irreversible and always require a form submission, a current-state
+preview, and a second explicit confirmation. Wilderness reset/restore still use the existing
+snapshot, evacuation, precommit, rollback, and restart lifecycle services; the GUI never
+edits saved collections or filesystem state directly.

@@ -81,6 +81,7 @@ import org.dldyou.rovenfall.administration.EconomyTransactionReceipt;
 import org.dldyou.rovenfall.administration.AdministrationService;
 import org.dldyou.rovenfall.administration.AdministrationControlCenterMenu;
 import org.dldyou.rovenfall.administration.AdministrationEconomyMenu;
+import org.dldyou.rovenfall.administration.AdministrationWorldMenu;
 import org.dldyou.rovenfall.administration.AdminRole;
 import org.dldyou.rovenfall.administration.BossRewardService;
 import org.dldyou.rovenfall.administration.BossAdministrationService;
@@ -272,8 +273,10 @@ public final class Rovenfall {
                                 && player.containerMenu instanceof AdministrationControlCenterMenu,
                         "Authorized owner could not open the administration control center");
                 player.containerMenu.clicked(10, 0, ContainerInput.PICKUP, player);
-                helper.assertTrue(player.containerMenu instanceof AdministrationControlCenterMenu,
-                        "Owner could not open the claims administration view");
+                helper.assertTrue(player.containerMenu instanceof AdministrationWorldMenu,
+                        "Owner could not open the typed claims administration view");
+                helper.assertTrue(PlayerMenuNetwork.isPlayerMenu(player.containerMenu),
+                        "World administration view was not protected by player-menu session validation");
 
                 helper.assertTrue(AdministrationService.changeRole(
                                 platform, AdministrationService.SYSTEM_ACTOR, true, player.getUUID(),
@@ -282,13 +285,70 @@ public final class Rovenfall {
                                 == AdministrationService.RoleChangeStatus.SUCCESS,
                         "Could not change the GameTest role by UUID");
                 helper.runAfterDelay(1, () -> {
-                    if (player.containerMenu instanceof AdministrationControlCenterMenu) {
+                    if (player.containerMenu instanceof AdministrationWorldMenu) {
                         player.containerMenu.clicked(53, 0, ContainerInput.PICKUP, player);
                     }
                     helper.assertTrue(player.containerMenu == player.inventoryMenu,
                             "A role change did not invalidate the now-forbidden open claims view");
                     player.discard();
                     helper.succeed();
+                });
+            }
+        });
+        event.registerTest(id("admin_world_gui_reclaim"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS,
+                new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 30, 0, true)) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var player = helper.makeMockServerPlayerInLevel();
+                var platform = PlatformSavedData.get(server);
+                int chunk = 500_000 + Math.floorMod(UUID.randomUUID().hashCode(), 100_000);
+                ClaimKey key = new ClaimKey(WorldTopology.HUB, chunk, chunk);
+                helper.assertTrue(AdministrationService.changeRole(
+                                platform, AdministrationService.SYSTEM_ACTOR, true, player.getUUID(),
+                                AdminRole.OWNER.getSerializedName(), "gametest world gui",
+                                System.currentTimeMillis(), UUID.randomUUID()).status()
+                                == AdministrationService.RoleChangeStatus.SUCCESS,
+                        "Could not assign the world-GUI owner role");
+                helper.assertTrue(EconomyService.award(
+                                platform, player.getUUID(), 5_000, "gametest claim funds",
+                                System.currentTimeMillis(), UUID.randomUUID(), 0, Long.MAX_VALUE).status()
+                                == EconomyService.TransactionStatus.SUCCESS,
+                        "Could not seed claim funds");
+                helper.assertTrue(ClaimPurchaseService.purchase(
+                                platform, player.getUUID(), WorldTopology.HUB, WorldTopology.HUB,
+                                key.auditPosition(), ignored -> true, ignored -> false,
+                                1_000, 0, 64, System.currentTimeMillis(), UUID.randomUUID()).status()
+                                == ClaimPurchaseService.Status.SUCCESS,
+                        "Could not prepare the claim for GUI reclaim");
+                long balanceBefore = platform.economyBalance(player.getUUID()).orElseThrow();
+                helper.assertTrue(AdministrationWorldMenu.open(
+                                player, org.dldyou.rovenfall.administration.AdministrationReadViewService.Domain.CLAIMS),
+                        "Could not open the claim world-administration view");
+                helper.assertTrue(((AdministrationWorldMenu) player.containerMenu)
+                                .applyTextInput(player, key.auditTarget()),
+                        "Could not search the claim by its server key");
+                player.containerMenu.clicked(9, 0, ContainerInput.PICKUP, player);
+                helper.runAfterDelay(1, () -> {
+                    player.containerMenu.clicked(52, 0, ContainerInput.PICKUP, player);
+                    helper.assertTrue(((AdministrationWorldMenu) player.containerMenu)
+                                    .applyTextInput(player, " | gametest abandoned claim"),
+                            "Reclaim form did not produce an irreversible preview");
+                    helper.runAfterDelay(1, () -> {
+                        player.containerMenu.clicked(31, 0, ContainerInput.PICKUP, player);
+                        helper.assertTrue(platform.claim(key).isEmpty(),
+                                "Confirmed GUI reclaim did not remove the claim");
+                        helper.assertTrue(platform.economyBalance(player.getUUID()).orElseThrow() == balanceBefore,
+                                "Administrative reclaim unexpectedly refunded the claim owner");
+                        helper.assertTrue(platform.recentAuditEntries(20).stream()
+                                        .anyMatch(entry -> entry.actionType().getPath().equals("claim_reclaim")
+                                                && entry.target().equals(key.auditTarget())
+                                                && entry.reason().equals("gametest abandoned claim")),
+                                "Confirmed GUI reclaim did not retain audit evidence");
+                        player.discard();
+                        helper.succeed();
+                    });
                 });
             }
         });

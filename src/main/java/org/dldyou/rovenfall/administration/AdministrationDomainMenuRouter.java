@@ -10,6 +10,7 @@ final class AdministrationDomainMenuRouter {
     static boolean open(ServerPlayer player, AdministrationReadViewService.Domain domain) {
         return switch (domain) {
             case PLAYERS, SHOPS, RECEIPTS -> AdministrationEconomyMenu.open(player, domain);
+            case CLAIMS, PORTALS -> AdministrationWorldMenu.open(player, domain);
             default -> false;
         };
     }
