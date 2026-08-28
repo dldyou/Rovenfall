@@ -64,6 +64,9 @@ public final class RovenfallCommands {
         var helpCommand = Commands.literal("help")
                 .executes(context -> showAdminHelp(context.getSource()));
 
+        var guiCommand = Commands.literal("gui")
+                .executes(context -> openAdministrationGui(context.getSource()));
+
         var auditCommand = Commands.literal("audit")
                 .then(Commands.literal("list")
                         .executes(context -> listAudit(context.getSource(), 0))
@@ -470,6 +473,7 @@ public final class RovenfallCommands {
                 .then(portalCommand)
                 .then(Commands.literal("admin")
                         .requires(RovenfallCommands::canUseAdministration)
+                        .then(guiCommand)
                         .then(helpCommand)
                         .then(roleCommand)
                         .then(economyCommand)
@@ -487,6 +491,10 @@ public final class RovenfallCommands {
     private static int openPlayerMenu(CommandSourceStack source) throws CommandSyntaxException {
         PlayerDashboardMenu.open(source.getPlayerOrException());
         return 1;
+    }
+
+    private static int openAdministrationGui(CommandSourceStack source) throws CommandSyntaxException {
+        return AdministrationControlCenterMenu.open(source.getPlayerOrException()) ? 1 : 0;
     }
 
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack>

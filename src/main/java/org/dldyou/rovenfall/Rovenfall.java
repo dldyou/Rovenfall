@@ -79,6 +79,7 @@ import org.dldyou.rovenfall.administration.EconomyService;
 import org.dldyou.rovenfall.administration.EconomyReversalService;
 import org.dldyou.rovenfall.administration.EconomyTransactionReceipt;
 import org.dldyou.rovenfall.administration.AdministrationService;
+import org.dldyou.rovenfall.administration.AdministrationControlCenterMenu;
 import org.dldyou.rovenfall.administration.AdminRole;
 import org.dldyou.rovenfall.administration.BossRewardService;
 import org.dldyou.rovenfall.administration.BossAdministrationService;
@@ -247,6 +248,44 @@ public final class Rovenfall {
                     player.containerMenu.clicked(45, 0, ContainerInput.PICKUP, player);
                     helper.assertTrue(player.containerMenu instanceof PlayerDashboardMenu,
                             "Shop back action did not reopen the overview");
+                    player.discard();
+                    helper.succeed();
+                });
+            }
+        });
+        event.registerTest(id("admin_gui_role_revalidation"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS,
+                new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 10, 0, true)) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var player = helper.makeMockServerPlayerInLevel();
+                var platform = PlatformSavedData.get(server);
+                helper.assertTrue(AdministrationService.changeRole(
+                                platform, AdministrationService.SYSTEM_ACTOR, true, player.getUUID(),
+                                AdminRole.OWNER.getSerializedName(), "gametest admin gui",
+                                System.currentTimeMillis(), UUID.randomUUID()).status()
+                                == AdministrationService.RoleChangeStatus.SUCCESS,
+                        "Could not assign the GameTest owner role by UUID");
+                helper.assertTrue(AdministrationControlCenterMenu.open(player)
+                                && player.containerMenu instanceof AdministrationControlCenterMenu,
+                        "Authorized owner could not open the administration control center");
+                player.containerMenu.clicked(10, 0, ContainerInput.PICKUP, player);
+                helper.assertTrue(player.containerMenu instanceof AdministrationControlCenterMenu,
+                        "Owner could not open the claims administration view");
+
+                helper.assertTrue(AdministrationService.changeRole(
+                                platform, AdministrationService.SYSTEM_ACTOR, true, player.getUUID(),
+                                AdminRole.ECONOMY_MANAGER.getSerializedName(), "gametest cross-domain demotion",
+                                System.currentTimeMillis(), UUID.randomUUID()).status()
+                                == AdministrationService.RoleChangeStatus.SUCCESS,
+                        "Could not change the GameTest role by UUID");
+                helper.runAfterDelay(1, () -> {
+                    if (player.containerMenu instanceof AdministrationControlCenterMenu) {
+                        player.containerMenu.clicked(53, 0, ContainerInput.PICKUP, player);
+                    }
+                    helper.assertTrue(player.containerMenu == player.inventoryMenu,
+                            "A role change did not invalidate the now-forbidden open claims view");
                     player.discard();
                     helper.succeed();
                 });
@@ -828,10 +867,12 @@ public final class Rovenfall {
                 BlockPos playerPosition = helper.absolutePos(new BlockPos(1, 2, 1));
                 player.setPos(
                         playerPosition.getX() + 0.5, playerPosition.getY(), playerPosition.getZ() + 0.5);
-                server.getCommands().performPrefixedCommand(
-                        server.createCommandSourceStack(),
-                        "rovenfall admin role set " + player.getScoreboardName()
-                                + " moderator gametest active skill");
+                helper.assertTrue(AdministrationService.changeRole(
+                                PlatformSavedData.get(server), AdministrationService.SYSTEM_ACTOR, true,
+                                player.getUUID(), AdminRole.MODERATOR.getSerializedName(),
+                                "gametest active skill", System.currentTimeMillis(), UUID.randomUUID()).status()
+                                == AdministrationService.RoleChangeStatus.SUCCESS,
+                        "Could not grant the GameTest actor a protected-region override");
                 helper.assertTrue(PlatformSavedData.get(server).roleOf(player.getUUID()).orElse(null)
                                 == AdminRole.MODERATOR,
                         "Could not grant the GameTest actor a protected-region override");

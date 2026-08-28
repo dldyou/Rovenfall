@@ -103,6 +103,18 @@ public final class RpgPlayerSavedData extends SavedData {
         return new Snapshot(schemaVersion, players);
     }
 
+    /** Immutable, bounded player projection for operator read views. */
+    public java.util.List<Map.Entry<UUID, RpgPlayerState>> players(int maximumEntries) {
+        if (maximumEntries < 1) {
+            throw new IllegalArgumentException("RPG player query must be bounded");
+        }
+        return players.entrySet().stream()
+                .limit(maximumEntries)
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
     boolean commit(UUID playerId, RpgPlayerState state) {
         if (!writable || playerId == null || ZERO_UUID.equals(playerId) || state == null || !state.isValid()) {
             return false;

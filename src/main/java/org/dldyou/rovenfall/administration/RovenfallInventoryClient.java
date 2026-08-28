@@ -50,8 +50,14 @@ public final class RovenfallInventoryClient {
         }
         return switch (contents.getKey()) {
             case "gui.rovenfall.player.title", "gui.rovenfall.shop.title",
-                    "gui.rovenfall.claim.title", "gui.rovenfall.rpg.title" -> true;
+                    "gui.rovenfall.claim.title", "gui.rovenfall.rpg.title",
+                    "gui.rovenfall.admin.title" -> true;
             default -> false;
         };
+    }
+
+    static boolean isAdminMenuTitle(net.minecraft.network.chat.Component title) {
+        return title.getContents() instanceof TranslatableContents contents
+                && contents.getKey().equals("gui.rovenfall.admin.title");
     }
 }

@@ -308,6 +308,22 @@ public final class PlatformSavedData extends SavedData {
         return Optional.ofNullable(playerRecords.get(playerId));
     }
 
+    /** Immutable, deterministically ordered player projection for bounded administration queries. */
+    public List<Map.Entry<UUID, PlayerRecord>> playerRecords() {
+        return playerRecords(Integer.MAX_VALUE);
+    }
+
+    public List<Map.Entry<UUID, PlayerRecord>> playerRecords(int maximumEntries) {
+        if (maximumEntries < 1) {
+            throw new IllegalArgumentException("Player record query must be bounded");
+        }
+        return playerRecords.entrySet().stream()
+                .limit(maximumEntries)
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
     public int playerRecordCount() {
         return playerRecords.size();
     }
@@ -338,6 +354,22 @@ public final class PlatformSavedData extends SavedData {
 
     public int claimCount() {
         return claims.size();
+    }
+
+    /** Immutable, deterministically ordered claim projection for bounded administration queries. */
+    public List<Map.Entry<ClaimKey, Claim>> claims() {
+        return claims(Integer.MAX_VALUE);
+    }
+
+    public List<Map.Entry<ClaimKey, Claim>> claims(int maximumEntries) {
+        if (maximumEntries < 1) {
+            throw new IllegalArgumentException("Claim query must be bounded");
+        }
+        return claims.entrySet().stream()
+                .limit(maximumEntries)
+                .sorted(Comparator.comparing(entry -> entry.getKey().auditTarget()))
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
+                .toList();
     }
 
     public Optional<ClaimMutationReceipt> claimReceipt(UUID transactionId) {
@@ -377,10 +409,22 @@ public final class PlatformSavedData extends SavedData {
     }
 
     public List<Map.Entry<Identifier, PortalDefinition>> portalDefinitions() {
+        return portalDefinitions(Integer.MAX_VALUE);
+    }
+
+    public List<Map.Entry<Identifier, PortalDefinition>> portalDefinitions(int maximumEntries) {
+        if (maximumEntries < 1) {
+            throw new IllegalArgumentException("Portal query must be bounded");
+        }
         return portalDefinitions.entrySet().stream()
+                .limit(maximumEntries)
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
                 .toList();
+    }
+
+    public int portalDefinitionCount() {
+        return portalDefinitions.size();
     }
 
     public long portalCooldownUntil(UUID playerId, Identifier portalId) {
@@ -510,12 +554,39 @@ public final class PlatformSavedData extends SavedData {
         return Map.copyOf(shopInstances);
     }
 
+    List<Map.Entry<Identifier, ShopInstance>> shopInstances(int maximumEntries) {
+        if (maximumEntries < 1) {
+            throw new IllegalArgumentException("Shop query must be bounded");
+        }
+        return shopInstances.entrySet().stream()
+                .limit(maximumEntries)
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
     Map<UUID, EconomyTransactionReceipt> economyReceiptsView() {
         return Map.copyOf(economyReceipts);
     }
 
     List<EconomyAlert> economyAlertsView() {
         return List.copyOf(economyAlerts);
+    }
+
+    int economyAlertCount() {
+        return economyAlerts.size();
+    }
+
+    List<EconomyAlert> recentEconomyAlerts(int maximumEntries) {
+        if (maximumEntries < 1) {
+            throw new IllegalArgumentException("Alert query must be bounded");
+        }
+        int from = Math.max(0, economyAlerts.size() - maximumEntries);
+        List<EconomyAlert> result = new ArrayList<>(economyAlerts.subList(from, economyAlerts.size()));
+        result.sort(Comparator.comparingLong(EconomyAlert::timestampEpochMillis).reversed()
+                .thenComparing(EconomyAlert::transactionId)
+                .thenComparing(alert -> alert.type().getSerializedName()));
+        return List.copyOf(result);
     }
 
     List<AuditEntry> auditEntriesView() {
@@ -550,6 +621,18 @@ public final class PlatformSavedData extends SavedData {
 
     public int auditCount() {
         return auditEntries.size();
+    }
+
+    public List<AuditEntry> recentAuditEntries(int maximumEntries) {
+        if (maximumEntries < 1) {
+            throw new IllegalArgumentException("Audit query must be bounded");
+        }
+        List<AuditEntry> entries = new ArrayList<>(Math.min(maximumEntries, auditEntries.size()));
+        var iterator = auditEntries.descendingIterator();
+        while (iterator.hasNext() && entries.size() < maximumEntries) {
+            entries.add(iterator.next());
+        }
+        return List.copyOf(entries);
     }
 
     boolean hasAuditTransaction(UUID transactionId) {

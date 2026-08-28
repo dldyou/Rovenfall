@@ -23,7 +23,7 @@ public final class AdministrationService {
     private AdministrationService() {
     }
 
-    static RoleChangeResult changeRole(
+    public static RoleChangeResult changeRole(
             PlatformSavedData state,
             UUID actorId,
             boolean authorizationOverride,

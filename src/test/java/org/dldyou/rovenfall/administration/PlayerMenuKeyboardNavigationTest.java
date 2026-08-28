@@ -26,6 +26,10 @@ final class PlayerMenuKeyboardNavigationTest {
                 Component.translatable("gui.rovenfall.player.title")));
         assertEquals(true, RovenfallInventoryClient.isPlayerMenuTitle(
                 Component.translatable("gui.rovenfall.claim.title")));
+        assertEquals(true, RovenfallInventoryClient.isPlayerMenuTitle(
+                Component.translatable("gui.rovenfall.admin.title")));
+        assertEquals(true, RovenfallInventoryClient.isAdminMenuTitle(
+                Component.translatable("gui.rovenfall.admin.title")));
         assertEquals(false, RovenfallInventoryClient.isPlayerMenuTitle(
                 Component.translatable("container.chest")));
         assertEquals(false, RovenfallInventoryClient.isPlayerMenuTitle(Component.literal("Rovenfall")));
