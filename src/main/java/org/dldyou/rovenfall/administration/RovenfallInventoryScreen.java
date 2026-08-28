@@ -2,6 +2,7 @@ package org.dldyou.rovenfall.administration;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
@@ -44,13 +45,19 @@ public final class RovenfallInventoryScreen extends InventoryScreen {
     }
 
     private Button addTab(int index, String translationKey, PlayerMenuNetwork.MenuTarget target) {
+        Component label = Component.translatable(translationKey);
         return addRenderableWidget(Button.builder(
-                        Component.translatable(translationKey),
+                        label,
                         ignored -> {
                             if (target != null) {
                                 RovenfallInventoryClient.request(target);
                             }
                         })
+                .tooltip(Tooltip.create(Component.translatable(
+                        target == null
+                                ? "gui.rovenfall.inventory.current_tab"
+                                : "gui.rovenfall.inventory.open_tab",
+                        label)))
                 .bounds(tabX + index * (tabWidth + TAB_GAP), tabY, tabWidth, TAB_HEIGHT)
                 .build());
     }

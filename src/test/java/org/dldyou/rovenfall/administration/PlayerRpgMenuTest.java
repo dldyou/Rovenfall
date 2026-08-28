@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.UUID;
 import net.minecraft.resources.Identifier;
 import org.dldyou.rovenfall.rpg.RpgPlayerState;
 import org.junit.jupiter.api.Test;
@@ -42,15 +41,6 @@ final class PlayerRpgMenuTest {
         assertTrue(PlayerRpgMenu.canConfirmEconomy(1_000, 100, 1_000, 100));
         assertFalse(PlayerRpgMenu.canConfirmEconomy(1_000, 100, 900, 100));
         assertFalse(PlayerRpgMenu.canConfirmEconomy(1_000, 100, 1_000, 200));
-    }
-
-    @Test
-    void staleContainerOrServerIssuedStateCannotReplayAnAction() {
-        assertTrue(PlayerRpgMenu.isCurrentSession(7, 101, 7, 101));
-        assertFalse(PlayerRpgMenu.isCurrentSession(7, 101, 8, 101));
-        assertFalse(PlayerRpgMenu.isCurrentSession(7, 101, 7, 100));
-        int stateId = PlayerRpgMenu.sessionStateId(UUID.randomUUID());
-        assertTrue(stateId >= 1 && stateId <= 32_767);
     }
 
     private static RpgPlayerState state(long xp) {

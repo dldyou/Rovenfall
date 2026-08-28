@@ -36,9 +36,7 @@ public final class PlayerDashboardMenu extends ChestMenu {
 
     enum Page {
         HOME,
-        ECONOMY,
-        CLAIMS,
-        RPG
+        ECONOMY
     }
 
     enum Action {
@@ -48,8 +46,7 @@ public final class PlayerDashboardMenu extends ChestMenu {
         OPEN_CLAIMS,
         OPEN_RPG,
         BACK,
-        REFRESH,
-        UNAVAILABLE
+        REFRESH
     }
 
     private final ServerPlayer viewer;
@@ -70,6 +67,7 @@ public final class PlayerDashboardMenu extends ChestMenu {
         this.dashboard = dashboard;
         this.page = Objects.requireNonNull(initialPage);
         render();
+        PlayerMenuNetwork.seedMenuSession(this, UUID.randomUUID());
     }
 
     public static void open(ServerPlayer player) {
@@ -89,7 +87,8 @@ public final class PlayerDashboardMenu extends ChestMenu {
         if (!(player instanceof ServerPlayer serverPlayer)
                 || !viewerId.equals(serverPlayer.getUUID())
                 || slotIndex < 0
-                || slotIndex >= MENU_SIZE) {
+                || slotIndex >= MENU_SIZE
+                || !PlayerMenuNetwork.isPrimaryAction(buttonNum, input)) {
             return;
         }
         Action action = actionAt(page, slotIndex);
@@ -113,10 +112,6 @@ public final class PlayerDashboardMenu extends ChestMenu {
                 return;
             }
             case BACK -> page = Page.HOME;
-            case UNAVAILABLE -> {
-                viewer.sendOverlayMessage(Component.translatable("gui.rovenfall.player.unavailable"));
-                return;
-            }
             case REFRESH, NONE -> {
             }
         }
@@ -148,7 +143,6 @@ public final class PlayerDashboardMenu extends ChestMenu {
                 default -> Action.NONE;
             };
             case ECONOMY -> slot == 15 ? Action.OPEN_SHOPS : Action.NONE;
-            case CLAIMS, RPG -> slot == 24 ? Action.UNAVAILABLE : Action.NONE;
         };
     }
 
@@ -166,22 +160,14 @@ public final class PlayerDashboardMenu extends ChestMenu {
                 .range(0, RpgPlayerState.MAX_ACTIVE_SKILL_SLOTS)
                 .mapToObj(slot -> Optional.ofNullable(rpg.activeSkillSlots().get(slot)))
                 .toList();
-        int learnedSkills = rpg.careers().values().stream()
-                .mapToInt(progress -> progress.learnedSkills().size())
-                .sum();
         return new DashboardSnapshot(
                 platform.economyBalance(playerId).orElse(0L),
                 platform.economyBalance(playerId).isPresent(),
                 platform.claimCount(playerId),
-                currentClaimKey,
                 platform.isProtectedRegion(currentClaimKey),
                 Optional.ofNullable(currentClaim).map(Claim::ownerId),
                 Optional.ofNullable(currentClaim).map(claim -> claim.roleOf(playerId)),
-                Optional.ofNullable(currentClaim).map(Claim::settings),
                 rpg.activeCareer(),
-                rpg.activityXp().size(),
-                rpg.careers().size(),
-                learnedSkills,
                 activeSkills);
     }
 
@@ -202,8 +188,6 @@ public final class PlayerDashboardMenu extends ChestMenu {
         switch (page) {
             case HOME -> renderHome(snapshot, definitions);
             case ECONOMY -> renderEconomy(snapshot);
-            case CLAIMS -> renderClaims(snapshot);
-            case RPG -> renderRpg(snapshot, definitions);
         }
         dashboard.setItem(REFRESH_SLOT, icon(
                 Items.CLOCK,
@@ -261,76 +245,6 @@ public final class PlayerDashboardMenu extends ChestMenu {
                 Component.translatable("gui.rovenfall.player.click")));
     }
 
-    private void renderClaims(DashboardSnapshot snapshot) {
-        addBackButton();
-        dashboard.setItem(4, icon(
-                Items.GRASS_BLOCK,
-                Component.translatable("gui.rovenfall.player.claims"),
-                Component.translatable("gui.rovenfall.player.owned_claims", snapshot.ownedClaims())));
-        dashboard.setItem(10, icon(
-                Items.MAP,
-                Component.translatable("gui.rovenfall.player.current_chunk"),
-                Component.translatable(
-                        "gui.rovenfall.player.claim_location",
-                        snapshot.currentClaimKey().dimension().identifier().toString(),
-                        snapshot.currentClaimKey().chunkX(),
-                        snapshot.currentClaimKey().chunkZ()),
-                claimStatus(snapshot)));
-        snapshot.claimRole().ifPresent(role -> dashboard.setItem(13, icon(
-                Items.PLAYER_HEAD,
-                Component.translatable("gui.rovenfall.player.claim_role"),
-                Component.translatable("gui.rovenfall.player.role", Component.translatable(role.translationKey())))));
-        snapshot.claimSettings().ifPresent(settings -> dashboard.setItem(16, icon(
-                Items.OAK_DOOR,
-                Component.translatable("gui.rovenfall.player.claim_settings"),
-                Component.translatable(
-                        "gui.rovenfall.player.entry_restricted",
-                        enabled(settings.entryRestricted())),
-                Component.translatable(
-                        "gui.rovenfall.player.public_interactions",
-                        enabled(settings.publicInteractions())))));
-        dashboard.setItem(24, icon(
-                Items.BARRIER,
-                Component.translatable("gui.rovenfall.player.claim_actions"),
-                Component.translatable("gui.rovenfall.player.planned", "#79")));
-    }
-
-    private void renderRpg(DashboardSnapshot snapshot, RpgDefinitionSnapshot definitions) {
-        addBackButton();
-        dashboard.setItem(4, icon(
-                Items.EXPERIENCE_BOTTLE,
-                Component.translatable("gui.rovenfall.player.rpg"),
-                Component.translatable("gui.rovenfall.player.read_only")));
-        dashboard.setItem(10, icon(
-                Items.IRON_SWORD,
-                Component.translatable("gui.rovenfall.player.career"),
-                Component.translatable(
-                        "gui.rovenfall.player.active_career",
-                        snapshot.activeCareer().map(id -> careerName(definitions, id))
-                                .orElseGet(() -> Component.translatable("gui.rovenfall.player.none"))),
-                Component.translatable("gui.rovenfall.player.learned_careers", snapshot.learnedCareers())));
-        dashboard.setItem(12, icon(
-                Items.EXPERIENCE_BOTTLE,
-                Component.translatable("gui.rovenfall.player.activities"),
-                Component.translatable("gui.rovenfall.player.activity_tracks", snapshot.activityTracks())));
-        dashboard.setItem(14, icon(
-                Items.BOOK,
-                Component.translatable("gui.rovenfall.player.skills"),
-                Component.translatable("gui.rovenfall.player.learned_skills", snapshot.learnedSkills())));
-        for (int slot = 0; slot < snapshot.activeSkills().size(); slot++) {
-            Optional<Identifier> skill = snapshot.activeSkills().get(slot);
-            dashboard.setItem(19 + slot, icon(
-                    skill.isPresent() ? Items.ENCHANTED_BOOK : Items.PAPER,
-                    Component.translatable("gui.rovenfall.player.active_slot", slot + 1),
-                    skill.map(id -> skillName(definitions, id))
-                            .orElseGet(() -> Component.translatable("gui.rovenfall.player.empty"))));
-        }
-        dashboard.setItem(24, icon(
-                Items.BARRIER,
-                Component.translatable("gui.rovenfall.player.rpg_actions"),
-                Component.translatable("gui.rovenfall.player.planned", "#80")));
-    }
-
     private void addBackButton() {
         dashboard.setItem(BACK_SLOT, icon(
                 Items.ARROW,
@@ -350,20 +264,8 @@ public final class PlayerDashboardMenu extends ChestMenu {
                 : Component.translatable("gui.rovenfall.player.claim.other");
     }
 
-    private static Component enabled(boolean enabled) {
-        return Component.translatable(enabled
-                ? "gui.rovenfall.player.enabled"
-                : "gui.rovenfall.player.disabled");
-    }
-
     private static Component careerName(RpgDefinitionSnapshot definitions, Identifier id) {
         return definitions.career(id)
-                .<Component>map(definition -> Component.translatable(definition.translationKey()))
-                .orElseGet(() -> Component.literal(id.toString()));
-    }
-
-    private static Component skillName(RpgDefinitionSnapshot definitions, Identifier id) {
-        return definitions.skill(id)
                 .<Component>map(definition -> Component.translatable(definition.translationKey()))
                 .orElseGet(() -> Component.literal(id.toString()));
     }
@@ -382,20 +284,14 @@ public final class PlayerDashboardMenu extends ChestMenu {
             long balance,
             boolean hasEconomyAccount,
             int ownedClaims,
-            ClaimKey currentClaimKey,
             boolean protectedRegion,
             Optional<UUID> claimOwner,
             Optional<ClaimRole> claimRole,
-            Optional<org.dldyou.rovenfall.claims.ClaimSettings> claimSettings,
             Optional<Identifier> activeCareer,
-            int activityTracks,
-            int learnedCareers,
-            int learnedSkills,
             List<Optional<Identifier>> activeSkills) {
         DashboardSnapshot {
             claimOwner = claimOwner == null ? Optional.empty() : claimOwner;
             claimRole = claimRole == null ? Optional.empty() : claimRole;
-            claimSettings = claimSettings == null ? Optional.empty() : claimSettings;
             activeCareer = activeCareer == null ? Optional.empty() : activeCareer;
             activeSkills = List.copyOf(activeSkills);
         }

@@ -2,7 +2,9 @@ package org.dldyou.rovenfall.administration;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.ContainerScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.world.entity.player.Player;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.network.ClientPacketDistributor;
@@ -31,6 +33,25 @@ public final class RovenfallInventoryClient {
         Minecraft minecraft = Minecraft.getInstance();
         if (shouldReplace(event.getNewScreen(), minecraft.player)) {
             event.setNewScreen(new RovenfallInventoryScreen(minecraft.player));
+            return;
         }
+        if (event.getNewScreen() instanceof ContainerScreen screen
+                && !(screen instanceof RovenfallPlayerMenuScreen)
+                && minecraft.player != null
+                && isPlayerMenuTitle(screen.getTitle())) {
+            event.setNewScreen(new RovenfallPlayerMenuScreen(
+                    screen.getMenu(), minecraft.player.getInventory(), screen.getTitle()));
+        }
+    }
+
+    static boolean isPlayerMenuTitle(net.minecraft.network.chat.Component title) {
+        if (!(title.getContents() instanceof TranslatableContents contents)) {
+            return false;
+        }
+        return switch (contents.getKey()) {
+            case "gui.rovenfall.player.title", "gui.rovenfall.shop.title",
+                    "gui.rovenfall.claim.title", "gui.rovenfall.rpg.title" -> true;
+            default -> false;
+        };
     }
 }
