@@ -3,7 +3,7 @@ package org.dldyou.rovenfall.mixin;
 import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
-import org.dldyou.rovenfall.administration.PlayerRpgMenu;
+import org.dldyou.rovenfall.administration.PlayerMenuNetwork;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Makes RPG GUI clicks fail closed when their server-issued session state is stale. */
+/** Makes every player GUI click fail closed when its server-issued session state is stale. */
 @Mixin(ServerGamePacketListenerImpl.class)
 abstract class ServerGamePacketListenerImplMixin {
     @Unique
@@ -20,7 +20,7 @@ abstract class ServerGamePacketListenerImplMixin {
     @Shadow
     public ServerPlayer player;
     @Unique
-    private long rovenfall$lastRpgMenuResyncTick = Long.MIN_VALUE;
+    private long rovenfall$lastPlayerMenuResyncTick = Long.MIN_VALUE;
 
     @Inject(
             method = "handleContainerClick",
@@ -32,20 +32,21 @@ abstract class ServerGamePacketListenerImplMixin {
                             + "Lnet/minecraft/server/level/ServerLevel;)V",
                     shift = At.Shift.AFTER),
             cancellable = true)
-    private void rovenfall$rejectStaleRpgMenuClick(
+    private void rovenfall$rejectStalePlayerMenuClick(
             ServerboundContainerClickPacket packet, CallbackInfo callback) {
-        if (!(player.containerMenu instanceof PlayerRpgMenu menu)) {
+        var menu = player.containerMenu;
+        if (!PlayerMenuNetwork.isPlayerMenu(menu)) {
             return;
         }
-        if (PlayerRpgMenu.isCurrentSession(
+        if (PlayerMenuNetwork.isCurrentSession(
                 menu.containerId, menu.getStateId(), packet.containerId(), packet.stateId())) {
             return;
         }
         long gameTime = player.level().getGameTime();
         if (menu.containerId == packet.containerId()
-                && (rovenfall$lastRpgMenuResyncTick == Long.MIN_VALUE
-                || gameTime - rovenfall$lastRpgMenuResyncTick >= ROVENFALL$RESYNC_COOLDOWN_TICKS)) {
-            rovenfall$lastRpgMenuResyncTick = gameTime;
+                && (rovenfall$lastPlayerMenuResyncTick == Long.MIN_VALUE
+                || gameTime - rovenfall$lastPlayerMenuResyncTick >= ROVENFALL$RESYNC_COOLDOWN_TICKS)) {
+            rovenfall$lastPlayerMenuResyncTick = gameTime;
             menu.sendAllDataToRemote();
         }
         callback.cancel();

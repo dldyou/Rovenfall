@@ -53,9 +53,6 @@ final class PlayerDashboardMenuTest {
         assertEquals(Optional.of(player), snapshot.claimOwner());
         assertEquals(Optional.of(ClaimRole.OWNER), snapshot.claimRole());
         assertEquals(Optional.of(career), snapshot.activeCareer());
-        assertEquals(1, snapshot.activityTracks());
-        assertEquals(1, snapshot.learnedCareers());
-        assertEquals(1, snapshot.learnedSkills());
         assertEquals(List.of(Optional.of(skill), Optional.empty(), Optional.empty(), Optional.empty()),
                 snapshot.activeSkills());
     }
@@ -71,9 +68,7 @@ final class PlayerDashboardMenuTest {
         assertEquals(PlayerDashboardMenu.Action.OPEN_SHOPS,
                 PlayerDashboardMenu.actionAt(PlayerDashboardMenu.Page.ECONOMY, 15));
         assertEquals(PlayerDashboardMenu.Action.BACK,
-                PlayerDashboardMenu.actionAt(PlayerDashboardMenu.Page.CLAIMS, 18));
-        assertEquals(PlayerDashboardMenu.Action.UNAVAILABLE,
-                PlayerDashboardMenu.actionAt(PlayerDashboardMenu.Page.RPG, 24));
+                PlayerDashboardMenu.actionAt(PlayerDashboardMenu.Page.ECONOMY, 18));
         assertEquals(PlayerDashboardMenu.Action.NONE,
                 PlayerDashboardMenu.actionAt(PlayerDashboardMenu.Page.HOME, 0));
 

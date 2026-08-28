@@ -58,6 +58,7 @@ public final class PlayerShopMenu extends ChestMenu {
         this.viewerId = viewer.getUUID();
         this.catalog = catalog;
         render();
+        PlayerMenuNetwork.seedMenuSession(this, UUID.randomUUID());
     }
 
     public static void open(ServerPlayer player) {
@@ -72,7 +73,8 @@ public final class PlayerShopMenu extends ChestMenu {
         if (!(player instanceof ServerPlayer serverPlayer)
                 || !viewerId.equals(serverPlayer.getUUID())
                 || slotIndex < 0
-                || slotIndex >= MENU_SIZE) {
+                || slotIndex >= MENU_SIZE
+                || !PlayerMenuNetwork.isPrimaryAction(buttonNum, input)) {
             return;
         }
         long gameTime = viewer.level().getGameTime();
@@ -81,6 +83,10 @@ public final class PlayerShopMenu extends ChestMenu {
         }
         lastHandledGameTime = gameTime;
         if (slotIndex == REFRESH_SLOT) {
+            if (page == Page.CONFIRM) {
+                preview = null;
+                page = Page.DETAIL;
+            }
             render();
             return;
         }
@@ -222,6 +228,10 @@ public final class PlayerShopMenu extends ChestMenu {
             return;
         }
         if (slot != 33 || preview == null) {
+            return;
+        }
+        if (!PlayerMenuNetwork.beginMutation(viewerId, viewer.level().getGameTime())) {
+            viewer.sendOverlayMessage(Component.translatable("gui.rovenfall.player.rate_limit"));
             return;
         }
         UUID transactionId = UUID.randomUUID();
@@ -398,11 +408,11 @@ public final class PlayerShopMenu extends ChestMenu {
         catalog.setItem(13, item);
         catalog.setItem(29, PlayerDashboardMenu.icon(
                 Items.BARRIER,
-                Component.translatable("gui.rovenfall.shop.cancel"),
+                Component.translatable("gui.rovenfall.player.cancel"),
                 Component.translatable("gui.rovenfall.player.click")));
         catalog.setItem(33, PlayerDashboardMenu.icon(
                 Items.EMERALD,
-                Component.translatable("gui.rovenfall.shop.confirm"),
+                Component.translatable("gui.rovenfall.player.confirm"),
                 Component.translatable("gui.rovenfall.shop.total", preview.total()),
                 Component.translatable("gui.rovenfall.player.click")));
         addBack();
@@ -446,11 +456,11 @@ public final class PlayerShopMenu extends ChestMenu {
         addBack();
         if (pageIndex > 0) {
             catalog.setItem(PREVIOUS_SLOT, PlayerDashboardMenu.icon(
-                    Items.ARROW, Component.translatable("gui.rovenfall.shop.previous")));
+                    Items.ARROW, Component.translatable("gui.rovenfall.player.previous")));
         }
         if ((long) (pageIndex + 1) * PAGE_SIZE < entries) {
             catalog.setItem(NEXT_SLOT, PlayerDashboardMenu.icon(
-                    Items.ARROW, Component.translatable("gui.rovenfall.shop.next")));
+                    Items.ARROW, Component.translatable("gui.rovenfall.player.next")));
         }
     }
 
@@ -498,7 +508,7 @@ public final class PlayerShopMenu extends ChestMenu {
 
     private Component pageLine(int entries) {
         int pages = entries == 0 ? 0 : (entries + PAGE_SIZE - 1) / PAGE_SIZE;
-        return Component.translatable("gui.rovenfall.shop.page", entries == 0 ? 0 : pageIndex + 1, pages, entries);
+        return Component.translatable("gui.rovenfall.player.page", entries == 0 ? 0 : pageIndex + 1, pages, entries);
     }
 
     private Component bindingLine(ShopInstance shop) {

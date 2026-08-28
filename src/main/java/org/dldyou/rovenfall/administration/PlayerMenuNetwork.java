@@ -11,6 +11,8 @@ import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerInput;
 import net.neoforged.neoforge.common.util.FakePlayer;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
@@ -61,6 +63,30 @@ public final class PlayerMenuNetwork {
         }
         LAST_MUTATION_TICK.put(playerId, gameTick);
         return true;
+    }
+
+    static boolean isPrimaryAction(int button, ContainerInput input) {
+        return button == 0 && input == ContainerInput.PICKUP;
+    }
+
+    public static boolean isPlayerMenu(AbstractContainerMenu menu) {
+        return menu instanceof PlayerDashboardMenu
+                || menu instanceof PlayerShopMenu
+                || menu instanceof PlayerClaimMenu
+                || menu instanceof PlayerRpgMenu;
+    }
+
+    public static boolean isCurrentSession(
+            int menuContainerId, int menuStateId, int packetContainerId, int packetStateId) {
+        return menuContainerId == packetContainerId && menuStateId == packetStateId;
+    }
+
+    static int sessionStateId(UUID nonce) {
+        return 1 + Math.floorMod(nonce.hashCode(), 32_767);
+    }
+
+    static void seedMenuSession(AbstractContainerMenu menu, UUID nonce) {
+        menu.setItem(0, sessionStateId(nonce), menu.getSlot(0).getItem());
     }
 
     private static void handleOpen(Open payload, IPayloadContext context) {

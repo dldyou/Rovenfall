@@ -105,7 +105,7 @@ public final class PlayerRpgMenu extends ChestMenu {
         this.selectedCareer = initial.selectedCareer();
         this.selectedSkill = initial.selectedSkill();
         render();
-        setItem(0, sessionStateId(UUID.randomUUID()), getSlot(0).getItem());
+        PlayerMenuNetwork.seedMenuSession(this, UUID.randomUUID());
     }
 
     public static void open(ServerPlayer player) {
@@ -124,7 +124,7 @@ public final class PlayerRpgMenu extends ChestMenu {
         if (!(player instanceof ServerPlayer serverPlayer)
                 || !viewerId.equals(serverPlayer.getUUID())
                 || slotIndex < 0 || slotIndex >= 54
-                || input != ContainerInput.PICKUP || buttonNum != 0
+                || !PlayerMenuNetwork.isPrimaryAction(buttonNum, input)
                 || !isActionSlot(slotIndex)) {
             return;
         }
@@ -594,15 +594,15 @@ public final class PlayerRpgMenu extends ChestMenu {
                         Component.translatable("gui.rovenfall.rpg.confirm.refund", removed.refundedPoints())));
             }
             if (pageIndex > 0) {
-                content.setItem(PREVIOUS_SLOT, icon(Items.ARROW, "gui.rovenfall.rpg.previous"));
+                content.setItem(PREVIOUS_SLOT, icon(Items.ARROW, "gui.rovenfall.player.previous"));
             }
             if ((long) (pageIndex + 1) * CONFIRM_CONTENT_SLOTS.length < plan.removedSkills().size()) {
-                content.setItem(NEXT_SLOT, icon(Items.ARROW, "gui.rovenfall.rpg.next"));
+                content.setItem(NEXT_SLOT, icon(Items.ARROW, "gui.rovenfall.player.next"));
             }
         });
-        content.setItem(29, icon(Items.BARRIER, "gui.rovenfall.rpg.confirm.cancel",
+        content.setItem(29, icon(Items.BARRIER, "gui.rovenfall.player.cancel",
                 Component.translatable("gui.rovenfall.player.click")));
-        content.setItem(33, icon(Items.EMERALD, "gui.rovenfall.rpg.confirm.accept",
+        content.setItem(33, icon(Items.EMERALD, "gui.rovenfall.player.confirm",
                 Component.translatable("gui.rovenfall.player.click")));
         addBackHome();
     }
@@ -705,10 +705,10 @@ public final class PlayerRpgMenu extends ChestMenu {
     private void addNavigation(int entries) {
         addBackHome();
         if (pageIndex > 0) {
-            content.setItem(PREVIOUS_SLOT, icon(Items.ARROW, "gui.rovenfall.rpg.previous"));
+            content.setItem(PREVIOUS_SLOT, icon(Items.ARROW, "gui.rovenfall.player.previous"));
         }
         if ((long) (pageIndex + 1) * PAGE_SIZE < entries) {
-            content.setItem(NEXT_SLOT, icon(Items.ARROW, "gui.rovenfall.rpg.next"));
+            content.setItem(NEXT_SLOT, icon(Items.ARROW, "gui.rovenfall.player.next"));
         }
     }
 
@@ -765,15 +765,6 @@ public final class PlayerRpgMenu extends ChestMenu {
             long expectedBalance, long expectedCost, long currentBalance, long currentCost) {
         return expectedBalance >= 0 && expectedCost >= 0
                 && expectedBalance == currentBalance && expectedCost == currentCost;
-    }
-
-    public static boolean isCurrentSession(
-            int menuContainerId, int menuStateId, int packetContainerId, int packetStateId) {
-        return menuContainerId == packetContainerId && menuStateId == packetStateId;
-    }
-
-    static int sessionStateId(UUID nonce) {
-        return 1 + Math.floorMod(nonce.hashCode(), 32_767);
     }
 
     private long currentCost(Confirmation action) {
@@ -833,7 +824,7 @@ public final class PlayerRpgMenu extends ChestMenu {
 
     private Component pageLine(int count) {
         int pages = count == 0 ? 0 : (count + PAGE_SIZE - 1) / PAGE_SIZE;
-        return Component.translatable("gui.rovenfall.rpg.page", count == 0 ? 0 : pageIndex + 1, pages, count);
+        return Component.translatable("gui.rovenfall.player.page", count == 0 ? 0 : pageIndex + 1, pages, count);
     }
 
     private Component activityName(Identifier id) {

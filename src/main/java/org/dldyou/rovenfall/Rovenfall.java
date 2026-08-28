@@ -3,6 +3,7 @@ package org.dldyou.rovenfall;
 import com.mojang.authlib.GameProfile;
 import com.google.gson.JsonParser;
 import com.mojang.serialization.JsonOps;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,9 +16,12 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
+import net.minecraft.network.HashedStack;
+import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
 import net.minecraft.gametest.framework.TestData;
 import net.minecraft.gametest.framework.TestEnvironmentDefinition;
 import net.minecraft.resources.Identifier;
@@ -82,6 +86,10 @@ import org.dldyou.rovenfall.administration.PlatformSavedData;
 import org.dldyou.rovenfall.administration.OperationsMetricsService;
 import org.dldyou.rovenfall.administration.PlayerRecordService;
 import org.dldyou.rovenfall.administration.PlayerMenuNetwork;
+import org.dldyou.rovenfall.administration.PlayerClaimMenu;
+import org.dldyou.rovenfall.administration.PlayerDashboardMenu;
+import org.dldyou.rovenfall.administration.PlayerRpgMenu;
+import org.dldyou.rovenfall.administration.PlayerShopMenu;
 import org.dldyou.rovenfall.administration.RovenfallInventoryClient;
 import org.dldyou.rovenfall.administration.RpgAdministrationService;
 import org.dldyou.rovenfall.administration.RovenfallCommands;
@@ -193,6 +201,57 @@ public final class Rovenfall {
                 id("active_skill"), new TestEnvironmentDefinition.AllOf(List.of()));
         var testData = new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 1, 0, true);
         event.registerTest(id("foundation"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData));
+        event.registerTest(id("player_gui_navigation"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS,
+                new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 10, 0, true)) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var player = helper.makeMockServerPlayerInLevel();
+                PlayerDashboardMenu.open(player);
+                helper.assertTrue(player.containerMenu instanceof PlayerDashboardMenu
+                                && ((net.minecraft.world.inventory.ChestMenu) player.containerMenu).getRowCount() == 3,
+                        "Inventory overview did not open as the expected three-row menu");
+
+                int currentState = player.containerMenu.getStateId();
+                player.connection.handleContainerClick(playerMenuClick(
+                        player.containerMenu, 13, currentState, ContainerInput.QUICK_MOVE));
+                helper.assertTrue(player.containerMenu instanceof PlayerDashboardMenu,
+                        "Non-primary packet input invoked a player-menu action");
+                player.connection.handleContainerClick(playerMenuClick(
+                        player.containerMenu, 13, currentState - 1, ContainerInput.PICKUP));
+                helper.assertTrue(player.containerMenu instanceof PlayerDashboardMenu,
+                        "A stale container-state packet invoked a player-menu action");
+                player.connection.handleContainerClick(playerMenuClick(
+                        player.containerMenu, 13, player.containerMenu.getStateId(), ContainerInput.PICKUP));
+                helper.assertTrue(player.containerMenu instanceof PlayerClaimMenu
+                                && ((net.minecraft.world.inventory.ChestMenu) player.containerMenu).getRowCount() == 6,
+                        "Claim tab did not open as the expected six-row menu");
+                player.containerMenu.clicked(45, 0, ContainerInput.PICKUP, player);
+
+                helper.assertTrue(player.containerMenu instanceof PlayerDashboardMenu,
+                        "Claim back action did not reopen the overview");
+                player.containerMenu.clicked(16, 0, ContainerInput.PICKUP, player);
+                helper.assertTrue(player.containerMenu instanceof PlayerRpgMenu
+                                && ((net.minecraft.world.inventory.ChestMenu) player.containerMenu).getRowCount() == 6,
+                        "RPG tab did not open as the expected six-row menu");
+                player.containerMenu.clicked(45, 0, ContainerInput.PICKUP, player);
+
+                helper.assertTrue(player.containerMenu instanceof PlayerDashboardMenu,
+                        "RPG back action did not reopen the overview");
+                player.containerMenu.clicked(10, 0, ContainerInput.PICKUP, player);
+                helper.runAfterDelay(1, () -> {
+                    player.containerMenu.clicked(15, 0, ContainerInput.PICKUP, player);
+                    helper.assertTrue(player.containerMenu instanceof PlayerShopMenu
+                                    && ((net.minecraft.world.inventory.ChestMenu) player.containerMenu).getRowCount() == 6,
+                            "Shop action did not open as the expected six-row menu");
+                    player.containerMenu.clicked(45, 0, ContainerInput.PICKUP, player);
+                    helper.assertTrue(player.containerMenu instanceof PlayerDashboardMenu,
+                            "Shop back action did not reopen the overview");
+                    player.discard();
+                    helper.succeed();
+                });
+            }
+        });
         event.registerTest(id("operations_metrics_snapshot"), new FunctionGameTestInstance(
                 BuiltinTestFunctions.ALWAYS_PASS, testData) {
             @Override
@@ -2027,6 +2086,21 @@ public final class Rovenfall {
                 helper.succeed();
             }
         });
+    }
+
+    private static ServerboundContainerClickPacket playerMenuClick(
+            net.minecraft.world.inventory.AbstractContainerMenu menu,
+            int slot,
+            int stateId,
+            ContainerInput input) {
+        return new ServerboundContainerClickPacket(
+                menu.containerId,
+                stateId,
+                (short) slot,
+                (byte) 0,
+                input,
+                new Int2ObjectOpenHashMap<>(),
+                HashedStack.EMPTY);
     }
 
     private void addServerReloadListeners(AddServerReloadListenersEvent event) {

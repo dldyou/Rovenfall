@@ -5,8 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.netty.buffer.Unpooled;
+import java.util.UUID;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.world.inventory.ContainerInput;
 import org.junit.jupiter.api.Test;
 
 final class PlayerMenuNetworkTest {
@@ -35,5 +37,18 @@ final class PlayerMenuNetworkTest {
         assertFalse(PlayerMenuNetwork.canOpen(100L, 104));
         assertTrue(PlayerMenuNetwork.canOpen(100L, 105));
         assertTrue(PlayerMenuNetwork.canOpen(100L, 90));
+    }
+
+    @Test
+    void acceptsOnlyPrimaryPickupClicksAndCurrentServerIssuedSessionState() {
+        assertTrue(PlayerMenuNetwork.isPrimaryAction(0, ContainerInput.PICKUP));
+        assertFalse(PlayerMenuNetwork.isPrimaryAction(1, ContainerInput.PICKUP));
+        assertFalse(PlayerMenuNetwork.isPrimaryAction(0, ContainerInput.QUICK_MOVE));
+
+        assertTrue(PlayerMenuNetwork.isCurrentSession(7, 101, 7, 101));
+        assertFalse(PlayerMenuNetwork.isCurrentSession(7, 101, 8, 101));
+        assertFalse(PlayerMenuNetwork.isCurrentSession(7, 101, 7, 100));
+        int stateId = PlayerMenuNetwork.sessionStateId(UUID.randomUUID());
+        assertTrue(stateId >= 1 && stateId <= 32_767);
     }
 }

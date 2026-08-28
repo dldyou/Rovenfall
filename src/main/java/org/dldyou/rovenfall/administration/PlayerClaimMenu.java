@@ -99,6 +99,7 @@ public final class PlayerClaimMenu extends ChestMenu {
         this.viewerId = viewer.getUUID();
         this.contents = contents;
         render();
+        PlayerMenuNetwork.seedMenuSession(this, UUID.randomUUID());
     }
 
     public static void open(ServerPlayer player) {
@@ -113,7 +114,8 @@ public final class PlayerClaimMenu extends ChestMenu {
         if (!(player instanceof ServerPlayer serverPlayer)
                 || !viewerId.equals(serverPlayer.getUUID())
                 || slotIndex < 0
-                || slotIndex >= MENU_SIZE) {
+                || slotIndex >= MENU_SIZE
+                || !PlayerMenuNetwork.isPrimaryAction(buttonNum, input)) {
             return;
         }
         long gameTime = viewer.level().getGameTime();
@@ -690,6 +692,16 @@ public final class PlayerClaimMenu extends ChestMenu {
                                     claim.purchasePrice(), ClaimConfig.saleRefundPercent())),
                     Component.translatable("gui.rovenfall.claim.confirm_required")));
         }
+        if (actions.stream().noneMatch(PlayerClaimMenu::isManagementAction)) {
+            contents.setItem(31, PlayerDashboardMenu.icon(
+                    Items.BARRIER,
+                    Component.translatable("gui.rovenfall.claim.actions_locked"),
+                    Component.translatable("gui.rovenfall.claim.owner_or_manager_required")));
+        }
+    }
+
+    private static boolean isManagementAction(PermissionAction action) {
+        return action != PermissionAction.VIEW_TRUSTED;
     }
 
     private void renderTrusted() {
@@ -820,11 +832,11 @@ public final class PlayerClaimMenu extends ChestMenu {
                         : Component.empty()));
         contents.setItem(29, PlayerDashboardMenu.icon(
                 Items.BARRIER,
-                Component.translatable("gui.rovenfall.shop.cancel"),
+                Component.translatable("gui.rovenfall.player.cancel"),
                 Component.translatable("gui.rovenfall.player.click")));
         contents.setItem(33, PlayerDashboardMenu.icon(
                 Items.EMERALD,
-                Component.translatable("gui.rovenfall.shop.confirm"),
+                Component.translatable("gui.rovenfall.player.confirm"),
                 Component.translatable("gui.rovenfall.player.click")));
         addBack();
     }
@@ -876,11 +888,11 @@ public final class PlayerClaimMenu extends ChestMenu {
     private void addPaging(int entries) {
         if (pageIndex > 0) {
             contents.setItem(PREVIOUS_SLOT, PlayerDashboardMenu.icon(
-                    Items.ARROW, Component.translatable("gui.rovenfall.shop.previous")));
+                    Items.ARROW, Component.translatable("gui.rovenfall.player.previous")));
         }
         if ((long) (pageIndex + 1) * PAGE_SIZE < entries) {
             contents.setItem(NEXT_SLOT, PlayerDashboardMenu.icon(
-                    Items.ARROW, Component.translatable("gui.rovenfall.shop.next")));
+                    Items.ARROW, Component.translatable("gui.rovenfall.player.next")));
         }
     }
 
@@ -893,7 +905,7 @@ public final class PlayerClaimMenu extends ChestMenu {
     private Component pageLine(int entries) {
         int pages = entries == 0 ? 0 : (entries + PAGE_SIZE - 1) / PAGE_SIZE;
         return Component.translatable(
-                "gui.rovenfall.shop.page", entries == 0 ? 0 : pageIndex + 1, pages, entries);
+                "gui.rovenfall.player.page", entries == 0 ? 0 : pageIndex + 1, pages, entries);
     }
 
     private static int boundedPage(int page, int entries) {

@@ -83,12 +83,23 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.admin.operations.summary",
             "gui.rovenfall.player.title",
             "gui.rovenfall.player.home",
-            "gui.rovenfall.player.unavailable",
+            "gui.rovenfall.player.previous",
+            "gui.rovenfall.player.next",
+            "gui.rovenfall.player.page",
+            "gui.rovenfall.player.confirm",
+            "gui.rovenfall.player.cancel",
+            "gui.rovenfall.player.rate_limit",
             "gui.rovenfall.inventory.inventory",
             "gui.rovenfall.inventory.overview",
             "gui.rovenfall.inventory.claims",
             "gui.rovenfall.inventory.skills",
             "gui.rovenfall.inventory.shops",
+            "gui.rovenfall.inventory.current_tab",
+            "gui.rovenfall.inventory.open_tab",
+            "gui.rovenfall.menu.slot_position",
+            "gui.rovenfall.menu.keyboard_usage",
+            "gui.rovenfall.claim.actions_locked",
+            "gui.rovenfall.claim.owner_or_manager_required",
             "gui.rovenfall.shop.title",
             "gui.rovenfall.shop.confirm_title",
             "gui.rovenfall.shop.stock.unlimited",
@@ -157,6 +168,18 @@ final class LocalizationCatalogTest {
             "/data/rovenfall/rovenfall/shop_templates/foundation.json",
             "/data/rovenfall/rovenfall/mob_content/foundation.json"
     );
+    private static final Set<String> COMPACT_PLAYER_GUI_KEYS = Set.of(
+            "gui.rovenfall.inventory.inventory",
+            "gui.rovenfall.inventory.overview",
+            "gui.rovenfall.inventory.claims",
+            "gui.rovenfall.inventory.skills",
+            "gui.rovenfall.inventory.shops",
+            "gui.rovenfall.player.back",
+            "gui.rovenfall.player.refresh",
+            "gui.rovenfall.player.previous",
+            "gui.rovenfall.player.next",
+            "gui.rovenfall.player.confirm",
+            "gui.rovenfall.player.cancel");
 
     @Test
     void supportedLanguageCatalogsHaveEqualKeySets() {
@@ -186,6 +209,24 @@ final class LocalizationCatalogTest {
         }
     }
 
+    @Test
+    void playerGuiLabelsArePresentAndCompactInEveryCatalog() {
+        for (String locale : Set.of("en_us", "ko_kr", "ja_jp")) {
+            var catalog = catalog(locale);
+            catalog.entrySet().stream()
+                    .filter(entry -> entry.getKey().startsWith("gui.rovenfall."))
+                    .forEach(entry -> assertTrue(
+                            entry.getValue().isJsonPrimitive()
+                                    && !entry.getValue().getAsString().isBlank(),
+                            locale + " has a blank GUI label: " + entry.getKey()));
+            for (String key : COMPACT_PLAYER_GUI_KEYS) {
+                String label = catalog.get(key).getAsString();
+                assertTrue(label.codePointCount(0, label.length()) <= 18,
+                        locale + " player GUI label is too long: " + key + " = " + label);
+            }
+        }
+    }
+
     private static void collectTranslationKeys(com.google.gson.JsonElement element, Set<String> keys) {
         if (element.isJsonArray()) {
             element.getAsJsonArray().forEach(child -> collectTranslationKeys(child, keys));
@@ -203,11 +244,15 @@ final class LocalizationCatalogTest {
     }
 
     private static Set<String> keys(String locale) {
+        return catalog(locale).keySet();
+    }
+
+    private static com.google.gson.JsonObject catalog(String locale) {
         String path = "/assets/rovenfall/lang/" + locale + ".json";
         var stream = LocalizationCatalogTest.class.getResourceAsStream(path);
         assertNotNull(stream, path);
         try (var reader = new InputStreamReader(stream, StandardCharsets.UTF_8)) {
-            return JsonParser.parseReader(reader).getAsJsonObject().keySet();
+            return JsonParser.parseReader(reader).getAsJsonObject();
         } catch (java.io.IOException exception) {
             throw new AssertionError(exception);
         }
