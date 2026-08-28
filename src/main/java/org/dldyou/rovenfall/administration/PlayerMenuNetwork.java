@@ -72,7 +72,7 @@ public final class PlayerMenuNetwork {
         LAST_OPEN_TICK.put(player.getUUID(), gameTick);
         switch (target.orElseThrow()) {
             case OVERVIEW -> PlayerDashboardMenu.open(player);
-            case CLAIMS -> PlayerDashboardMenu.open(player, PlayerDashboardMenu.Page.CLAIMS);
+            case CLAIMS -> PlayerClaimMenu.open(player);
             case SKILLS -> PlayerDashboardMenu.open(player, PlayerDashboardMenu.Page.RPG);
             case SHOPS -> PlayerShopMenu.open(player);
         }

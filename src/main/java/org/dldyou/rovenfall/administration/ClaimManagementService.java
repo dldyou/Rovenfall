@@ -441,7 +441,7 @@ public final class ClaimManagementService {
         return result(Status.NO_CHANGE, transactionId, 0, state.economyBalance(actorId).orElse(0L), true);
     }
 
-    private static boolean canManage(
+    static boolean canManage(
             PlatformSavedData state, Claim claim, UUID actorId, boolean authorizationOverride) {
         if (claim.roleOf(actorId).atLeast(ClaimRole.MANAGER)) {
             return true;
@@ -513,7 +513,7 @@ public final class ClaimManagementService {
                 + ";pending_transfer=" + claim.pendingTransferTo().map(UUID::toString).orElse("none");
     }
 
-    private static long refund(long purchasePrice, int percent) {
+    static long refund(long purchasePrice, int percent) {
         long whole = Math.multiplyExact(purchasePrice / 100, percent);
         long remainder = Math.multiplyExact(purchasePrice % 100, percent) / 100;
         return Math.addExact(whole, remainder);

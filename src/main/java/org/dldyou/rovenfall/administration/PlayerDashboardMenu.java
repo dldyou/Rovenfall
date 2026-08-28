@@ -104,7 +104,10 @@ public final class PlayerDashboardMenu extends ChestMenu {
                 PlayerShopMenu.open(viewer);
                 return;
             }
-            case OPEN_CLAIMS -> page = Page.CLAIMS;
+            case OPEN_CLAIMS -> {
+                PlayerClaimMenu.open(viewer);
+                return;
+            }
             case OPEN_RPG -> page = Page.RPG;
             case BACK -> page = Page.HOME;
             case UNAVAILABLE -> {
