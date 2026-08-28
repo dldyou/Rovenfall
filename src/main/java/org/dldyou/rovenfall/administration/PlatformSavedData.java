@@ -32,7 +32,7 @@ import org.dldyou.rovenfall.world.WorldTopology;
 
 public final class PlatformSavedData extends SavedData {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
-    public static final int CURRENT_SCHEMA_VERSION = 13;
+    public static final int CURRENT_SCHEMA_VERSION = 14;
     public static final int MAX_PROTECTED_REGIONS = 128;
     public static final int MAX_INDEXED_PROTECTED_CHUNKS = 131_072;
     public static final int MAX_AUDIT_PAGE_SIZE = 50;
@@ -308,6 +308,22 @@ public final class PlatformSavedData extends SavedData {
         return Optional.ofNullable(playerRecords.get(playerId));
     }
 
+    /** Immutable, deterministically ordered player projection for bounded administration queries. */
+    public List<Map.Entry<UUID, PlayerRecord>> playerRecords() {
+        return playerRecords(Integer.MAX_VALUE);
+    }
+
+    public List<Map.Entry<UUID, PlayerRecord>> playerRecords(int maximumEntries) {
+        if (maximumEntries < 1) {
+            throw new IllegalArgumentException("Player record query must be bounded");
+        }
+        return playerRecords.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .limit(maximumEntries)
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
     public int playerRecordCount() {
         return playerRecords.size();
     }
@@ -338,6 +354,22 @@ public final class PlatformSavedData extends SavedData {
 
     public int claimCount() {
         return claims.size();
+    }
+
+    /** Immutable, deterministically ordered claim projection for bounded administration queries. */
+    public List<Map.Entry<ClaimKey, Claim>> claims() {
+        return claims(Integer.MAX_VALUE);
+    }
+
+    public List<Map.Entry<ClaimKey, Claim>> claims(int maximumEntries) {
+        if (maximumEntries < 1) {
+            throw new IllegalArgumentException("Claim query must be bounded");
+        }
+        return claims.entrySet().stream()
+                .sorted(Comparator.comparing(entry -> entry.getKey().auditTarget()))
+                .limit(maximumEntries)
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
+                .toList();
     }
 
     public Optional<ClaimMutationReceipt> claimReceipt(UUID transactionId) {
@@ -377,10 +409,22 @@ public final class PlatformSavedData extends SavedData {
     }
 
     public List<Map.Entry<Identifier, PortalDefinition>> portalDefinitions() {
+        return portalDefinitions(Integer.MAX_VALUE);
+    }
+
+    public List<Map.Entry<Identifier, PortalDefinition>> portalDefinitions(int maximumEntries) {
+        if (maximumEntries < 1) {
+            throw new IllegalArgumentException("Portal query must be bounded");
+        }
         return portalDefinitions.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
+                .limit(maximumEntries)
                 .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
                 .toList();
+    }
+
+    public int portalDefinitionCount() {
+        return portalDefinitions.size();
     }
 
     public long portalCooldownUntil(UUID playerId, Identifier portalId) {
@@ -405,7 +449,7 @@ public final class PlatformSavedData extends SavedData {
 
     public List<Map.Entry<UUID, RpgSkillOperation>> pendingRpgSkillOperations(UUID playerId) {
         return rpgSkillOperations(playerId).stream()
-                .filter(entry -> entry.getValue().phase() == RpgSkillOperation.Phase.PENDING)
+                .filter(entry -> entry.getValue().phase() != RpgSkillOperation.Phase.COMPLETED)
                 .toList();
     }
 
@@ -510,12 +554,56 @@ public final class PlatformSavedData extends SavedData {
         return Map.copyOf(shopInstances);
     }
 
+    List<Map.Entry<Identifier, ShopInstance>> shopInstances(int maximumEntries) {
+        if (maximumEntries < 1) {
+            throw new IllegalArgumentException("Shop query must be bounded");
+        }
+        return shopInstances.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .limit(maximumEntries)
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
     Map<UUID, EconomyTransactionReceipt> economyReceiptsView() {
         return Map.copyOf(economyReceipts);
     }
 
+    List<Map.Entry<UUID, EconomyTransactionReceipt>> economyReceipts(int maximumEntries) {
+        if (maximumEntries < 1) {
+            throw new IllegalArgumentException("Receipt query must be bounded");
+        }
+        return economyReceipts.entrySet().stream()
+                .sorted(Comparator.<Map.Entry<UUID, EconomyTransactionReceipt>>comparingLong(
+                                entry -> entry.getValue().timestampEpochMillis())
+                        .reversed().thenComparing(Map.Entry::getKey))
+                .limit(maximumEntries)
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
+    int economyReceiptCount() {
+        return economyReceipts.size();
+    }
+
     List<EconomyAlert> economyAlertsView() {
         return List.copyOf(economyAlerts);
+    }
+
+    int economyAlertCount() {
+        return economyAlerts.size();
+    }
+
+    List<EconomyAlert> recentEconomyAlerts(int maximumEntries) {
+        if (maximumEntries < 1) {
+            throw new IllegalArgumentException("Alert query must be bounded");
+        }
+        int from = Math.max(0, economyAlerts.size() - maximumEntries);
+        List<EconomyAlert> result = new ArrayList<>(economyAlerts.subList(from, economyAlerts.size()));
+        result.sort(Comparator.comparingLong(EconomyAlert::timestampEpochMillis).reversed()
+                .thenComparing(EconomyAlert::transactionId)
+                .thenComparing(alert -> alert.type().getSerializedName()));
+        return List.copyOf(result);
     }
 
     List<AuditEntry> auditEntriesView() {
@@ -550,6 +638,18 @@ public final class PlatformSavedData extends SavedData {
 
     public int auditCount() {
         return auditEntries.size();
+    }
+
+    public List<AuditEntry> recentAuditEntries(int maximumEntries) {
+        if (maximumEntries < 1) {
+            throw new IllegalArgumentException("Audit query must be bounded");
+        }
+        List<AuditEntry> entries = new ArrayList<>(Math.min(maximumEntries, auditEntries.size()));
+        var iterator = auditEntries.descendingIterator();
+        while (iterator.hasNext() && entries.size() < maximumEntries) {
+            entries.add(iterator.next());
+        }
+        return List.copyOf(entries);
     }
 
     boolean hasAuditTransaction(UUID transactionId) {
@@ -805,7 +905,7 @@ public final class PlatformSavedData extends SavedData {
                 ? 0
                 : timestampEpochMillis - ECONOMY_TRANSACTION_RETENTION_MILLIS;
         long retained = rpgSkillOperations.values().stream()
-                .filter(operation -> operation.phase() == RpgSkillOperation.Phase.PENDING
+                .filter(operation -> operation.phase() != RpgSkillOperation.Phase.COMPLETED
                         || operation.timestampEpochMillis() >= cutoff)
                 .count();
         return retained < MAX_RPG_SKILL_OPERATIONS;
@@ -881,6 +981,7 @@ public final class PlatformSavedData extends SavedData {
         validateEvidence(playerId, transactionId, timestampEpochMillis, receipt, alerts);
         if (!operation.playerId().equals(playerId)
                 || operation.timestampEpochMillis() != timestampEpochMillis
+                || !operation.hasInventoryEvidence()
                 || receipt.kind() != operationReceiptKind(operation)
                 || !canCommitRpgSkillPayment(transactionId, timestampEpochMillis)) {
             throw new IllegalStateException("Paid RPG operation cannot be committed");
@@ -898,7 +999,7 @@ public final class PlatformSavedData extends SavedData {
         RpgSkillOperation current = rpgSkillOperations.get(transactionId);
         EconomyTransactionReceipt receipt = economyReceipts.get(transactionId);
         if (current == null || !current.equals(expected)
-                || current.phase() != RpgSkillOperation.Phase.PENDING
+                || current.phase() == RpgSkillOperation.Phase.COMPLETED
                 || receipt == null || receipt.kind() != operationReceiptKind(current)
                 || !receipt.actorId().equals(AdministrationService.SYSTEM_ACTOR)
                 || !receipt.playerId().equals(current.playerId()) || receipt.amount() != current.cost()) {
@@ -955,6 +1056,29 @@ public final class PlatformSavedData extends SavedData {
         prepareLedgerForCommit(timestampEpochMillis);
         claimReceipts.keySet().retainAll(economyTransactions.keySet());
         replaceClaim(claimKey, claim);
+        economyTransactions.put(transactionId, timestampEpochMillis);
+        claimReceipts.put(transactionId, receipt);
+        commitAudit(auditEntry);
+    }
+
+    void commitClaimReclaim(
+            ClaimKey claimKey,
+            Claim expectedClaim,
+            UUID transactionId,
+            long timestampEpochMillis,
+            ClaimMutationReceipt receipt,
+            AuditEntry auditEntry) {
+        if (!canCommitClaimTransaction(transactionId, timestampEpochMillis)
+                || expectedClaim == null
+                || !receipt.claim().equals(claimKey)
+                || receipt.kind() != ClaimMutationReceipt.Kind.RECLAIM
+                || receipt.timestampEpochMillis() != timestampEpochMillis
+                || !expectedClaim.equals(claims.get(claimKey))) {
+            throw new IllegalStateException("Claim reclaim cannot be committed");
+        }
+        prepareLedgerForCommit(timestampEpochMillis);
+        claimReceipts.keySet().retainAll(economyTransactions.keySet());
+        replaceClaim(claimKey, null);
         economyTransactions.put(transactionId, timestampEpochMillis);
         claimReceipts.put(transactionId, receipt);
         commitAudit(auditEntry);
@@ -1276,6 +1400,7 @@ public final class PlatformSavedData extends SavedData {
             EconomyTransactionReceipt receipt = receipts.get(entry.getKey());
             Long timestamp = transactions.get(entry.getKey());
             if (receipt == null || receipt.kind() != operationReceiptKind(operation)
+                    || !operation.hasInventoryEvidence()
                     || !receipt.actorId().equals(AdministrationService.SYSTEM_ACTOR)
                     || !receipt.playerId().equals(operation.playerId()) || receipt.amount() != operation.cost()
                     || timestamp == null || timestamp != operation.timestampEpochMillis()
@@ -1943,10 +2068,14 @@ public final class PlatformSavedData extends SavedData {
     }
 
     boolean commitPlayerLogin(UUID playerId, long timestampEpochMillis) {
+        return commitPlayerLogin(playerId, null, timestampEpochMillis);
+    }
+
+    boolean commitPlayerLogin(UUID playerId, String displayName, long timestampEpochMillis) {
         PlayerRecord previous = playerRecords.get(playerId);
         PlayerRecord updated = previous == null
-                ? new PlayerRecord(timestampEpochMillis, timestampEpochMillis)
-                : previous.observe(timestampEpochMillis);
+                ? new PlayerRecord(timestampEpochMillis, timestampEpochMillis, Optional.ofNullable(displayName))
+                : previous.observe(timestampEpochMillis, displayName);
         if (updated.equals(previous)) {
             return false;
         }

@@ -40,6 +40,7 @@ public record ClaimMutationReceipt(
         ROLE_SET("role_set"),
         ROLE_REMOVE("role_remove"),
         SETTINGS_SET("settings_set"),
+        RECLAIM("reclaim"),
         TRANSFER_OFFER("transfer_offer"),
         TRANSFER_CANCEL("transfer_cancel"),
         TRANSFER_ACCEPT("transfer_accept");

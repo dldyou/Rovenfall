@@ -97,8 +97,7 @@ public final class RpgCommands {
 
     private static int promote(CommandSourceStack source, Identifier careerId) throws CommandSyntaxException {
         var coordinated = PlayerCareerPromotionService.promote(
-                source.getServer(), source.getPlayerOrException().getUUID(), careerId,
-                Instant.now().toEpochMilli());
+                source.getPlayerOrException(), careerId, Instant.now().toEpochMilli());
         if (coordinated.status() == PlayerCareerPromotionService.Status.PAYMENT_FAILED) {
             if (coordinated.paymentStatus().orElse(null)
                     == CareerPromotionPaymentService.Status.INSUFFICIENT_FUNDS) {
@@ -108,6 +107,9 @@ public final class RpgCommands {
             return failure(source, "command.rovenfall.career.error.failed",
                     coordinated.paymentStatus().map(value -> value.name().toLowerCase(java.util.Locale.ROOT))
                             .orElse("payment_failed"));
+        }
+        if (coordinated.status() == PlayerCareerPromotionService.Status.ITEM_PAYMENT_FAILED) {
+            return failure(source, "command.rovenfall.career.promote.error.items");
         }
         if (coordinated.status() == PlayerCareerPromotionService.Status.COMPLETION_FAILED) {
             return failure(source, "command.rovenfall.career.error.failed", "completion_failed");
@@ -189,11 +191,13 @@ public final class RpgCommands {
     private static int reset(
             CommandSourceStack source, SkillResetPlan.Mode mode, Identifier target) throws CommandSyntaxException {
         var result = RpgSkillResetCoordinator.reset(
-                source.getServer(), source.getPlayerOrException().getUUID(), mode, target,
-                Instant.now().toEpochMilli(), UUID.randomUUID());
+                source.getPlayerOrException(), mode, target, Instant.now().toEpochMilli(), UUID.randomUUID());
         if (result.status() == RpgSkillResetCoordinator.Status.SUCCESS) {
             return success(source, "command.rovenfall.skill.reset.success",
                     result.cost(), result.balance(), result.transactionId());
+        }
+        if (result.status() == RpgSkillResetCoordinator.Status.ITEM_PAYMENT_FAILED) {
+            return failure(source, "command.rovenfall.skill.reset.error.items");
         }
         if (result.paymentStatus().orElse(null) == RpgSkillPaymentService.Status.INSUFFICIENT_FUNDS) {
             return failure(source, "command.rovenfall.skill.reset.error.funds", result.cost(), result.balance());

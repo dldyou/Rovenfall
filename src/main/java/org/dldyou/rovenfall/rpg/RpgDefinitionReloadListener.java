@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import net.minecraft.resources.FileToIdConverter;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
@@ -31,6 +32,8 @@ public final class RpgDefinitionReloadListener extends SimplePreparableReloadLis
     private static final Logger LOGGER = LogUtils.getLogger();
 
     private final RpgDefinitionStore store = new RpgDefinitionStore();
+    private final AtomicReference<List<RpgDefinitionSnapshot.Problem>> lastProblems =
+            new AtomicReference<>(List.of());
 
     @Override
     protected RpgDefinitionSnapshot prepare(ResourceManager resourceManager, ProfilerFiller profiler) {
@@ -46,9 +49,15 @@ public final class RpgDefinitionReloadListener extends SimplePreparableReloadLis
         load(resourceManager, SKILLS, "skill", SkillDefinition.CODEC,
                 RpgDefinitionSnapshot.SkillSource::new, skills, problems);
         if (!problems.isEmpty()) {
+            lastProblems.set(List.copyOf(problems));
             throw new RpgDefinitionSnapshot.ValidationException(problems);
         }
-        return RpgDefinitionSnapshot.compile(activities, careers, skills);
+        try {
+            return RpgDefinitionSnapshot.compile(activities, careers, skills);
+        } catch (RpgDefinitionSnapshot.ValidationException exception) {
+            lastProblems.set(exception.problems());
+            throw exception;
+        }
     }
 
     private static <T, S> void load(
@@ -98,6 +107,7 @@ public final class RpgDefinitionReloadListener extends SimplePreparableReloadLis
     @Override
     protected void apply(RpgDefinitionSnapshot prepared, ResourceManager resourceManager, ProfilerFiller profiler) {
         store.install(prepared);
+        lastProblems.set(List.of());
         RpgActiveSkillRuntime.clearAll();
         LOGGER.info("Loaded {} activities, {} careers, and {} skills for Rovenfall RPG definitions",
                 prepared.activities().size(), prepared.careers().size(), prepared.skills().size());
@@ -115,6 +125,14 @@ public final class RpgDefinitionReloadListener extends SimplePreparableReloadLis
         return store.revision();
     }
 
+    public List<RpgDefinitionSnapshot.Problem> lastProblems() {
+        return lastProblems.get();
+    }
+
+    public void beginValidationAttempt() {
+        lastProblems.set(List.of());
+    }
+
     RpgDefinitionStore.VersionedSnapshot versioned() {
         return store.versioned();
     }
@@ -127,6 +145,18 @@ public final class RpgDefinitionReloadListener extends SimplePreparableReloadLis
     public static long revision(MinecraftServer server) {
         RpgDefinitionReloadListener listener = server.getServerResources().managers().getListener(KEY);
         return listener == null ? 0 : listener.revision();
+    }
+
+    public static List<RpgDefinitionSnapshot.Problem> lastProblems(MinecraftServer server) {
+        RpgDefinitionReloadListener listener = server.getServerResources().managers().getListener(KEY);
+        return listener == null ? List.of() : listener.lastProblems();
+    }
+
+    public static void beginValidationAttempt(MinecraftServer server) {
+        RpgDefinitionReloadListener listener = server.getServerResources().managers().getListener(KEY);
+        if (listener != null) {
+            listener.beginValidationAttempt();
+        }
     }
 
     static RpgDefinitionStore.VersionedSnapshot versioned(MinecraftServer server) {

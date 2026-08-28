@@ -295,6 +295,39 @@ final class PlatformSnapshotServiceTest {
     }
 
     @Test
+    void restoreRejectsSnapshotReplacedAfterPreviewEvidence() throws Exception {
+        UUID owner = id(60);
+        UUID target = id(61);
+        PlatformSavedData live = new PlatformSavedData();
+        bootstrap(live, owner, AdminRole.OWNER);
+        change(live, owner, target, AdminRole.MODERATOR, 2_000, 601);
+
+        PlatformSavedData previewed = new PlatformSavedData();
+        bootstrap(previewed, owner, AdminRole.OWNER);
+        change(previewed, owner, target, AdminRole.VIEWER, 2_000, 602);
+        PlatformSnapshotStore store = store("replaced-after-preview");
+        UUID snapshotId = id(160);
+        store.write(snapshotId, previewed);
+        PlatformSnapshotStore.Evidence expected = store.snapshotEvidence(snapshotId);
+
+        PlatformSavedData replacement = new PlatformSavedData();
+        bootstrap(replacement, owner, AdminRole.OWNER);
+        change(replacement, owner, target, AdminRole.ECONOMY_MANAGER, 2_000, 603);
+        Files.delete(snapshotPath("replaced-after-preview", snapshotId));
+        store.write(snapshotId, replacement);
+        UUID safetySnapshotId = id(161);
+
+        var result = AdministrationService.restoreSnapshot(
+                live, store, owner, false, snapshotId, "reject changed snapshot",
+                5_000, id(604), safetySnapshotId, expected);
+
+        assertEquals(AdministrationService.SnapshotRestoreStatus.STALE_SNAPSHOT, result.status());
+        assertEquals(AdminRole.MODERATOR, live.roleOf(target).orElseThrow());
+        assertFalse(Files.exists(snapshotPath("replaced-after-preview", safetySnapshotId)));
+        assertEquals("stale_confirmation", live.auditPage(0, 1).entries().getFirst().reason());
+    }
+
+    @Test
     void missingAndCorruptSnapshotsDoNotMutateLiveState() throws Exception {
         PlatformSavedData state = stateWithModerator();
         UUID owner = id(30);

@@ -23,7 +23,7 @@ public final class AdministrationService {
     private AdministrationService() {
     }
 
-    static RoleChangeResult changeRole(
+    public static RoleChangeResult changeRole(
             PlatformSavedData state,
             UUID actorId,
             boolean authorizationOverride,
@@ -137,6 +137,22 @@ public final class AdministrationService {
             long timestampEpochMillis,
             UUID transactionId,
             UUID safetySnapshotId) {
+        return restoreSnapshot(
+                state, store, actorId, authorizationOverride, snapshotId, reason,
+                timestampEpochMillis, transactionId, safetySnapshotId, null);
+    }
+
+    static SnapshotRestoreResult restoreSnapshot(
+            PlatformSavedData state,
+            PlatformSnapshotStore store,
+            UUID actorId,
+            boolean authorizationOverride,
+            UUID snapshotId,
+            String reason,
+            long timestampEpochMillis,
+            UUID transactionId,
+            UUID safetySnapshotId,
+            PlatformSnapshotStore.Evidence expectedSnapshotEvidence) {
         if (!state.isWritable()) {
             return new SnapshotRestoreResult(
                     SnapshotRestoreStatus.READ_ONLY_SCHEMA, snapshotId, safetySnapshotId, transactionId, false);
@@ -179,9 +195,9 @@ public final class AdministrationService {
                     SnapshotRestoreStatus.DEPENDENCY_LOCKED, snapshotId, safetySnapshotId, transactionId, audited);
         }
 
-        PlatformSavedData snapshot;
+        PlatformSnapshotStore.ValidatedSnapshot validatedSnapshot;
         try {
-            snapshot = store.read(snapshotId);
+            validatedSnapshot = store.readValidated(snapshotId);
         } catch (PlatformSnapshotStore.SnapshotException exception) {
             boolean audited = state.appendDeniedAudit(auditEntry(
                     timestampEpochMillis, actorId, SNAPSHOT_RESTORE_FAILED, PLATFORM_TARGET,
@@ -189,6 +205,17 @@ public final class AdministrationService {
             return new SnapshotRestoreResult(
                     SnapshotRestoreStatus.SNAPSHOT_UNAVAILABLE, snapshotId, safetySnapshotId, transactionId, audited);
         }
+        if (expectedSnapshotEvidence != null
+                && !expectedSnapshotEvidence.equals(validatedSnapshot.evidence())) {
+            boolean audited = state.appendDeniedAudit(auditEntry(
+                    timestampEpochMillis, actorId, SNAPSHOT_RESTORE_DENIED, PLATFORM_TARGET,
+                    "sha256:" + expectedSnapshotEvidence.sha256(),
+                    "sha256:" + validatedSnapshot.evidence().sha256(),
+                    "stale_confirmation", transactionId), DENIED_AUDIT_INTERVAL_MILLIS);
+            return new SnapshotRestoreResult(
+                    SnapshotRestoreStatus.STALE_SNAPSHOT, snapshotId, safetySnapshotId, transactionId, audited);
+        }
+        PlatformSavedData snapshot = validatedSnapshot.state();
 
         if (snapshot.hasTransaction(transactionId, timestampEpochMillis)) {
             return new SnapshotRestoreResult(
@@ -342,6 +369,7 @@ public final class AdministrationService {
         INVALID_REASON,
         READ_ONLY_SCHEMA,
         SNAPSHOT_UNAVAILABLE,
+        STALE_SNAPSHOT,
         TRANSACTION_LEDGER_FULL,
         TRANSACTION_EVIDENCE_CONFLICT,
         DEPENDENCY_LOCKED,

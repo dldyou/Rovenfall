@@ -94,13 +94,7 @@ public final class EconomyReversalService {
         }
         EconomyTransactionReceipt original = state.economyReceipt(originalTransactionId).orElse(null);
         if (original == null || !state.hasTransaction(originalTransactionId, timestampEpochMillis)
-                || original.kind() == EconomyTransactionReceipt.Kind.ACCOUNT_CREATE
-                || original.kind() == EconomyTransactionReceipt.Kind.CLAIM_PURCHASE
-                || original.kind() == EconomyTransactionReceipt.Kind.CLAIM_SALE
-                || original.kind() == EconomyTransactionReceipt.Kind.CAREER_PROMOTION_PAYMENT
-                || original.kind() == EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT
-                || original.kind() == EconomyTransactionReceipt.Kind.BOSS_REWARD
-                || original.kind() == EconomyTransactionReceipt.Kind.REVERSAL
+                || !isReversibleKind(original.kind())
                 || original.invalidatedByRestore().isPresent()) {
             return denied(state, actorId, originalTransactionId, reversalTransactionId,
                     Status.ORIGINAL_NOT_REVERSIBLE, "original_not_reversible", timestampEpochMillis);
@@ -277,6 +271,15 @@ public final class EconomyReversalService {
                 && current.maximum() == original.maximum()
                 && current.restockAmount().equals(original.restockAmount())
                 && current.restockIntervalTicks().equals(original.restockIntervalTicks());
+    }
+
+    static boolean isReversibleKind(EconomyTransactionReceipt.Kind kind) {
+        return kind == EconomyTransactionReceipt.Kind.ADMIN_GRANT
+                || kind == EconomyTransactionReceipt.Kind.ADMIN_DEBIT
+                || kind == EconomyTransactionReceipt.Kind.AWARD
+                || kind == EconomyTransactionReceipt.Kind.DEBIT
+                || kind == EconomyTransactionReceipt.Kind.PURCHASE
+                || kind == EconomyTransactionReceipt.Kind.SALE;
     }
 
     private static Result denied(

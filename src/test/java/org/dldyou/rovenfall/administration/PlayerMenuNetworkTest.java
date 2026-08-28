@@ -27,9 +27,25 @@ final class PlayerMenuNetworkTest {
     }
 
     @Test
+    void administrationSearchCarriesBoundedQueryAndSessionEvidence() {
+        var payload = new PlayerMenuNetwork.AdminQuery(
+                7, 101, "가".repeat(AdministrationTextInputMenu.MAX_INPUT_LENGTH));
+        var buffer = new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
+        try {
+            PlayerMenuNetwork.AdminQuery.STREAM_CODEC.encode(buffer, payload);
+            assertTrue(buffer.readableBytes() <= PlayerMenuNetwork.MAX_QUERY_PACKET_BYTES);
+            assertEquals(payload, PlayerMenuNetwork.AdminQuery.STREAM_CODEC.decode(buffer));
+            assertEquals(0, buffer.readableBytes());
+        } finally {
+            buffer.release();
+        }
+    }
+
+    @Test
     void rejectsUnknownTargetsAndBoundsRepeatedOpenRequests() {
         assertTrue(PlayerMenuNetwork.MenuTarget.fromWireId(0).isPresent());
         assertTrue(PlayerMenuNetwork.MenuTarget.fromWireId(3).isPresent());
+        assertTrue(PlayerMenuNetwork.MenuTarget.fromWireId(4).isPresent());
         assertTrue(PlayerMenuNetwork.MenuTarget.fromWireId(99).isEmpty());
 
         assertTrue(PlayerMenuNetwork.canOpen(null, 100));

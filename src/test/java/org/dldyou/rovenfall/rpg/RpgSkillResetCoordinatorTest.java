@@ -114,7 +114,7 @@ final class RpgSkillResetCoordinatorTest {
         assertEquals(1_500, platform.economyBalance(PLAYER).orElseThrow());
         RpgSkillOperation operation = platform.rpgSkillOperation(transaction).orElseThrow();
         assertEquals(RpgSkillOperation.Phase.COMPLETED, operation.phase());
-        assertTrue(operation.plan().isEmpty());
+        assertEquals(Optional.of(plan), operation.plan());
     }
 
     @Test

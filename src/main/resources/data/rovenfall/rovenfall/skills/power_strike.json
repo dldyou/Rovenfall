@@ -4,6 +4,9 @@
   "kind": "active",
   "max_rank": 5,
   "point_cost": 2,
+  "branch_reset_items": [
+    {"item": "minecraft:lapis_lazuli", "count": 4}
+  ],
   "prerequisites": [
     {"skill": "rovenfall:sturdy_body", "rank": 2}
   ],

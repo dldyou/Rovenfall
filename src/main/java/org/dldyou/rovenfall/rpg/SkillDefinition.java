@@ -16,7 +16,8 @@ public record SkillDefinition(
         List<Prerequisite> prerequisites,
         Optional<Integer> cooldownTicks,
         Optional<PassiveEffect> passiveEffect,
-        Optional<ActiveEffect> activeEffect) {
+        Optional<ActiveEffect> activeEffect,
+        List<RpgItemCost> branchResetItems) {
     public static final int MAX_RANK = 100;
     public static final int MAX_POINT_COST = 1_000_000;
     public static final int MAX_PREREQUISITES = 32;
@@ -33,8 +34,24 @@ public record SkillDefinition(
             Codec.intRange(1, MAX_COOLDOWN_TICKS).optionalFieldOf("cooldown_ticks")
                     .forGetter(SkillDefinition::cooldownTicks),
             PassiveEffect.CODEC.optionalFieldOf("passive_effect").forGetter(SkillDefinition::passiveEffect),
-            ActiveEffect.CODEC.optionalFieldOf("active_effect").forGetter(SkillDefinition::activeEffect)
+            ActiveEffect.CODEC.optionalFieldOf("active_effect").forGetter(SkillDefinition::activeEffect),
+            RpgItemCost.LIST_CODEC.optionalFieldOf("branch_reset_items", List.of())
+                    .forGetter(SkillDefinition::branchResetItems)
     ).apply(instance, SkillDefinition::new));
+
+    public SkillDefinition(
+            String translationKey,
+            Identifier career,
+            Kind kind,
+            int maxRank,
+            int pointCost,
+            List<Prerequisite> prerequisites,
+            Optional<Integer> cooldownTicks,
+            Optional<PassiveEffect> passiveEffect,
+            Optional<ActiveEffect> activeEffect) {
+        this(translationKey, career, kind, maxRank, pointCost, prerequisites,
+                cooldownTicks, passiveEffect, activeEffect, List.of());
+    }
 
     public SkillDefinition(
             String translationKey,
@@ -66,6 +83,7 @@ public record SkillDefinition(
         cooldownTicks = cooldownTicks == null ? Optional.empty() : cooldownTicks;
         passiveEffect = passiveEffect == null ? Optional.empty() : passiveEffect;
         activeEffect = activeEffect == null ? Optional.empty() : activeEffect;
+        branchResetItems = List.copyOf(branchResetItems);
     }
 
     public enum Kind implements StringRepresentable {

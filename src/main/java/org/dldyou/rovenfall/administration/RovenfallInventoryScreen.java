@@ -9,7 +9,7 @@ import net.minecraft.world.entity.player.Player;
 
 /** Vanilla inventory behavior with compact RPG navigation layered above it. */
 public final class RovenfallInventoryScreen extends InventoryScreen {
-    private static final int TAB_COUNT = 5;
+    private static final int TAB_COUNT = 6;
     private static final int TAB_GAP = 2;
     private static final int TAB_HEIGHT = 20;
     private int tabX;
@@ -23,7 +23,7 @@ public final class RovenfallInventoryScreen extends InventoryScreen {
     @Override
     protected void init() {
         super.init();
-        tabWidth = Math.clamp((width - 16 - TAB_GAP * (TAB_COUNT - 1)) / TAB_COUNT, 44, 72);
+        tabWidth = Math.clamp((width - 16 - TAB_GAP * (TAB_COUNT - 1)) / TAB_COUNT, 40, 72);
         int totalWidth = tabWidth * TAB_COUNT + TAB_GAP * (TAB_COUNT - 1);
         tabX = (width - totalWidth) / 2;
         tabY = Math.max(4, topPos - TAB_HEIGHT - 4);
@@ -34,6 +34,7 @@ public final class RovenfallInventoryScreen extends InventoryScreen {
         addTab(2, "gui.rovenfall.inventory.claims", PlayerMenuNetwork.MenuTarget.CLAIMS);
         addTab(3, "gui.rovenfall.inventory.skills", PlayerMenuNetwork.MenuTarget.SKILLS);
         addTab(4, "gui.rovenfall.inventory.shops", PlayerMenuNetwork.MenuTarget.SHOPS);
+        addTab(5, "gui.rovenfall.inventory.admin", PlayerMenuNetwork.MenuTarget.ADMIN);
     }
 
     @Override

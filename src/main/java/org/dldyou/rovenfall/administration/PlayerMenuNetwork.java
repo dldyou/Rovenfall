@@ -26,23 +26,28 @@ public final class PlayerMenuNetwork {
     static final int MIN_OPEN_INTERVAL_TICKS = 5;
     static final int MIN_MUTATION_INTERVAL_TICKS = 20;
     static final int MAX_OPEN_PACKET_BYTES = 10;
+    static final int MAX_QUERY_PACKET_BYTES = 8_210;
     private static final String NETWORK_VERSION = "1";
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final Map<UUID, Long> LAST_OPEN_TICK = new HashMap<>();
     private static final Map<UUID, Long> LAST_MUTATION_TICK = new HashMap<>();
+    private static final Map<UUID, Long> LAST_QUERY_TICK = new HashMap<>();
     private static final Map<UUID, Long> LAST_REJECTION_AUDIT_TICK = new HashMap<>();
 
     private PlayerMenuNetwork() {
     }
 
     public static void registerPayloads(RegisterPayloadHandlersEvent event) {
-        event.registrar(NETWORK_VERSION).playToServer(Open.TYPE, Open.STREAM_CODEC, PlayerMenuNetwork::handleOpen);
+        var registrar = event.registrar(NETWORK_VERSION);
+        registrar.playToServer(Open.TYPE, Open.STREAM_CODEC, PlayerMenuNetwork::handleOpen);
+        registrar.playToServer(AdminQuery.TYPE, AdminQuery.STREAM_CODEC, PlayerMenuNetwork::handleAdminQuery);
     }
 
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         UUID playerId = event.getEntity().getUUID();
         LAST_OPEN_TICK.remove(playerId);
         LAST_MUTATION_TICK.remove(playerId);
+        LAST_QUERY_TICK.remove(playerId);
         LAST_REJECTION_AUDIT_TICK.remove(playerId);
     }
 
@@ -73,7 +78,12 @@ public final class PlayerMenuNetwork {
         return menu instanceof PlayerDashboardMenu
                 || menu instanceof PlayerShopMenu
                 || menu instanceof PlayerClaimMenu
-                || menu instanceof PlayerRpgMenu;
+                || menu instanceof PlayerRpgMenu
+                || menu instanceof AdministrationControlCenterMenu
+                || menu instanceof AdministrationEconomyMenu
+                || menu instanceof AdministrationWorldMenu
+                || menu instanceof AdministrationRpgBossMenu
+                || menu instanceof AdministrationOperationsMenu;
     }
 
     public static boolean isCurrentSession(
@@ -91,6 +101,30 @@ public final class PlayerMenuNetwork {
 
     private static void handleOpen(Open payload, IPayloadContext context) {
         context.enqueueWork(() -> handleOpenOnServer(payload, context));
+    }
+
+    private static void handleAdminQuery(AdminQuery payload, IPayloadContext context) {
+        context.enqueueWork(() -> handleAdminQueryOnServer(payload, context));
+    }
+
+    private static void handleAdminQueryOnServer(AdminQuery payload, IPayloadContext context) {
+        if (!(context.player() instanceof ServerPlayer player) || player instanceof FakePlayer) {
+            return;
+        }
+        long gameTick = player.level().getGameTime();
+        var menu = player.containerMenu;
+        if (payload.packetRevision() != PACKET_REVISION
+                || payload.query().length() > AdministrationTextInputMenu.MAX_INPUT_LENGTH
+                || !(menu instanceof AdministrationTextInputMenu inputMenu)
+                || !isCurrentSession(menu.containerId, menu.getStateId(), payload.containerId(), payload.stateId())
+                || !canOpen(LAST_QUERY_TICK.get(player.getUUID()), gameTick)) {
+            auditRejected(player, "admin_query", gameTick);
+            return;
+        }
+        LAST_QUERY_TICK.put(player.getUUID(), gameTick);
+        if (!inputMenu.applyTextInput(player, payload.query())) {
+            auditRejected(player, "admin_query_rejected", gameTick);
+        }
     }
 
     private static void handleOpenOnServer(Open payload, IPayloadContext context) {
@@ -118,6 +152,7 @@ public final class PlayerMenuNetwork {
             case CLAIMS -> PlayerClaimMenu.open(player);
             case SKILLS -> PlayerRpgMenu.open(player);
             case SHOPS -> PlayerShopMenu.open(player);
+            case ADMIN -> AdministrationControlCenterMenu.open(player);
         }
     }
 
@@ -135,7 +170,8 @@ public final class PlayerMenuNetwork {
         OVERVIEW(0),
         CLAIMS(1),
         SKILLS(2),
-        SHOPS(3);
+        SHOPS(3),
+        ADMIN(4);
 
         private final int wireId;
 
@@ -171,6 +207,27 @@ public final class PlayerMenuNetwork {
 
         @Override
         public Type<Open> type() {
+            return TYPE;
+        }
+    }
+
+    public record AdminQuery(
+            int packetRevision, int containerId, int stateId, String query) implements CustomPacketPayload {
+        public static final Type<AdminQuery> TYPE = new Type<>(
+                Identifier.fromNamespaceAndPath(Rovenfall.MOD_ID, "admin_menu_query"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, AdminQuery> STREAM_CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_INT, AdminQuery::packetRevision,
+                ByteBufCodecs.VAR_INT, AdminQuery::containerId,
+                ByteBufCodecs.VAR_INT, AdminQuery::stateId,
+                ByteBufCodecs.stringUtf8(AdministrationTextInputMenu.MAX_INPUT_LENGTH), AdminQuery::query,
+                AdminQuery::new);
+
+        public AdminQuery(int containerId, int stateId, String query) {
+            this(PACKET_REVISION, containerId, stateId, query);
+        }
+
+        @Override
+        public Type<AdminQuery> type() {
             return TYPE;
         }
     }

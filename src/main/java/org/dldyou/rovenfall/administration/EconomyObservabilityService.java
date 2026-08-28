@@ -64,6 +64,47 @@ final class EconomyObservabilityService {
                 .toList(), page, pageSize);
     }
 
+    static BoundedRows<ShopRow> boundedShops(
+            PlatformSavedData state, UUID actorId, boolean authorizationOverride, int maximumRows) {
+        if (!authorized(state, actorId, authorizationOverride) || maximumRows < 1) {
+            return new BoundedRows<>(List.of(), false, false);
+        }
+        List<ShopRow> rows = new ArrayList<>();
+        List<java.util.Map.Entry<Identifier, org.dldyou.rovenfall.economy.ShopInstance>> shops =
+                state.shopInstances(maximumRows + 1);
+        boolean truncated = state.shopInstanceCount() > maximumRows;
+        for (var shop : shops) {
+            for (var offer : shop.getValue().offers().entrySet().stream()
+                    .sorted(java.util.Map.Entry.comparingByKey()).toList()) {
+                if (rows.size() == maximumRows) {
+                    return new BoundedRows<>(rows, true, true);
+                }
+                rows.add(new ShopRow(shop.getKey(), offer.getKey(), offer.getValue().item(), offer.getValue().stock()));
+            }
+        }
+        return new BoundedRows<>(rows, truncated, true);
+    }
+
+    static BoundedRows<EconomyAlert> boundedAlerts(
+            PlatformSavedData state, UUID actorId, boolean authorizationOverride, int maximumRows) {
+        if (!authorized(state, actorId, authorizationOverride) || maximumRows < 1) {
+            return new BoundedRows<>(List.of(), false, false);
+        }
+        List<EconomyAlert> rows = state.recentEconomyAlerts(maximumRows);
+        return new BoundedRows<>(rows, state.economyAlertCount() > maximumRows, true);
+    }
+
+    static BoundedRows<TransactionRow> boundedTransactions(
+            PlatformSavedData state, UUID actorId, boolean authorizationOverride, int maximumRows) {
+        if (!authorized(state, actorId, authorizationOverride) || maximumRows < 1) {
+            return new BoundedRows<>(List.of(), false, false);
+        }
+        List<TransactionRow> rows = state.economyReceipts(maximumRows).stream()
+                .map(entry -> new TransactionRow(entry.getKey(), entry.getValue()))
+                .toList();
+        return new BoundedRows<>(rows, state.economyReceiptCount() > maximumRows, true);
+    }
+
     private static boolean authorized(PlatformSavedData state, UUID actorId, boolean authorizationOverride) {
         return state != null && actorId != null && (authorizationOverride || state.hasAdminRole(actorId));
     }
@@ -95,6 +136,12 @@ final class EconomyObservabilityService {
 
         static <T> Page<T> unauthorized(int page) {
             return new Page<>(Status.UNAUTHORIZED, page, 0, 0, List.of());
+        }
+    }
+
+    record BoundedRows<T>(List<T> entries, boolean truncated, boolean authorized) {
+        BoundedRows {
+            entries = List.copyOf(entries);
         }
     }
 

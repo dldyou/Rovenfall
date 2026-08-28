@@ -11,6 +11,7 @@ import com.mojang.serialization.JsonOps;
 import com.mojang.serialization.Lifecycle;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -218,6 +219,13 @@ final class MobContentSnapshotTest {
                 problem -> problem.cause().contains("unknown loot table: rovenfall:missing_loot_table")));
         listener.apply(unbound, unboundManager, null);
         assertSame(previous, listener.snapshot());
+        assertFalse(listener.snapshot().loot(id("rift_warden_loot")).isEmpty());
+        assertTrue(listener.lastProblems().stream().anyMatch(problem ->
+                problem.file().equals(file("foundation"))
+                        && problem.definitionId().equals(id("grove_stalker_loot"))
+                        && problem.cause().contains("unknown loot table: rovenfall:missing_loot_table")));
+        listener.beginValidationAttempt();
+        assertTrue(listener.lastProblems().isEmpty());
 
         var hubJson = JsonParser.parseString(builtInJson()).getAsJsonObject();
         hubJson.getAsJsonArray("mutations").get(0).getAsJsonObject().getAsJsonObject("spawn")
@@ -231,6 +239,35 @@ final class MobContentSnapshotTest {
         assertTrue(hubError.problems().stream().anyMatch(
                 problem -> problem.cause().contains("boss arena dimension must be rovenfall:wilderness")));
         assertSame(previous, listener.snapshot());
+        assertFalse(listener.snapshot().mob(id("grove_stalker")).isEmpty());
+        assertTrue(listener.lastProblems().stream().anyMatch(problem ->
+                problem.file().equals(file("foundation"))
+                        && problem.definitionId().equals(id("volatile"))
+                        && problem.cause().contains("spawn dimension must be rovenfall:wilderness")));
+        listener.beginValidationAttempt();
+        assertTrue(listener.lastProblems().isEmpty());
+    }
+
+    @Test
+    void catalogLimitFailureRetainsDiagnosticWithoutReplacingSnapshot() {
+        var listener = new MobContentReloadListener();
+        MobContentCatalog validCatalog = builtIn();
+        MobContentSnapshot.RuntimeBindings bindings = runtimeBindings(validCatalog);
+        listener.injectContext(ICondition.IContext.EMPTY, bindings.registries());
+        ResourceManager validManager = resourceManager(builtInJson());
+        listener.apply(listener.prepare(validManager, null), validManager, null);
+        MobContentSnapshot previous = listener.snapshot();
+
+        var error = assertThrows(MobContentSnapshot.ValidationException.class,
+                () -> listener.prepare(resourceManagerWithCatalogCount(MobContentSnapshot.MAX_CATALOGS + 1), null));
+
+        Identifier catalog = Identifier.fromNamespaceAndPath("rovenfall", "mob_content_catalog");
+        assertSame(previous, listener.snapshot());
+        assertTrue(error.problems().stream().anyMatch(problem ->
+                problem.file().equals(catalog)
+                        && problem.definitionId().equals(catalog)
+                        && problem.cause().contains("catalog count exceeds " + MobContentSnapshot.MAX_CATALOGS)));
+        assertEquals(error.problems(), listener.lastProblems());
     }
 
     private static MobContentCatalog builtIn() {
@@ -287,6 +324,48 @@ final class MobContentSnapshotTest {
             public Map<Identifier, List<Resource>> listResourceStacks(
                     String directory, Predicate<Identifier> filter) {
                 return filter.test(file) ? Map.of(file, List.of(resource)) : Map.of();
+            }
+
+            @Override
+            public Stream<PackResources> listPacks() {
+                return Stream.of(TEST_PACK);
+            }
+        };
+    }
+
+    private static ResourceManager resourceManagerWithCatalogCount(int count) {
+        Resource resource = new Resource(TEST_PACK,
+                () -> new ByteArrayInputStream("{}".getBytes(StandardCharsets.UTF_8)));
+        Map<Identifier, List<Resource>> resources = new LinkedHashMap<>();
+        for (int index = 0; index < count; index++) {
+            resources.put(file("catalog_" + index), List.of(resource));
+        }
+        Map<Identifier, List<Resource>> immutable = Map.copyOf(resources);
+        return new ResourceManager() {
+            @Override
+            public Set<String> getNamespaces() {
+                return Set.of("rovenfall");
+            }
+
+            @Override
+            public Optional<Resource> getResource(Identifier location) {
+                return Optional.empty();
+            }
+
+            @Override
+            public List<Resource> getResourceStack(Identifier location) {
+                return immutable.getOrDefault(location, List.of());
+            }
+
+            @Override
+            public Map<Identifier, Resource> listResources(String directory, Predicate<Identifier> filter) {
+                return Map.of();
+            }
+
+            @Override
+            public Map<Identifier, List<Resource>> listResourceStacks(
+                    String directory, Predicate<Identifier> filter) {
+                return immutable;
             }
 
             @Override
