@@ -81,6 +81,8 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.admin.audit.summary",
             "gui.rovenfall.admin.audit.reason",
             "gui.rovenfall.admin.operations.summary",
+            "economy_transaction_kind.rovenfall.rpg_skill_payment",
+            "economy_transaction_kind.rovenfall.boss_reward",
             "gui.rovenfall.player.title",
             "gui.rovenfall.player.home",
             "gui.rovenfall.player.previous",
@@ -94,6 +96,7 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.inventory.claims",
             "gui.rovenfall.inventory.skills",
             "gui.rovenfall.inventory.shops",
+            "gui.rovenfall.inventory.admin",
             "gui.rovenfall.inventory.current_tab",
             "gui.rovenfall.inventory.open_tab",
             "gui.rovenfall.menu.slot_position",
@@ -174,6 +177,7 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.inventory.claims",
             "gui.rovenfall.inventory.skills",
             "gui.rovenfall.inventory.shops",
+            "gui.rovenfall.inventory.admin",
             "gui.rovenfall.player.back",
             "gui.rovenfall.player.refresh",
             "gui.rovenfall.player.previous",
@@ -187,6 +191,26 @@ final class LocalizationCatalogTest {
         assertEquals(english, keys("ko_kr"));
         assertEquals(english, keys("ja_jp"));
         assertTrue(english.containsAll(REQUIRED_KEYS));
+    }
+
+    @Test
+    void supportedLanguageCatalogsDoNotDeclareDuplicateKeys() {
+        for (String locale : Set.of("en_us", "ko_kr", "ja_jp")) {
+            String path = "/assets/rovenfall/lang/" + locale + ".json";
+            var stream = LocalizationCatalogTest.class.getResourceAsStream(path);
+            assertNotNull(stream, path);
+            try (stream) {
+                String json = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+                var matcher = java.util.regex.Pattern.compile("(?m)^\\s*\"([^\"]+)\"\\s*:").matcher(json);
+                Set<String> seen = new HashSet<>();
+                while (matcher.find()) {
+                    assertTrue(seen.add(matcher.group(1)),
+                            locale + " declares a duplicate localization key: " + matcher.group(1));
+                }
+            } catch (java.io.IOException exception) {
+                throw new AssertionError(exception);
+            }
+        }
     }
 
     @Test

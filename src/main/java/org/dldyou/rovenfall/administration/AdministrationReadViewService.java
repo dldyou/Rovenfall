@@ -89,6 +89,7 @@ public final class AdministrationReadViewService {
             case AUDIT -> audit(platform);
             case ALERTS -> alerts(platform, actorId, authorizationOverride);
             case METRICS -> metrics(server, actorId, authorizationOverride, generatedAtEpochMillis);
+            case RECEIPTS -> receipts(platform, actorId, authorizationOverride);
         };
     }
 
@@ -98,7 +99,8 @@ public final class AdministrationReadViewService {
             UUID playerId = entry.getKey();
             PlayerRecord record = entry.getValue();
             var online = server.getPlayerList().getPlayer(playerId);
-            String name = online == null ? "" : online.getGameProfile().name();
+            String name = record.displayName()
+                    .orElseGet(() -> online == null ? "" : online.getGameProfile().name());
             String role = platform.roleOf(playerId).map(AdminRole::getSerializedName).orElse("none");
             String balance = platform.economyBalance(playerId).map(String::valueOf).orElse("none");
             return new Row(
@@ -253,6 +255,23 @@ public final class AdministrationReadViewService {
                 result.hasAnomaly())), result.rpgTruncated(), false);
     }
 
+    private static SourceRows receipts(
+            PlatformSavedData platform, UUID actorId, boolean authorizationOverride) {
+        var source = EconomyObservabilityService.boundedTransactions(
+                platform, actorId, authorizationOverride, MAX_SCANNED_ROWS);
+        if (!source.authorized()) {
+            return SourceRows.denied();
+        }
+        List<Row> rows = source.entries().stream().map(entry -> new Row(
+                entry.transactionId().toString(),
+                "kind=" + entry.receipt().kind().getSerializedName()
+                        + " player=" + entry.receipt().playerId()
+                        + " amount=" + entry.receipt().amount()
+                        + " reversed=" + entry.receipt().reversedBy().map(UUID::toString).orElse("none"),
+                entry.receipt().invalidatedByRestore().isPresent())).toList();
+        return new SourceRows(rows, source.truncated(), false);
+    }
+
     public enum Domain {
         PLAYERS(EnumSet.allOf(AdminRole.class)),
         CLAIMS(EnumSet.of(AdminRole.VIEWER, AdminRole.MODERATOR, AdminRole.OWNER)),
@@ -262,7 +281,8 @@ public final class AdministrationReadViewService {
         ENCOUNTERS(EnumSet.of(AdminRole.VIEWER, AdminRole.CONTENT_MANAGER, AdminRole.OWNER)),
         AUDIT(EnumSet.allOf(AdminRole.class)),
         ALERTS(EnumSet.of(AdminRole.VIEWER, AdminRole.ECONOMY_MANAGER, AdminRole.OWNER)),
-        METRICS(EnumSet.allOf(AdminRole.class));
+        METRICS(EnumSet.allOf(AdminRole.class)),
+        RECEIPTS(EnumSet.of(AdminRole.VIEWER, AdminRole.ECONOMY_MANAGER, AdminRole.OWNER));
 
         private final Set<AdminRole> roles;
 

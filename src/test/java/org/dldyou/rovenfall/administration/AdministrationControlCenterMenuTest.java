@@ -26,7 +26,8 @@ final class AdministrationControlCenterMenuTest {
                         AdministrationReadViewService.Domain.SHOPS,
                         AdministrationReadViewService.Domain.AUDIT,
                         AdministrationReadViewService.Domain.ALERTS,
-                        AdministrationReadViewService.Domain.METRICS),
+                        AdministrationReadViewService.Domain.METRICS,
+                        AdministrationReadViewService.Domain.RECEIPTS),
                 AdministrationReadViewService.Domain.allowedForRole(AdminRole.ECONOMY_MANAGER));
         assertEquals(List.of(
                         AdministrationReadViewService.Domain.PLAYERS,

@@ -19,7 +19,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 /** Server-authoritative, permission-filtered read-only administration navigation. */
-public final class AdministrationControlCenterMenu extends ChestMenu {
+public final class AdministrationControlCenterMenu extends ChestMenu implements AdministrationTextInputMenu {
     static final int MENU_SIZE = 54;
     static final int CONTENT_START = 9;
     static final int CONTENT_END = 45;
@@ -83,6 +83,9 @@ public final class AdministrationControlCenterMenu extends ChestMenu {
         if (domain == null) {
             AdministrationReadViewService.Domain selected = domainAt(currentRole.orElseThrow(), slotIndex);
             if (selected != null) {
+                if (AdministrationDomainMenuRouter.open(viewer, selected)) {
+                    return;
+                }
                 domain = selected;
                 page = 0;
                 filter = AdministrationReadViewService.Filter.ALL;
@@ -114,7 +117,8 @@ public final class AdministrationControlCenterMenu extends ChestMenu {
         render();
     }
 
-    boolean applyQuery(ServerPlayer player, String requestedQuery) {
+    @Override
+    public boolean applyTextInput(ServerPlayer player, String requestedQuery) {
         if (!viewerId.equals(player.getUUID()) || domain == null || requestedQuery == null
                 || requestedQuery.length() > AdministrationReadViewService.MAX_QUERY_LENGTH) {
             return false;
@@ -276,6 +280,7 @@ public final class AdministrationControlCenterMenu extends ChestMenu {
             case AUDIT -> Items.WRITABLE_BOOK;
             case ALERTS -> Items.BELL;
             case METRICS -> Items.COMPARATOR;
+            case RECEIPTS -> Items.WRITTEN_BOOK;
         };
     }
 }

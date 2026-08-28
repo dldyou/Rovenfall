@@ -80,6 +80,7 @@ import org.dldyou.rovenfall.administration.EconomyReversalService;
 import org.dldyou.rovenfall.administration.EconomyTransactionReceipt;
 import org.dldyou.rovenfall.administration.AdministrationService;
 import org.dldyou.rovenfall.administration.AdministrationControlCenterMenu;
+import org.dldyou.rovenfall.administration.AdministrationEconomyMenu;
 import org.dldyou.rovenfall.administration.AdminRole;
 import org.dldyou.rovenfall.administration.BossRewardService;
 import org.dldyou.rovenfall.administration.BossAdministrationService;
@@ -288,6 +289,257 @@ public final class Rovenfall {
                             "A role change did not invalidate the now-forbidden open claims view");
                     player.discard();
                     helper.succeed();
+                });
+            }
+        });
+        event.registerTest(id("admin_economy_gui_role_revalidation"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS,
+                new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 10, 0, true)) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var player = helper.makeMockServerPlayerInLevel();
+                var platform = PlatformSavedData.get(server);
+                helper.assertTrue(AdministrationService.changeRole(
+                                platform, AdministrationService.SYSTEM_ACTOR, true, player.getUUID(),
+                                AdminRole.OWNER.getSerializedName(), "gametest economy gui",
+                                System.currentTimeMillis(), UUID.randomUUID()).status()
+                                == AdministrationService.RoleChangeStatus.SUCCESS,
+                        "Could not assign the GameTest owner role by UUID");
+                helper.assertTrue(AdministrationControlCenterMenu.open(player),
+                        "Owner could not open the administration control center");
+                player.containerMenu.clicked(11, 0, ContainerInput.PICKUP, player);
+                helper.assertTrue(player.containerMenu instanceof AdministrationEconomyMenu,
+                        "Shops domain did not open the typed economy administration menu");
+                helper.assertTrue(player.containerMenu.getSlot(46).hasItem(),
+                        "Owner could not see the shop create mutation control");
+                Identifier guiShopId = id("gui_" + UUID.randomUUID());
+                player.containerMenu.clicked(46, 0, ContainerInput.PICKUP, player);
+                helper.assertTrue(((AdministrationEconomyMenu) player.containerMenu).applyTextInput(
+                                player, guiShopId + ",rovenfall:foundation | gametest gui create"),
+                        "The shop create form did not produce a server preview");
+                helper.runAfterDelay(1, () -> {
+                    player.containerMenu.clicked(31, 0, ContainerInput.PICKUP, player);
+                    helper.assertTrue(platform.shopInstance(guiShopId).isPresent(),
+                            "Confirmed GUI shop create did not call the audited shop service");
+                    helper.assertTrue(AdministrationService.changeRole(
+                                    platform, AdministrationService.SYSTEM_ACTOR, true, player.getUUID(),
+                                    AdminRole.VIEWER.getSerializedName(), "gametest read-only demotion",
+                                    System.currentTimeMillis(), UUID.randomUUID()).status()
+                                    == AdministrationService.RoleChangeStatus.SUCCESS,
+                            "Could not demote the GameTest owner to viewer");
+                    helper.assertTrue(AdministrationEconomyMenu.open(
+                                    player, org.dldyou.rovenfall.administration.AdministrationReadViewService.Domain.SHOPS),
+                            "Viewer could not reopen the read-only shops view");
+                    helper.assertTrue(player.containerMenu instanceof AdministrationEconomyMenu
+                                    && !player.containerMenu.getSlot(46).hasItem(),
+                            "Viewer retained a shop mutation control after demotion");
+                    helper.assertTrue(AdministrationService.changeRole(
+                                    platform, AdministrationService.SYSTEM_ACTOR, true, player.getUUID(),
+                                    AdminRole.CONTENT_MANAGER.getSerializedName(), "gametest cross-domain change",
+                                    System.currentTimeMillis(), UUID.randomUUID()).status()
+                                    == AdministrationService.RoleChangeStatus.SUCCESS,
+                            "Could not move the GameTest viewer to content manager");
+                    helper.runAfterDelay(1, () -> {
+                        if (player.containerMenu instanceof AdministrationEconomyMenu) {
+                            player.containerMenu.clicked(53, 0, ContainerInput.PICKUP, player);
+                        }
+                        helper.assertTrue(player.containerMenu == player.inventoryMenu,
+                                "A cross-domain role change did not close the shops administration view");
+                        player.discard();
+                        helper.succeed();
+                    });
+                });
+            }
+        });
+        event.registerTest(id("admin_economy_gui_balance_and_reversal"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS,
+                new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 65, 0, true)) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var player = helper.makeMockServerPlayerInLevel();
+                var platform = PlatformSavedData.get(server);
+                helper.assertTrue(AdministrationService.changeRole(
+                                platform, AdministrationService.SYSTEM_ACTOR, true, player.getUUID(),
+                                AdminRole.OWNER.getSerializedName(), "gametest economy actions",
+                                System.currentTimeMillis(), UUID.randomUUID()).status()
+                                == AdministrationService.RoleChangeStatus.SUCCESS,
+                        "Could not assign the GameTest owner role");
+                helper.assertTrue(platform.playerRecord(player.getUUID()).isPresent(),
+                        "Mock login did not persist the target player record");
+                long before = platform.economyBalance(player.getUUID()).orElse(EconomyConfig.initialBalance());
+                helper.assertTrue(AdministrationEconomyMenu.open(
+                                player, org.dldyou.rovenfall.administration.AdministrationReadViewService.Domain.PLAYERS),
+                        "Could not open the player economy administration view");
+                helper.assertTrue(((AdministrationEconomyMenu) player.containerMenu)
+                                .applyTextInput(player, player.getUUID().toString()),
+                        "Could not search the player by server UUID");
+                player.containerMenu.clicked(9, 0, ContainerInput.PICKUP, player);
+                helper.runAfterDelay(1, () -> {
+                    player.containerMenu.clicked(20, 0, ContainerInput.PICKUP, player);
+                    helper.assertTrue(((AdministrationEconomyMenu) player.containerMenu)
+                                    .applyTextInput(player, "10 | gametest gui grant"),
+                            "Balance form did not produce a preview");
+                    helper.runAfterDelay(1, () -> {
+                        player.containerMenu.clicked(31, 0, ContainerInput.PICKUP, player);
+                        helper.assertTrue(platform.economyBalance(player.getUUID()).orElseThrow() == before + 10,
+                                "Confirmed GUI grant did not update the balance");
+                        UUID grantId = platform.recentAuditEntries(20).stream()
+                                .filter(entry -> entry.actionType().getPath().equals("economy_admin_grant"))
+                                .filter(entry -> entry.target().equals(player.getUUID().toString()))
+                                .map(org.dldyou.rovenfall.administration.AuditEntry::transactionId)
+                                .findFirst().orElseThrow();
+                        helper.runAfterDelay(20, () -> {
+                            helper.assertTrue(AdministrationEconomyMenu.open(
+                                            player,
+                                            org.dldyou.rovenfall.administration.AdministrationReadViewService.Domain.RECEIPTS),
+                                    "Could not open the receipt administration view");
+                            helper.assertTrue(((AdministrationEconomyMenu) player.containerMenu)
+                                            .applyTextInput(player, grantId.toString()),
+                                    "Could not search the grant receipt by transaction ID");
+                            player.containerMenu.clicked(9, 0, ContainerInput.PICKUP, player);
+                            helper.runAfterDelay(1, () -> {
+                                player.containerMenu.clicked(31, 0, ContainerInput.PICKUP, player);
+                                helper.assertTrue(((AdministrationEconomyMenu) player.containerMenu)
+                                                .applyTextInput(player, " | gametest gui reversal"),
+                                        "Reversal form did not produce a preview");
+                                helper.assertTrue(EconomyService.award(
+                                                platform, player.getUUID(), 1, "gametest concurrent balance change",
+                                                System.currentTimeMillis(), UUID.randomUUID(),
+                                                EconomyConfig.initialBalance(), EconomyConfig.maximumBalance()).status()
+                                                == EconomyService.TransactionStatus.SUCCESS,
+                                        "Could not create the concurrent balance change");
+                                helper.runAfterDelay(1, () -> {
+                                    player.containerMenu.clicked(31, 0, ContainerInput.PICKUP, player);
+                                    helper.assertTrue(
+                                            platform.economyBalance(player.getUUID()).orElseThrow() == before + 11,
+                                            "Stale GUI reversal changed the concurrent balance");
+                                    helper.assertTrue(platform.economyReceipt(grantId)
+                                                    .flatMap(EconomyTransactionReceipt::reversedBy).isEmpty(),
+                                            "Stale GUI reversal linked the original receipt");
+                                    helper.assertTrue(platform.recentAuditEntries(20).stream()
+                                                    .anyMatch(entry -> entry.reason().equals("stale_confirmation")),
+                                            "Stale GUI reversal was not audited");
+                                    helper.runAfterDelay(1, () -> {
+                                        player.containerMenu.clicked(31, 0, ContainerInput.PICKUP, player);
+                                        helper.runAfterDelay(1, () -> {
+                                            player.containerMenu.clicked(31, 0, ContainerInput.PICKUP, player);
+                                            helper.assertTrue(((AdministrationEconomyMenu) player.containerMenu)
+                                                            .applyTextInput(player, " | gametest refreshed reversal"),
+                                                    "Refreshed reversal did not produce a preview");
+                                            helper.runAfterDelay(20, () -> {
+                                                player.containerMenu.clicked(31, 0, ContainerInput.PICKUP, player);
+                                                helper.assertTrue(
+                                                        platform.economyBalance(player.getUUID()).orElseThrow()
+                                                                == before + 1,
+                                                        "Refreshed GUI reversal did not preserve the concurrent award");
+                                                helper.assertTrue(platform.economyReceipt(grantId)
+                                                                .flatMap(EconomyTransactionReceipt::reversedBy).isPresent(),
+                                                        "GUI reversal did not link the original receipt");
+                                                player.discard();
+                                                helper.succeed();
+                                            });
+                                        });
+                                    });
+                                });
+                            });
+                        });
+                    });
+                });
+            }
+        });
+        event.registerTest(id("admin_economy_gui_stale_and_unauthorized"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS,
+                new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 20, 0, true)) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var player = helper.makeMockServerPlayerInLevel();
+                var deniedPlayer = helper.makeMockServerPlayerInLevel();
+                var platform = PlatformSavedData.get(server);
+                Identifier staleShop = id("stale_gui_" + UUID.randomUUID());
+                Identifier deniedShop = id("denied_gui_" + UUID.randomUUID());
+                helper.assertTrue(AdministrationService.changeRole(
+                                platform, AdministrationService.SYSTEM_ACTOR, true, player.getUUID(),
+                                AdminRole.OWNER.getSerializedName(), "gametest guarded actions",
+                                System.currentTimeMillis(), UUID.randomUUID()).status()
+                                == AdministrationService.RoleChangeStatus.SUCCESS,
+                        "Could not assign the guarded-action owner role");
+                helper.assertTrue(AdministrationService.changeRole(
+                                platform, AdministrationService.SYSTEM_ACTOR, true, deniedPlayer.getUUID(),
+                                AdminRole.OWNER.getSerializedName(), "gametest unauthorized actor",
+                                System.currentTimeMillis(), UUID.randomUUID()).status()
+                                == AdministrationService.RoleChangeStatus.SUCCESS,
+                        "Could not assign the authorization-test owner role");
+                for (Identifier shopId : List.of(staleShop, deniedShop)) {
+                    helper.assertTrue(ShopInstanceService.create(
+                                    platform, ShopTemplateReloadListener.snapshot(server),
+                                    AdministrationService.SYSTEM_ACTOR, true, shopId, id("foundation"),
+                                    Optional.empty(), key -> server.getLevel(key) != null,
+                                    ShopInstance.AccessPolicy.publicAccess(), server.overworld().getGameTime(),
+                                    "gametest guarded shop", System.currentTimeMillis(), UUID.randomUUID()).status()
+                                    == ShopInstanceService.Status.SUCCESS,
+                            "Could not prepare guarded GUI shop " + shopId);
+                }
+                helper.assertTrue(AdministrationEconomyMenu.open(
+                                player, org.dldyou.rovenfall.administration.AdministrationReadViewService.Domain.SHOPS),
+                        "Could not open the guarded shops view");
+                helper.assertTrue(((AdministrationEconomyMenu) player.containerMenu)
+                                .applyTextInput(player, staleShop.toString()),
+                        "Could not search the stale-test shop");
+                player.containerMenu.clicked(9, 0, ContainerInput.PICKUP, player);
+                helper.runAfterDelay(1, () -> {
+                    player.containerMenu.clicked(13, 0, ContainerInput.PICKUP, player);
+                    helper.assertTrue(((AdministrationEconomyMenu) player.containerMenu)
+                                    .applyTextInput(player, "12 | gametest stale access"),
+                            "Access form did not produce a stale-test preview");
+                    helper.assertTrue(ShopInstanceService.delete(
+                                    platform, AdministrationService.SYSTEM_ACTOR, true, staleShop,
+                                    "gametest concurrent delete", System.currentTimeMillis(), UUID.randomUUID()).status()
+                                    == ShopInstanceService.Status.SUCCESS,
+                            "Could not create the concurrent shop change");
+                    helper.runAfterDelay(1, () -> {
+                        player.containerMenu.clicked(31, 0, ContainerInput.PICKUP, player);
+                        helper.assertTrue(platform.shopInstance(staleShop).isEmpty(),
+                                "Stale GUI confirmation recreated or overwrote the deleted shop");
+                        helper.assertTrue(platform.recentAuditEntries(20).stream()
+                                        .anyMatch(entry -> entry.reason().equals("stale_confirmation")),
+                                "Stale GUI confirmation was not audited");
+                        helper.runAfterDelay(1, () -> {
+                            helper.assertTrue(AdministrationEconomyMenu.open(
+                                            deniedPlayer,
+                                            org.dldyou.rovenfall.administration.AdministrationReadViewService.Domain.SHOPS),
+                                    "Could not reopen shops for the authorization test");
+                            helper.assertTrue(((AdministrationEconomyMenu) deniedPlayer.containerMenu)
+                                            .applyTextInput(deniedPlayer, deniedShop.toString()),
+                                    "Could not search the authorization-test shop");
+                            deniedPlayer.containerMenu.clicked(9, 0, ContainerInput.PICKUP, deniedPlayer);
+                            helper.runAfterDelay(1, () -> {
+                                deniedPlayer.containerMenu.clicked(10, 0, ContainerInput.PICKUP, deniedPlayer);
+                                helper.assertTrue(((AdministrationEconomyMenu) deniedPlayer.containerMenu)
+                                                .applyTextInput(deniedPlayer, " | gametest unauthorized delete"),
+                                        "Delete form did not produce an authorization-test preview");
+                                helper.assertTrue(AdministrationService.changeRole(
+                                                platform, AdministrationService.SYSTEM_ACTOR, true, deniedPlayer.getUUID(),
+                                                AdminRole.VIEWER.getSerializedName(), "gametest confirmation demotion",
+                                                System.currentTimeMillis(), UUID.randomUUID()).status()
+                                                == AdministrationService.RoleChangeStatus.SUCCESS,
+                                    "Could not demote the confirmation actor");
+                                helper.runAfterDelay(1, () -> {
+                                    deniedPlayer.containerMenu.clicked(31, 0, ContainerInput.PICKUP, deniedPlayer);
+                                    helper.assertTrue(platform.shopInstance(deniedShop).isPresent(),
+                                            "Demoted actor deleted a shop through a crafted confirmation click");
+                                    helper.assertTrue(platform.recentAuditEntries(20).stream()
+                                                    .anyMatch(entry -> entry.reason().equals("unauthorized")),
+                                            "Unauthorized GUI confirmation was not audited");
+                                    player.discard();
+                                    deniedPlayer.discard();
+                                    helper.succeed();
+                                });
+                            });
+                        });
+                    });
                 });
             }
         });

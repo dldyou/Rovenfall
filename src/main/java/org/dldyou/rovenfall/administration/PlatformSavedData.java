@@ -569,6 +569,23 @@ public final class PlatformSavedData extends SavedData {
         return Map.copyOf(economyReceipts);
     }
 
+    List<Map.Entry<UUID, EconomyTransactionReceipt>> economyReceipts(int maximumEntries) {
+        if (maximumEntries < 1) {
+            throw new IllegalArgumentException("Receipt query must be bounded");
+        }
+        return economyReceipts.entrySet().stream()
+                .limit(maximumEntries)
+                .sorted(Comparator.<Map.Entry<UUID, EconomyTransactionReceipt>>comparingLong(
+                                entry -> entry.getValue().timestampEpochMillis())
+                        .reversed().thenComparing(Map.Entry::getKey))
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
+    int economyReceiptCount() {
+        return economyReceipts.size();
+    }
+
     List<EconomyAlert> economyAlertsView() {
         return List.copyOf(economyAlerts);
     }
@@ -2026,10 +2043,14 @@ public final class PlatformSavedData extends SavedData {
     }
 
     boolean commitPlayerLogin(UUID playerId, long timestampEpochMillis) {
+        return commitPlayerLogin(playerId, null, timestampEpochMillis);
+    }
+
+    boolean commitPlayerLogin(UUID playerId, String displayName, long timestampEpochMillis) {
         PlayerRecord previous = playerRecords.get(playerId);
         PlayerRecord updated = previous == null
-                ? new PlayerRecord(timestampEpochMillis, timestampEpochMillis)
-                : previous.observe(timestampEpochMillis);
+                ? new PlayerRecord(timestampEpochMillis, timestampEpochMillis, Optional.ofNullable(displayName))
+                : previous.observe(timestampEpochMillis, displayName);
         if (updated.equals(previous)) {
             return false;
         }

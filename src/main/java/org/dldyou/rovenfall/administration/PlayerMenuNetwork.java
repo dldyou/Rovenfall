@@ -26,7 +26,7 @@ public final class PlayerMenuNetwork {
     static final int MIN_OPEN_INTERVAL_TICKS = 5;
     static final int MIN_MUTATION_INTERVAL_TICKS = 20;
     static final int MAX_OPEN_PACKET_BYTES = 10;
-    static final int MAX_QUERY_PACKET_BYTES = 280;
+    static final int MAX_QUERY_PACKET_BYTES = 8_210;
     private static final String NETWORK_VERSION = "1";
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final Map<UUID, Long> LAST_OPEN_TICK = new HashMap<>();
@@ -79,7 +79,8 @@ public final class PlayerMenuNetwork {
                 || menu instanceof PlayerShopMenu
                 || menu instanceof PlayerClaimMenu
                 || menu instanceof PlayerRpgMenu
-                || menu instanceof AdministrationControlCenterMenu;
+                || menu instanceof AdministrationControlCenterMenu
+                || menu instanceof AdministrationEconomyMenu;
     }
 
     public static boolean isCurrentSession(
@@ -108,16 +109,19 @@ public final class PlayerMenuNetwork {
             return;
         }
         long gameTick = player.level().getGameTime();
+        var menu = player.containerMenu;
         if (payload.packetRevision() != PACKET_REVISION
-                || payload.query().length() > AdministrationReadViewService.MAX_QUERY_LENGTH
-                || !(player.containerMenu instanceof AdministrationControlCenterMenu menu)
+                || payload.query().length() > AdministrationTextInputMenu.MAX_INPUT_LENGTH
+                || !(menu instanceof AdministrationTextInputMenu inputMenu)
                 || !isCurrentSession(menu.containerId, menu.getStateId(), payload.containerId(), payload.stateId())
                 || !canOpen(LAST_QUERY_TICK.get(player.getUUID()), gameTick)) {
             auditRejected(player, "admin_query", gameTick);
             return;
         }
         LAST_QUERY_TICK.put(player.getUUID(), gameTick);
-        menu.applyQuery(player, payload.query());
+        if (!inputMenu.applyTextInput(player, payload.query())) {
+            auditRejected(player, "admin_query_rejected", gameTick);
+        }
     }
 
     private static void handleOpenOnServer(Open payload, IPayloadContext context) {
@@ -145,6 +149,7 @@ public final class PlayerMenuNetwork {
             case CLAIMS -> PlayerClaimMenu.open(player);
             case SKILLS -> PlayerRpgMenu.open(player);
             case SHOPS -> PlayerShopMenu.open(player);
+            case ADMIN -> AdministrationControlCenterMenu.open(player);
         }
     }
 
@@ -162,7 +167,8 @@ public final class PlayerMenuNetwork {
         OVERVIEW(0),
         CLAIMS(1),
         SKILLS(2),
-        SHOPS(3);
+        SHOPS(3),
+        ADMIN(4);
 
         private final int wireId;
 
@@ -210,7 +216,7 @@ public final class PlayerMenuNetwork {
                 ByteBufCodecs.VAR_INT, AdminQuery::packetRevision,
                 ByteBufCodecs.VAR_INT, AdminQuery::containerId,
                 ByteBufCodecs.VAR_INT, AdminQuery::stateId,
-                ByteBufCodecs.stringUtf8(AdministrationReadViewService.MAX_QUERY_LENGTH), AdminQuery::query,
+                ByteBufCodecs.stringUtf8(AdministrationTextInputMenu.MAX_INPUT_LENGTH), AdminQuery::query,
                 AdminQuery::new);
 
         public AdminQuery(int containerId, int stateId, String query) {

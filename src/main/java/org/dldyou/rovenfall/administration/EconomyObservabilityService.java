@@ -94,6 +94,17 @@ final class EconomyObservabilityService {
         return new BoundedRows<>(rows, state.economyAlertCount() > maximumRows, true);
     }
 
+    static BoundedRows<TransactionRow> boundedTransactions(
+            PlatformSavedData state, UUID actorId, boolean authorizationOverride, int maximumRows) {
+        if (!authorized(state, actorId, authorizationOverride) || maximumRows < 1) {
+            return new BoundedRows<>(List.of(), false, false);
+        }
+        List<TransactionRow> rows = state.economyReceipts(maximumRows).stream()
+                .map(entry -> new TransactionRow(entry.getKey(), entry.getValue()))
+                .toList();
+        return new BoundedRows<>(rows, state.economyReceiptCount() > maximumRows, true);
+    }
+
     private static boolean authorized(PlatformSavedData state, UUID actorId, boolean authorizationOverride) {
         return state != null && actorId != null && (authorizationOverride || state.hasAdminRole(actorId));
     }

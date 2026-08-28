@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.UUID;
+import java.util.Optional;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
 import org.junit.jupiter.api.Test;
@@ -26,10 +27,36 @@ final class PlayerRecordServiceTest {
         PlayerRecord record = state.playerRecord(playerId).orElseThrow();
         assertEquals(2_000, record.firstSeenEpochMillis());
         assertEquals(3_000, record.lastSeenEpochMillis());
+        assertEquals(Optional.empty(), record.displayName());
         assertEquals(record, roundTrip(PlayerRecord.CODEC, record));
 
         PlatformSavedData loaded = roundTrip(PlatformSavedData.CODEC, state);
         assertEquals(record, loaded.playerRecord(playerId).orElseThrow());
+    }
+
+    @Test
+    void displayNamesArePersistedWithoutBreakingLegacyRecords() {
+        PlatformSavedData state = new PlatformSavedData();
+        UUID playerId = id(4);
+
+        assertTrue(PlayerRecordService.observeLogin(state, playerId, "Alice", 2_000));
+        assertTrue(PlayerRecordService.observeLogin(state, playerId, "AliceTwo", 1_000));
+        assertFalse(PlayerRecordService.observeLogin(state, playerId, " ", 1_000));
+        assertFalse(PlayerRecordService.observeLogin(
+                state, playerId, "x".repeat(PlayerRecord.MAX_DISPLAY_NAME_LENGTH + 1), 1_000));
+
+        PlayerRecord record = state.playerRecord(playerId).orElseThrow();
+        assertEquals(2_000, record.firstSeenEpochMillis());
+        assertEquals(2_000, record.lastSeenEpochMillis());
+        assertEquals(Optional.of("AliceTwo"), record.displayName());
+        assertEquals(record, roundTrip(PlayerRecord.CODEC, record));
+        assertEquals(record, roundTrip(PlatformSavedData.CODEC, state).playerRecord(playerId).orElseThrow());
+
+        CompoundTag legacy = new CompoundTag();
+        legacy.putLong("first_seen", 1_000);
+        legacy.putLong("last_seen", 2_000);
+        assertEquals(Optional.empty(), PlayerRecord.CODEC.parse(NbtOps.INSTANCE, legacy)
+                .getOrThrow().displayName());
     }
 
     @Test

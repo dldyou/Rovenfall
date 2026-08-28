@@ -34,7 +34,7 @@ final class RovenfallPlayerMenuScreen extends ContainerScreen {
             adminQuery = addRenderableWidget(new EditBox(
                     font, leftPos, Math.max(4, topPos - 24), 132, 20,
                     Component.translatable("gui.rovenfall.admin.search")));
-            adminQuery.setMaxLength(AdministrationReadViewService.MAX_QUERY_LENGTH);
+            adminQuery.setMaxLength(RovenfallInventoryClient.adminInputLength(title));
             addRenderableWidget(Button.builder(
                             Component.translatable("gui.rovenfall.admin.search.submit"),
                             ignored -> submitAdminQuery())
@@ -46,17 +46,29 @@ final class RovenfallPlayerMenuScreen extends ContainerScreen {
     @Override
     public boolean keyPressed(KeyEvent event) {
         int key = event.key();
+        if (adminQuery != null && key == GLFW.GLFW_KEY_TAB) {
+            if (adminQuery.isFocused()) {
+                setFocused(null);
+                adminQuery.setFocused(false);
+                moveFocus(event.hasShiftDown() ? -1 : 1);
+            } else {
+                setFocused(adminQuery);
+                adminQuery.setFocused(true);
+            }
+            return true;
+        }
         if (adminQuery != null && adminQuery.isFocused()
                 && (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER)) {
             submitAdminQuery();
             return true;
         }
+        if (adminQuery != null && adminQuery.isFocused() && key == GLFW.GLFW_KEY_ESCAPE) {
+            setFocused(null);
+            adminQuery.setFocused(false);
+            return true;
+        }
         if (adminQuery != null && adminQuery.isFocused() && key != GLFW.GLFW_KEY_ESCAPE) {
             return super.keyPressed(event);
-        }
-        if (key == GLFW.GLFW_KEY_TAB) {
-            moveFocus(event.hasShiftDown() ? -1 : 1);
-            return true;
         }
         if (key == GLFW.GLFW_KEY_LEFT) {
             moveFocus(-1);
@@ -109,6 +121,9 @@ final class RovenfallPlayerMenuScreen extends ContainerScreen {
     @Override
     protected void updateNarrationState(NarrationElementOutput output) {
         super.updateNarrationState(output);
+        if (adminQuery != null && adminQuery.isFocused()) {
+            return;
+        }
         Slot slot = focusedSlot();
         if (slot == null || !slot.hasItem()) {
             output.add(NarratedElementType.HINT, Component.translatable("gui.rovenfall.menu.no_actions"));
