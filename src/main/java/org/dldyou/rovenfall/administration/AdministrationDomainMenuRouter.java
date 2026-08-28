@@ -12,6 +12,7 @@ final class AdministrationDomainMenuRouter {
             case PLAYERS, SHOPS, RECEIPTS -> AdministrationEconomyMenu.open(player, domain);
             case CLAIMS, PORTALS -> AdministrationWorldMenu.open(player, domain);
             case RPG, ENCOUNTERS -> AdministrationRpgBossMenu.open(player, domain);
+            case AUDIT, ALERTS, METRICS -> AdministrationOperationsMenu.open(player, domain);
             default -> false;
         };
     }

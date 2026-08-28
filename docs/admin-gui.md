@@ -23,9 +23,11 @@ container identity, and session state.
 
 Each domain has a text search field, an `All`/`Attention required` filter, refresh,
 and previous/next page controls. Search is case-insensitive over the identifiers and
-summary fields shown by that domain. A request is limited to 64 characters, each
-page contains at most 36 rows, and a refresh scans at most 1,000 rows from bounded
-domain query services. The menu marks a result as truncated when the source exceeded
+summary fields shown by that domain. Ordinary list searches are limited to 64 characters;
+Audit `key=value` search accepts at most 1,024 characters, while the shared mutation/export
+form transport accepts at most 2,048 before applying its stricter field and 160-character
+reason limits. Each page contains at most 36 rows, and a refresh scans at most 1,000 rows
+from bounded domain query services. The menu marks a result as truncated when the source exceeded
 that scan budget. Player UUID and economy transaction UUID searches use direct indexed
 lookup even when the target is outside the recent 1,000-row window. Other results outside
 that bounded window require the domain command fallback for a precise target lookup.
@@ -97,3 +99,29 @@ Only Owners can reset one encounter or run global recovery. The confirmation sna
 includes the encounter, its arena, and reward operations (or the complete global recovery
 set), then rechecks that evidence at click time before calling the existing resumable,
 restart-safe boss administration service.
+
+## Audit, alerts, metrics, and platform recovery
+
+The Audit, Alerts, and Metrics domains use the same inventory shell. Audit supports a
+bounded 30-day `key=value` query, 36-row pages, an attention-only filter, and exact
+transaction evidence. Audit detail can open a linked economy receipt directly when that
+receipt is visible to the current role. Alerts can be filtered by amount or rate and
+Metrics offers 15-minute, one-hour, six-hour, and 24-hour windows; each listed metric
+transaction opens the matching audit evidence. GUI scans stop after 1,000 rows and mark
+the result as truncated instead of loading unbounded history.
+
+Owners can export the exact selected audit window from the Audit screen. Export requires
+explicit `since` and `until` millisecond fields plus a reason, then shows the bounded row
+and byte limits before confirmation. The server retains the exact selected entries and
+rechecks the Owner role and selection at click time before calling `AuditExportService`.
+The GUI never exposes an audit delete operation. Older or exact records remain available
+through `/rovenfall admin audit search`.
+
+The Snapshot screen lists platform snapshot IDs derived from immutable audit evidence.
+Creating a snapshot and restoring a selected snapshot both require `| reason`, a
+server-generated transaction ID, and a second confirmation. The preview contains the
+bounded encoded byte count and SHA-256 evidence. Confirmation compares the current
+platform fingerprint and, for restore, the selected snapshot fingerprint before calling
+`AdministrationService`. Restore always allocates a separate safety snapshot ID first.
+Missing, changed, oversized, malformed, stale, replayed, rate-limited, or unauthorized
+requests fail closed and preserve denial or failure evidence through the owning service.

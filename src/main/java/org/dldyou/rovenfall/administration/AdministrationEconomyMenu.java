@@ -91,6 +91,26 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
         return true;
     }
 
+    static boolean openReceipt(ServerPlayer player, UUID transactionId) {
+        if (player == null || transactionId == null
+                || !canView(player, AdministrationReadViewService.Domain.RECEIPTS)
+                || PlatformSavedData.get(player.level().getServer()).economyReceipt(transactionId).isEmpty()) {
+            return false;
+        }
+        player.openMenu(new SimpleMenuProvider(
+                (containerId, inventory, viewer) -> {
+                    var menu = new AdministrationEconomyMenu(
+                            containerId, inventory, (ServerPlayer) viewer,
+                            new SimpleContainer(MENU_SIZE), AdministrationReadViewService.Domain.RECEIPTS);
+                    menu.selectedReceipt = transactionId;
+                    menu.mode = Mode.RECEIPT_DETAIL;
+                    menu.render();
+                    return menu;
+                },
+                Component.translatable("gui.rovenfall.admin.economy.title")));
+        return true;
+    }
+
     @Override
     public void clicked(int slotIndex, int buttonNum, ContainerInput input, Player player) {
         if (!(player instanceof ServerPlayer serverPlayer)

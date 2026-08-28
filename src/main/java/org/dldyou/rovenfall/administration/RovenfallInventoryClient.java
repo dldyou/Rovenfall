@@ -52,7 +52,8 @@ public final class RovenfallInventoryClient {
             case "gui.rovenfall.player.title", "gui.rovenfall.shop.title",
                     "gui.rovenfall.claim.title", "gui.rovenfall.rpg.title",
                     "gui.rovenfall.admin.title", "gui.rovenfall.admin.economy.title",
-                    "gui.rovenfall.admin.world.title", "gui.rovenfall.admin.rpg_boss.title" -> true;
+                    "gui.rovenfall.admin.world.title", "gui.rovenfall.admin.rpg_boss.title",
+                    "gui.rovenfall.admin.operations.title" -> true;
             default -> false;
         };
     }
@@ -62,14 +63,16 @@ public final class RovenfallInventoryClient {
                 && (contents.getKey().equals("gui.rovenfall.admin.title")
                         || contents.getKey().equals("gui.rovenfall.admin.economy.title")
                         || contents.getKey().equals("gui.rovenfall.admin.world.title")
-                        || contents.getKey().equals("gui.rovenfall.admin.rpg_boss.title"));
+                        || contents.getKey().equals("gui.rovenfall.admin.rpg_boss.title")
+                        || contents.getKey().equals("gui.rovenfall.admin.operations.title"));
     }
 
     static int adminInputLength(net.minecraft.network.chat.Component title) {
         if (title.getContents() instanceof TranslatableContents contents
                 && (contents.getKey().equals("gui.rovenfall.admin.economy.title")
                         || contents.getKey().equals("gui.rovenfall.admin.world.title")
-                        || contents.getKey().equals("gui.rovenfall.admin.rpg_boss.title"))) {
+                        || contents.getKey().equals("gui.rovenfall.admin.rpg_boss.title")
+                        || contents.getKey().equals("gui.rovenfall.admin.operations.title"))) {
             return AdministrationTextInputMenu.MAX_INPUT_LENGTH;
         }
         return AdministrationReadViewService.MAX_QUERY_LENGTH;

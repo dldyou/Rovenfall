@@ -1779,6 +1779,8 @@ public final class RovenfallCommands {
             case INVALID_REASON -> failure(source, "command.rovenfall.admin.error.invalid_reason", AdministrationService.MAX_REASON_LENGTH);
             case READ_ONLY_SCHEMA -> failure(source, "command.rovenfall.admin.error.read_only_schema", state.schemaVersion());
             case SNAPSHOT_UNAVAILABLE -> failure(source, "command.rovenfall.admin.snapshot.error.unavailable", snapshotId.toString());
+            case STALE_SNAPSHOT -> failure(
+                    source, "command.rovenfall.admin.snapshot.error.unavailable", snapshotId.toString());
             case TRANSACTION_LEDGER_FULL -> failure(
                     source, "command.rovenfall.admin.snapshot.error.transaction_ledger_full");
             case TRANSACTION_EVIDENCE_CONFLICT -> failure(

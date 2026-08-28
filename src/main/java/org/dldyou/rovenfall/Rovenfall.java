@@ -81,6 +81,7 @@ import org.dldyou.rovenfall.administration.EconomyTransactionReceipt;
 import org.dldyou.rovenfall.administration.AdministrationService;
 import org.dldyou.rovenfall.administration.AdministrationControlCenterMenu;
 import org.dldyou.rovenfall.administration.AdministrationEconomyMenu;
+import org.dldyou.rovenfall.administration.AdministrationOperationsMenu;
 import org.dldyou.rovenfall.administration.AdministrationRpgBossMenu;
 import org.dldyou.rovenfall.administration.AdministrationWorldMenu;
 import org.dldyou.rovenfall.administration.AdminRole;
@@ -684,6 +685,138 @@ public final class Rovenfall {
                 });
             }
         });
+        event.registerTest(id("admin_operations_gui_snapshot_and_role_revalidation"),
+                new FunctionGameTestInstance(
+                        BuiltinTestFunctions.ALWAYS_PASS,
+                        new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 100, 0, true)) {
+                    @Override
+                    public void run(GameTestHelper helper) {
+                        var server = helper.getLevel().getServer();
+                        var player = helper.makeMockServerPlayerInLevel();
+                        var deniedPlayer = helper.makeMockServerPlayerInLevel();
+                        var platform = PlatformSavedData.get(server);
+                        long startedAt = System.currentTimeMillis();
+                        helper.assertTrue(AdministrationService.changeRole(
+                                        platform, AdministrationService.SYSTEM_ACTOR, true, player.getUUID(),
+                                        AdminRole.OWNER.getSerializedName(), "gametest operations gui",
+                                        startedAt, UUID.randomUUID()).status()
+                                        == AdministrationService.RoleChangeStatus.SUCCESS,
+                                "Could not assign the operations-GUI owner role");
+                        helper.assertTrue(AdministrationService.changeRole(
+                                        platform, AdministrationService.SYSTEM_ACTOR, true, deniedPlayer.getUUID(),
+                                        AdminRole.OWNER.getSerializedName(), "gametest operations role guard",
+                                        startedAt, UUID.randomUUID()).status()
+                                        == AdministrationService.RoleChangeStatus.SUCCESS,
+                                "Could not assign the export-guard owner role");
+                        helper.assertTrue(AdministrationOperationsMenu.open(
+                                        player,
+                                        org.dldyou.rovenfall.administration.AdministrationReadViewService.Domain.AUDIT),
+                                "Owner could not open the inventory audit view");
+                        helper.assertTrue(PlayerMenuNetwork.isPlayerMenu(player.containerMenu),
+                                "Operations administration view was not protected by player-menu validation");
+                        player.containerMenu.clicked(49, 0, ContainerInput.PICKUP, player);
+
+                        helper.runAfterDelay(1, () -> {
+                            player.containerMenu.clicked(46, 0, ContainerInput.PICKUP, player);
+                            helper.assertTrue(((AdministrationOperationsMenu) player.containerMenu)
+                                            .applyTextInput(player, " | gametest stale snapshot"),
+                                    "Snapshot form did not produce a server preview");
+                            helper.assertTrue(AdministrationService.changeRole(
+                                            platform, AdministrationService.SYSTEM_ACTOR, true, UUID.randomUUID(),
+                                            AdminRole.VIEWER.getSerializedName(), "gametest concurrent platform change",
+                                            System.currentTimeMillis(), UUID.randomUUID()).status()
+                                            == AdministrationService.RoleChangeStatus.SUCCESS,
+                                    "Could not create the concurrent platform change");
+                            helper.runAfterDelay(1, () -> {
+                                player.containerMenu.clicked(31, 0, ContainerInput.PICKUP, player);
+                                helper.assertTrue(platform.recentAuditEntries(30).stream()
+                                                .anyMatch(entry -> entry.actorId().equals(player.getUUID())
+                                                        && entry.actionType().getPath()
+                                                                .equals("admin_gui_stale_confirmation_denied")
+                                                        && entry.reason().equals("stale_confirmation")),
+                                        "Stale snapshot confirmation was not rejected with audit evidence");
+                                helper.runAfterDelay(1, () -> {
+                                    player.containerMenu.clicked(31, 0, ContainerInput.PICKUP, player);
+                                    helper.runAfterDelay(50, () -> {
+                                        player.containerMenu.clicked(46, 0, ContainerInput.PICKUP, player);
+                                        helper.assertTrue(((AdministrationOperationsMenu) player.containerMenu)
+                                                        .applyTextInput(player, " | gametest platform snapshot"),
+                                                "Refreshed snapshot form did not produce a preview");
+                                        helper.runAfterDelay(1, () -> {
+                                            player.containerMenu.clicked(31, 0, ContainerInput.PICKUP, player);
+                                            helper.assertTrue(platform.recentAuditEntries(40).stream()
+                                                            .anyMatch(entry -> entry.actorId().equals(player.getUUID())
+                                                                    && entry.actionType().getPath()
+                                                                            .equals("platform_snapshot_create")
+                                                                    && entry.reason()
+                                                                            .equals("gametest platform snapshot")),
+                                                    "Confirmed snapshot did not commit through the snapshot service");
+                                            helper.runAfterDelay(1, () -> {
+                                                player.containerMenu.clicked(31, 0, ContainerInput.PICKUP, player);
+                                                helper.assertTrue(player.containerMenu.getSlot(9).hasItem(),
+                                                        "Created snapshot was not listed from audit evidence");
+                                                helper.runAfterDelay(1, () -> {
+                                                    helper.assertTrue(AdministrationOperationsMenu.open(
+                                                                    deniedPlayer,
+                                                                    org.dldyou.rovenfall.administration
+                                                                            .AdministrationReadViewService.Domain.AUDIT),
+                                                            "Second owner could not open the audit view");
+                                                    deniedPlayer.containerMenu.clicked(
+                                                            46, 0, ContainerInput.PICKUP, deniedPlayer);
+                                                    long until = Math.max(1L, System.currentTimeMillis() - 1L);
+                                                    long since = Math.max(
+                                                            0L, until
+                                                                    - org.dldyou.rovenfall.administration.AuditQuery
+                                                                            .MAX_WINDOW_MILLIS);
+                                                    String exportInput = "since=" + since + " until=" + until
+                                                            + " | gametest revoked export";
+                                                    helper.assertTrue(((AdministrationOperationsMenu)
+                                                                    deniedPlayer.containerMenu)
+                                                                    .applyTextInput(deniedPlayer, exportInput),
+                                                            "Audit export form did not produce a preview");
+                                                    helper.assertTrue(AdministrationService.changeRole(
+                                                                    platform,
+                                                                    AdministrationService.SYSTEM_ACTOR,
+                                                                    true,
+                                                                    deniedPlayer.getUUID(),
+                                                                    AdminRole.VIEWER.getSerializedName(),
+                                                                    "gametest export revocation",
+                                                                    System.currentTimeMillis(),
+                                                                    UUID.randomUUID()).status()
+                                                                    == AdministrationService.RoleChangeStatus.SUCCESS,
+                                                            "Could not revoke export authority before confirmation");
+                                                    helper.runAfterDelay(1, () -> {
+                                                        deniedPlayer.containerMenu.clicked(
+                                                                31, 0, ContainerInput.PICKUP, deniedPlayer);
+                                                        helper.assertTrue(platform.recentAuditEntries(50).stream()
+                                                                        .anyMatch(entry -> entry.actorId()
+                                                                                        .equals(deniedPlayer.getUUID())
+                                                                                && entry.actionType().getPath()
+                                                                                        .equals("audit_export_denied")
+                                                                                && entry.reason()
+                                                                                        .equals("unauthorized")),
+                                                                "Revoked export confirmation lacked denial evidence");
+                                                        helper.assertTrue(platform.recentAuditEntries(50).stream()
+                                                                        .noneMatch(entry -> entry.actorId()
+                                                                                        .equals(deniedPlayer.getUUID())
+                                                                                && entry.actionType().getPath()
+                                                                                        .equals("audit_export")
+                                                                                && entry.reason().equals(
+                                                                                        "gametest revoked export")),
+                                                                "Revoked owner exported audit data");
+                                                        player.discard();
+                                                        deniedPlayer.discard();
+                                                        helper.succeed();
+                                                    });
+                                                });
+                                            });
+                                        });
+                                    });
+                                });
+                            });
+                        });
+                    }
+                });
         event.registerTest(id("operations_metrics_snapshot"), new FunctionGameTestInstance(
                 BuiltinTestFunctions.ALWAYS_PASS, testData) {
             @Override
