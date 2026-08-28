@@ -131,6 +131,7 @@ import org.dldyou.rovenfall.rpg.RpgSkillEvents;
 import org.dldyou.rovenfall.rpg.RpgSkillClient;
 import org.dldyou.rovenfall.rpg.RpgSkillNetwork;
 import org.dldyou.rovenfall.rpg.RpgSkillResetCoordinator;
+import org.dldyou.rovenfall.rpg.PlayerCareerPromotionService;
 import org.dldyou.rovenfall.world.ProtectedRegion;
 import org.dldyou.rovenfall.world.PortalDefinition;
 import org.dldyou.rovenfall.world.WorldTopology;
@@ -158,6 +159,7 @@ public final class Rovenfall {
         NeoForge.EVENT_BUS.addListener(RovenfallCommands::register);
         NeoForge.EVENT_BUS.addListener(EconomyService::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(RpgSkillResetCoordinator::onPlayerLoggedIn);
+        NeoForge.EVENT_BUS.addListener(PlayerCareerPromotionService::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(RpgAdministrationService::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(RpgSkillNetwork::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(RpgSkillNetwork::onPlayerLoggedOut);

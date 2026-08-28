@@ -66,7 +66,7 @@ final class RpgAdminOperationPersistenceTest {
         schemaEleven.putInt("schema_version", 11);
         schemaEleven.remove("rpg_admin_operations");
         PlatformSavedData migrated = PlatformSavedData.CODEC.parse(NbtOps.INSTANCE, schemaEleven).getOrThrow();
-        assertEquals(12, migrated.schemaVersion());
+        assertEquals(PlatformSavedData.CURRENT_SCHEMA_VERSION, migrated.schemaVersion());
         assertTrue(migrated.isWritable());
 
         RpgAdminOperation invalidXp = new RpgAdminOperation(

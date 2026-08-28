@@ -590,5 +590,7 @@
   "gui.rovenfall.rpg.result.success": "RPG 변경을 완료했습니다(%s).",
   "gui.rovenfall.rpg.result.failed": "RPG 변경이 거부되었습니다(%s). 진행도는 변경되지 않았습니다.",
   "gui.rovenfall.rpg.result.stale": "진행도 또는 정의가 변경되어 화면을 새로고침했습니다. 다시 확인하세요.",
+  "gui.rovenfall.rpg.result.rate_limit": "RPG 진행도를 다시 변경하기 전에 잠시 기다려 주세요.",
+  "gui.rovenfall.rpg.result.pending": "RPG 작업을 복구 대기 중입니다(%s). 재접속 후 다시 열어 보세요. 비용은 중복 차감되지 않습니다.",
   "command.rovenfall.career.promote.error.funds": "승급 비용은 %1$s이지만 잔액은 %2$s입니다."
 }

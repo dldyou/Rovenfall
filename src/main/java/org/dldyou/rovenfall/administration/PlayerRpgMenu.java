@@ -90,18 +90,32 @@ public final class PlayerRpgMenu extends ChestMenu {
     private RpgPlayerState renderedState = RpgPlayerState.EMPTY;
     private long lastHandledGameTime = Long.MIN_VALUE;
 
-    private PlayerRpgMenu(int containerId, Inventory inventory, ServerPlayer viewer, SimpleContainer content) {
+    private PlayerRpgMenu(
+            int containerId,
+            Inventory inventory,
+            ServerPlayer viewer,
+            SimpleContainer content,
+            ReopenState initial) {
         super(MenuType.GENERIC_9x6, containerId, inventory, content, 6);
         this.viewer = viewer;
         this.viewerId = viewer.getUUID();
         this.content = content;
+        this.page = initial.page();
+        this.pageIndex = initial.pageIndex();
+        this.selectedCareer = initial.selectedCareer();
+        this.selectedSkill = initial.selectedSkill();
         render();
+        setItem(0, sessionStateId(UUID.randomUUID()), getSlot(0).getItem());
     }
 
     public static void open(ServerPlayer player) {
+        open(player, ReopenState.HOME);
+    }
+
+    private static void open(ServerPlayer player, ReopenState initial) {
         player.openMenu(new SimpleMenuProvider(
                 (containerId, inventory, viewer) -> new PlayerRpgMenu(
-                        containerId, inventory, (ServerPlayer) viewer, new SimpleContainer(54)),
+                        containerId, inventory, (ServerPlayer) viewer, new SimpleContainer(54), initial),
                 Component.translatable("gui.rovenfall.rpg.title")));
     }
 
@@ -110,6 +124,7 @@ public final class PlayerRpgMenu extends ChestMenu {
         if (!(player instanceof ServerPlayer serverPlayer)
                 || !viewerId.equals(serverPlayer.getUUID())
                 || slotIndex < 0 || slotIndex >= 54
+                || input != ContainerInput.PICKUP || buttonNum != 0
                 || !isActionSlot(slotIndex)) {
             return;
         }
@@ -246,6 +261,9 @@ public final class PlayerRpgMenu extends ChestMenu {
             stale();
             return;
         }
+        if (!beginMutation()) {
+            return;
+        }
         RpgSkillService.Result result = RpgSkillService.learn(
                 rpg(), definitions(), viewerId, skill.id(), Instant.now().toEpochMilli(),
                 UUID.randomUUID(), "player_gui");
@@ -259,6 +277,9 @@ public final class PlayerRpgMenu extends ChestMenu {
         }
         Optional<Identifier> requested = Objects.equals(rpg().state(viewerId).activeSkillSlots().get(slot), skill.id())
                 ? Optional.empty() : Optional.of(skill.id());
+        if (!beginMutation()) {
+            return;
+        }
         RpgActiveSkillService.SlotResult result = RpgActiveSkillService.assignSlot(
                 rpg(), definitions(), viewerId, slot, requested, ActivityXpConfig.activeSkillSlots(),
                 Instant.now().toEpochMilli(), UUID.randomUUID(), "player_gui");
@@ -292,7 +313,8 @@ public final class PlayerRpgMenu extends ChestMenu {
         confirmation = new Confirmation(
                 mutation, target, plan, renderedRevision, renderedState,
                 plan.map(SkillResetPlan::refundedPoints).orElse(0L),
-                cost);
+                cost, PlatformSavedData.get(viewer.level().getServer())
+                        .economyBalance(viewerId).orElse(0L));
         page = Page.CONFIRM;
         pageIndex = 0;
         render();
@@ -311,6 +333,16 @@ public final class PlayerRpgMenu extends ChestMenu {
         if (!canConfirm(confirmation.definitionRevision(), confirmation.state(),
                 currentRevision(), rpg().state(viewerId))) {
             stale();
+            return;
+        }
+        long currentCost = currentCost(confirmation);
+        long currentBalance = PlatformSavedData.get(viewer.level().getServer())
+                .economyBalance(viewerId).orElse(0L);
+        if (!canConfirmEconomy(confirmation.balance(), confirmation.cost(), currentBalance, currentCost)) {
+            stale();
+            return;
+        }
+        if (!beginMutation()) {
             return;
         }
         Confirmation action = confirmation;
@@ -350,10 +382,23 @@ public final class PlayerRpgMenu extends ChestMenu {
     }
 
     private void result(boolean success, String status) {
-        viewer.sendOverlayMessage(Component.translatable(
-                success ? "gui.rovenfall.rpg.result.success" : "gui.rovenfall.rpg.result.failed",
-                status.toLowerCase(Locale.ROOT)));
-        render();
+        viewer.sendOverlayMessage(Component.translatable(resultKey(success, status), status.toLowerCase(Locale.ROOT)));
+        reopen();
+    }
+
+    static String resultKey(boolean success, String status) {
+        return status.equals("COMPLETION_FAILED") || status.equals("RPG_FAILED")
+                ? "gui.rovenfall.rpg.result.pending"
+                : success ? "gui.rovenfall.rpg.result.success" : "gui.rovenfall.rpg.result.failed";
+    }
+
+    private boolean beginMutation() {
+        if (PlayerMenuNetwork.beginMutation(viewerId, viewer.level().getGameTime())) {
+            return true;
+        }
+        viewer.sendOverlayMessage(Component.translatable("gui.rovenfall.rpg.result.rate_limit"));
+        reopen();
+        return false;
     }
 
     private void stale() {
@@ -366,7 +411,7 @@ public final class PlayerRpgMenu extends ChestMenu {
         confirmation = null;
         page = returnPage == Page.CONFIRM ? Page.HOME : returnPage;
         viewer.sendOverlayMessage(Component.translatable("gui.rovenfall.rpg.result.stale"));
-        render();
+        reopen();
     }
 
     private void back() {
@@ -532,7 +577,7 @@ public final class PlayerRpgMenu extends ChestMenu {
         consequences.add(Component.translatable("gui.rovenfall.rpg.confirm.cost", confirmation.cost()));
         consequences.add(Component.translatable(
                 "gui.rovenfall.rpg.confirm.balance_after",
-                Math.max(0L, view().balance() - confirmation.cost())));
+                Math.max(0L, confirmation.balance() - confirmation.cost())));
         consequences.add(Component.translatable("gui.rovenfall.rpg.confirm.refund", confirmation.refundedPoints()));
         content.setItem(4, PlayerDashboardMenu.icon(
                 Items.WRITABLE_BOOK, Component.translatable("gui.rovenfall.rpg.confirm.title"),
@@ -716,6 +761,36 @@ public final class PlayerRpgMenu extends ChestMenu {
                 && Objects.equals(expectedState, currentState);
     }
 
+    static boolean canConfirmEconomy(
+            long expectedBalance, long expectedCost, long currentBalance, long currentCost) {
+        return expectedBalance >= 0 && expectedCost >= 0
+                && expectedBalance == currentBalance && expectedCost == currentCost;
+    }
+
+    public static boolean isCurrentSession(
+            int menuContainerId, int menuStateId, int packetContainerId, int packetStateId) {
+        return menuContainerId == packetContainerId && menuStateId == packetStateId;
+    }
+
+    static int sessionStateId(UUID nonce) {
+        return 1 + Math.floorMod(nonce.hashCode(), 32_767);
+    }
+
+    private long currentCost(Confirmation action) {
+        return switch (action.mutation()) {
+            case PROMOTE -> definitions().career(action.target())
+                    .map(CareerDefinition::promotionCost).orElse(-1L);
+            case SWITCH -> 0L;
+            case RESET_BRANCH -> ActivityXpConfig.skillResetCost(SkillResetPlan.Mode.BRANCH);
+            case RESET_FULL -> ActivityXpConfig.skillResetCost(SkillResetPlan.Mode.FULL);
+        };
+    }
+
+    private void reopen() {
+        Page target = page == Page.CONFIRM ? returnPage : page;
+        open(viewer, new ReopenState(target, pageIndex, selectedCareer, selectedSkill));
+    }
+
     static int boundedPage(int page, int entries) {
         return boundedPage(page, entries, PAGE_SIZE);
     }
@@ -841,9 +916,18 @@ public final class PlayerRpgMenu extends ChestMenu {
             long definitionRevision,
             RpgPlayerState state,
             long refundedPoints,
-            long cost) {
+            long cost,
+            long balance) {
         Confirmation {
             plan = plan == null ? Optional.empty() : plan;
         }
+    }
+
+    private record ReopenState(
+            Page page,
+            int pageIndex,
+            Identifier selectedCareer,
+            Identifier selectedSkill) {
+        private static final ReopenState HOME = new ReopenState(Page.HOME, 0, null, null);
     }
 }

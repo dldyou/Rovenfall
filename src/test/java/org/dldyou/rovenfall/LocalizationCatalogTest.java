@@ -97,6 +97,8 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.claim.error.rate_limit",
             "gui.rovenfall.rpg.title",
             "gui.rovenfall.rpg.result.stale",
+            "gui.rovenfall.rpg.result.rate_limit",
+            "gui.rovenfall.rpg.result.pending",
             "command.rovenfall.admin.operations.summary",
             "command.rovenfall.admin.operations.anomalies",
             "command.rovenfall.admin.help.header",

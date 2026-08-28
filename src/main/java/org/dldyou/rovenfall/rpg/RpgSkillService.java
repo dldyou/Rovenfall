@@ -1,6 +1,7 @@
 package org.dldyou.rovenfall.rpg;
 
 import java.util.ArrayList;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -232,7 +233,7 @@ public final class RpgSkillService {
                 changed, new RpgPlayerState.ProgressionProvenance(
                         RpgPlayerState.ProgressionProvenance.Kind.SKILL_RESET,
                         plan.target(), paymentCost, timestamp, transactionId,
-                        "skill_reset:" + plan.mode().getSerializedName()));
+                        resetEvidenceSource(plan)));
         RpgPlayerState candidate = new RpgPlayerState(
                 changed.activityXp(), changed.careers(), changed.activeCareer(), changed.activeSkillSlots(),
                 changed.cooldowns(), changed.explorationDiscoveries(),
@@ -323,6 +324,34 @@ public final class RpgSkillService {
     static boolean hasTransaction(RpgPlayerState state, UUID transactionId) {
         return java.util.stream.Stream.concat(state.provenance().stream(), state.careerProvenance().stream())
                 .anyMatch(entry -> entry.transactionId().equals(transactionId));
+    }
+
+    static boolean hasResetEvidence(
+            RpgPlayerState state,
+            SkillResetPlan plan,
+            long paymentCost,
+            UUID transactionId) {
+        String currentSource = resetEvidenceSource(plan);
+        String legacySource = "skill_reset:" + plan.mode().getSerializedName();
+        return state.careerProvenance().stream()
+                .filter(entry -> entry.kind() == RpgPlayerState.ProgressionProvenance.Kind.SKILL_RESET)
+                .filter(entry -> entry.target().equals(plan.target()))
+                .filter(entry -> entry.amount() == paymentCost)
+                .filter(entry -> entry.transactionId().equals(transactionId))
+                .anyMatch(entry -> entry.source().equals(currentSource) || entry.source().equals(legacySource));
+    }
+
+    static String resetEvidenceSource(SkillResetPlan plan) {
+        StringBuilder canonical = new StringBuilder()
+                .append(plan.mode().getSerializedName()).append('|').append(plan.target());
+        for (SkillResetPlan.RemovedSkill removed : plan.removedSkills()) {
+            canonical.append('|').append(removed.skill())
+                    .append('|').append(removed.career())
+                    .append('|').append(removed.rank())
+                    .append('|').append(removed.refundedPoints());
+        }
+        UUID fingerprint = UUID.nameUUIDFromBytes(canonical.toString().getBytes(StandardCharsets.UTF_8));
+        return "skill_reset:" + plan.mode().getSerializedName() + ":" + fingerprint;
     }
 
     private static ResetPreparation preparation(Status status) {

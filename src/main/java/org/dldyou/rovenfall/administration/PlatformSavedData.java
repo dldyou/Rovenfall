@@ -32,7 +32,7 @@ import org.dldyou.rovenfall.world.WorldTopology;
 
 public final class PlatformSavedData extends SavedData {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
-    public static final int CURRENT_SCHEMA_VERSION = 12;
+    public static final int CURRENT_SCHEMA_VERSION = 13;
     public static final int MAX_PROTECTED_REGIONS = 128;
     public static final int MAX_INDEXED_PROTECTED_CHUNKS = 131_072;
     public static final int MAX_AUDIT_PAGE_SIZE = 50;
@@ -282,6 +282,16 @@ public final class PlatformSavedData extends SavedData {
         return writable;
     }
 
+    /** Missing platform evidence may only be reconstructed while its transaction tombstone is retained. */
+    public static boolean isEconomyRecoveryWindow(long transactionTimestamp, long currentTimestamp) {
+        if (transactionTimestamp < 0 || currentTimestamp < 0) {
+            return false;
+        }
+        return currentTimestamp < transactionTimestamp
+                || currentTimestamp <= ECONOMY_TRANSACTION_RETENTION_MILLIS
+                || transactionTimestamp >= currentTimestamp - ECONOMY_TRANSACTION_RETENTION_MILLIS;
+    }
+
     public boolean hasAnyAdminRoles() {
         return !adminRoles.isEmpty();
     }
@@ -394,9 +404,14 @@ public final class PlatformSavedData extends SavedData {
     }
 
     public List<Map.Entry<UUID, RpgSkillOperation>> pendingRpgSkillOperations(UUID playerId) {
+        return rpgSkillOperations(playerId).stream()
+                .filter(entry -> entry.getValue().phase() == RpgSkillOperation.Phase.PENDING)
+                .toList();
+    }
+
+    public List<Map.Entry<UUID, RpgSkillOperation>> rpgSkillOperations(UUID playerId) {
         return rpgSkillOperations.entrySet().stream()
                 .filter(entry -> entry.getValue().playerId().equals(playerId))
-                .filter(entry -> entry.getValue().phase() == RpgSkillOperation.Phase.PENDING)
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
                 .toList();
@@ -866,9 +881,9 @@ public final class PlatformSavedData extends SavedData {
         validateEvidence(playerId, transactionId, timestampEpochMillis, receipt, alerts);
         if (!operation.playerId().equals(playerId)
                 || operation.timestampEpochMillis() != timestampEpochMillis
-                || receipt.kind() != EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT
+                || receipt.kind() != operationReceiptKind(operation)
                 || !canCommitRpgSkillPayment(transactionId, timestampEpochMillis)) {
-            throw new IllegalStateException("RPG skill payment cannot be committed");
+            throw new IllegalStateException("Paid RPG operation cannot be committed");
         }
         prepareLedgerForCommit(timestampEpochMillis);
         trimCompletedRpgSkillOperations(timestampEpochMillis);
@@ -884,9 +899,10 @@ public final class PlatformSavedData extends SavedData {
         EconomyTransactionReceipt receipt = economyReceipts.get(transactionId);
         if (current == null || !current.equals(expected)
                 || current.phase() != RpgSkillOperation.Phase.PENDING
-                || receipt == null || receipt.kind() != EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT
+                || receipt == null || receipt.kind() != operationReceiptKind(current)
+                || !receipt.actorId().equals(AdministrationService.SYSTEM_ACTOR)
                 || !receipt.playerId().equals(current.playerId()) || receipt.amount() != current.cost()) {
-            throw new IllegalStateException("RPG skill operation cannot be completed");
+            throw new IllegalStateException("Paid RPG operation cannot be completed");
         }
         rpgSkillOperations.put(transactionId, current.completed());
         EconomyTransactionReceipt retained = economyReceipts.get(transactionId);
@@ -1259,7 +1275,8 @@ public final class PlatformSavedData extends SavedData {
             RpgSkillOperation operation = entry.getValue();
             EconomyTransactionReceipt receipt = receipts.get(entry.getKey());
             Long timestamp = transactions.get(entry.getKey());
-            if (receipt == null || receipt.kind() != EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT
+            if (receipt == null || receipt.kind() != operationReceiptKind(operation)
+                    || !receipt.actorId().equals(AdministrationService.SYSTEM_ACTOR)
                     || !receipt.playerId().equals(operation.playerId()) || receipt.amount() != operation.cost()
                     || timestamp == null || timestamp != operation.timestampEpochMillis()
                     || receipt.timestampEpochMillis() != operation.timestampEpochMillis()) {
@@ -1267,8 +1284,16 @@ public final class PlatformSavedData extends SavedData {
             }
         }
         return receipts.entrySet().stream()
-                .filter(entry -> entry.getValue().kind() == EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT)
+                .filter(entry -> entry.getValue().kind() == EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT
+                        || entry.getValue().kind() == EconomyTransactionReceipt.Kind.CAREER_PROMOTION_PAYMENT)
                 .allMatch(entry -> operations.containsKey(entry.getKey()));
+    }
+
+    private static EconomyTransactionReceipt.Kind operationReceiptKind(RpgSkillOperation operation) {
+        return switch (operation.kind()) {
+            case SKILL_RESET -> EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT;
+            case CAREER_PROMOTION -> EconomyTransactionReceipt.Kind.CAREER_PROMOTION_PAYMENT;
+        };
     }
 
     private void trimCompletedRpgSkillOperations(long timestampEpochMillis) {
@@ -1340,9 +1365,8 @@ public final class PlatformSavedData extends SavedData {
     }
 
     private void registerReceiptExpiry(UUID transactionId, EconomyTransactionReceipt receipt) {
-        long expiry = receipt.kind() == EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT
-                && rpgSkillOperations.get(transactionId) != null
-                && rpgSkillOperations.get(transactionId).phase() == RpgSkillOperation.Phase.PENDING
+        RpgSkillOperation operation = rpgSkillOperations.get(transactionId);
+        long expiry = operation != null && operation.phase() == RpgSkillOperation.Phase.PENDING
                 ? NON_EXPIRING_RECEIPT
                 : receiptExpiry(receipt.timestampEpochMillis());
         recordReceiptExpiry(transactionId, expiry);
@@ -1398,7 +1422,7 @@ public final class PlatformSavedData extends SavedData {
     private void removeReceipt(UUID transactionId) {
         RpgSkillOperation operation = rpgSkillOperations.get(transactionId);
         if (operation != null && operation.phase() == RpgSkillOperation.Phase.PENDING) {
-            throw new IllegalStateException("Pending RPG skill payment receipt cannot be evicted");
+            throw new IllegalStateException("Pending paid RPG operation receipt cannot be evicted");
         }
         economyReceipts.remove(transactionId);
         receiptEvictionTimes.remove(transactionId);
@@ -1410,8 +1434,7 @@ public final class PlatformSavedData extends SavedData {
         receiptExpiryQueue.clear();
         economyReceipts.forEach((transactionId, receipt) -> {
             RpgSkillOperation operation = rpgSkillOperations.get(transactionId);
-            long expiry = receipt.kind() == EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT
-                    && operation != null && operation.phase() == RpgSkillOperation.Phase.PENDING
+            long expiry = operation != null && operation.phase() == RpgSkillOperation.Phase.PENDING
                     ? NON_EXPIRING_RECEIPT
                     : receiptExpiry(receipt.timestampEpochMillis());
             receiptEvictionTimes.put(transactionId, expiry);

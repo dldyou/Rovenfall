@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.core.NonNullList;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Inventory;
@@ -149,6 +150,28 @@ final class RpgSkillPaymentServiceTest {
         assertTrue(!readOnly.isWritable());
         assertEquals(RpgSkillPaymentService.Status.READ_ONLY,
                 RpgSkillPaymentService.complete(readOnly, PLAYER, transaction, 3_000).status());
+    }
+
+    @Test
+    void schemaTwelveSkillResetOperationDefaultsItsKindAndRemainsWritable() {
+        PlatformSavedData state = fundedState();
+        UUID transaction = uuid(550);
+        assertEquals(RpgSkillPaymentService.Status.SUCCESS,
+                RpgSkillPaymentService.begin(
+                        state, PLAYER, PLAN, 500, 2_000, transaction, 0, 10_000).status());
+        CompoundTag schemaTwelve = (CompoundTag) PlatformSavedData.CODEC
+                .encodeStart(NbtOps.INSTANCE, state).getOrThrow();
+        schemaTwelve.putInt("schema_version", 12);
+        ListTag operations = schemaTwelve.getListOrEmpty("rpg_skill_operations");
+        assertEquals(1, operations.size());
+        operations.getCompoundOrEmpty(0).getCompoundOrEmpty("operation").remove("kind");
+
+        PlatformSavedData migrated = PlatformSavedData.CODEC.parse(NbtOps.INSTANCE, schemaTwelve).getOrThrow();
+
+        assertEquals(PlatformSavedData.CURRENT_SCHEMA_VERSION, migrated.schemaVersion());
+        assertTrue(migrated.isWritable());
+        assertEquals(RpgSkillOperation.Kind.SKILL_RESET,
+                migrated.rpgSkillOperation(transaction).orElseThrow().kind());
     }
 
     @Test
