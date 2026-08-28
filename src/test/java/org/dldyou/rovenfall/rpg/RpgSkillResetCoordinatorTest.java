@@ -72,6 +72,33 @@ final class RpgSkillResetCoordinatorTest {
     }
 
     @Test
+    void completedPlatformOperationRecoversAnOlderRpgRootWithoutASecondCharge() {
+        PlatformSavedData platform = fundedPlatform();
+        RpgPlayerSavedData applied = learnedState(1);
+        SkillResetPlan plan = plan(applied);
+        UUID transaction = uuid(250);
+        assertEquals(RpgSkillPaymentService.Status.SUCCESS,
+                RpgSkillPaymentService.begin(
+                        platform, PLAYER, plan, COST, 2_000, transaction, 0, 10_000).status());
+        assertEquals(RpgSkillService.Status.SUCCESS,
+                RpgSkillService.applyReset(
+                        applied, definitions(), PLAYER, plan, COST, 2_000, transaction).status());
+        assertEquals(RpgSkillPaymentService.Status.SUCCESS,
+                RpgSkillPaymentService.complete(platform, PLAYER, transaction, 2_100).status());
+        platform = roundTrip(PlatformSavedData.CODEC, platform);
+        RpgPlayerSavedData olderRpgRoot = roundTrip(RpgPlayerSavedData.CODEC, learnedState(1));
+
+        RpgSkillResetCoordinator.recoverPlayer(
+                platform, olderRpgRoot, definitions(), PLAYER, 3_000, 0, 10_000);
+
+        assertTrue(olderRpgRoot.state(PLAYER).careers().get(WARRIOR).learnedSkills().isEmpty());
+        assertEquals(1, olderRpgRoot.state(PLAYER).careers().get(WARRIOR).skillPoints());
+        assertEquals(1_500, platform.economyBalance(PLAYER).orElseThrow());
+        assertEquals(RpgSkillOperation.Phase.COMPLETED,
+                platform.rpgSkillOperation(transaction).orElseThrow().phase());
+    }
+
+    @Test
     void recoversPaymentWhenRpgRootReachedDiskFirst() {
         PlatformSavedData platform = fundedPlatform();
         RpgPlayerSavedData rpg = learnedState(1);
@@ -88,6 +115,49 @@ final class RpgSkillResetCoordinatorTest {
         RpgSkillOperation operation = platform.rpgSkillOperation(transaction).orElseThrow();
         assertEquals(RpgSkillOperation.Phase.COMPLETED, operation.phase());
         assertTrue(operation.plan().isEmpty());
+    }
+
+    @Test
+    void expiredResetEvidenceCannotRecreateADeletedPayment() {
+        PlatformSavedData platform = fundedPlatform();
+        RpgPlayerSavedData rpg = learnedState(1);
+        SkillResetPlan plan = plan(rpg);
+        UUID transaction = uuid(350);
+        assertEquals(RpgSkillService.Status.SUCCESS,
+                RpgSkillService.applyReset(
+                        rpg, definitions(), PLAYER, plan, COST, 2_000, transaction).status());
+
+        RpgSkillResetCoordinator.recoverPlayer(
+                platform, rpg, definitions(), PLAYER,
+                2_000 + 31L * 24 * 60 * 60 * 1_000, 0, 10_000);
+
+        assertEquals(2_000, platform.economyBalance(PLAYER).orElseThrow());
+        assertTrue(platform.rpgSkillOperation(transaction).isEmpty());
+    }
+
+    @Test
+    void unrelatedProvenanceWithTheResetUuidCannotCompletePayment() {
+        PlatformSavedData platform = fundedPlatform();
+        RpgPlayerSavedData rpg = learnedState(1);
+        SkillResetPlan plan = plan(rpg);
+        UUID transaction = uuid(375);
+        assertEquals(RpgSkillPaymentService.Status.SUCCESS,
+                RpgSkillPaymentService.begin(
+                        platform, PLAYER, plan, COST, 2_000, transaction, 0, 10_000).status());
+        RpgPlayerState current = rpg.state(PLAYER);
+        RpgPlayerState.ProgressionProvenance unrelated = new RpgPlayerState.ProgressionProvenance(
+                RpgPlayerState.ProgressionProvenance.Kind.CAREER_SWITCH,
+                WARRIOR, 0, 2_000, transaction, "crafted_collision");
+        assertTrue(rpg.commit(PLAYER, new RpgPlayerState(
+                current.activityXp(), current.careers(), current.activeCareer(), current.activeSkillSlots(),
+                current.cooldowns(), current.explorationDiscoveries(), current.provenance(), List.of(unrelated))));
+
+        RpgSkillResetCoordinator.recoverPlayer(
+                platform, rpg, definitions(), PLAYER, 3_000, 0, 10_000);
+
+        assertEquals(Map.of(STRIKE, 1), rpg.state(PLAYER).careers().get(WARRIOR).learnedSkills());
+        assertEquals(RpgSkillOperation.Phase.PENDING,
+                platform.rpgSkillOperation(transaction).orElseThrow().phase());
     }
 
     @Test

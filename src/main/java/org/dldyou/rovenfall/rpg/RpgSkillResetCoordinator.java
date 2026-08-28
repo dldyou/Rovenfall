@@ -70,21 +70,22 @@ public final class RpgSkillResetCoordinator {
         RpgSkillOperation existing = platform.rpgSkillOperation(transactionId).orElse(null);
         SkillResetPlan plan;
         if (existing != null) {
-            if (!existing.playerId().equals(playerId) || existing.mode() != mode
+            if (existing.kind() != RpgSkillOperation.Kind.SKILL_RESET
+                    || !existing.playerId().equals(playerId) || existing.mode() != mode
                     || !existing.target().equals(target) || existing.cost() != cost) {
                 return new Result(Status.PAYMENT_FAILED, RpgSkillService.Status.STATE_CONFLICT,
                         Optional.of(RpgSkillPaymentService.Status.TRANSACTION_CONFLICT), cost,
                         platform.economyBalance(playerId).orElse(0L), transactionId);
             }
-            if (existing.phase() == RpgSkillOperation.Phase.COMPLETED
-                    && RpgSkillService.hasTransaction(rpg.state(playerId), transactionId)) {
-                return new Result(Status.SUCCESS, RpgSkillService.Status.DUPLICATE,
-                        Optional.of(RpgSkillPaymentService.Status.DUPLICATE_COMPLETED), cost,
-                        platform.economyBalance(playerId).orElse(0L), transactionId);
-            }
             plan = existing.plan().orElse(null);
             if (plan == null) {
                 return new Result(Status.RPG_FAILED, RpgSkillService.Status.STATE_CONFLICT,
+                        Optional.of(RpgSkillPaymentService.Status.DUPLICATE_COMPLETED), cost,
+                        platform.economyBalance(playerId).orElse(0L), transactionId);
+            }
+            if (existing.phase() == RpgSkillOperation.Phase.COMPLETED
+                    && RpgSkillService.hasResetEvidence(rpg.state(playerId), plan, cost, transactionId)) {
+                return new Result(Status.SUCCESS, RpgSkillService.Status.DUPLICATE,
                         Optional.of(RpgSkillPaymentService.Status.DUPLICATE_COMPLETED), cost,
                         platform.economyBalance(playerId).orElse(0L), transactionId);
             }
@@ -107,8 +108,9 @@ public final class RpgSkillResetCoordinator {
         SkillResetPlan paidPlan = payment.operation().flatMap(RpgSkillOperation::plan).orElse(plan);
         RpgSkillService.Result applied = RpgSkillService.applyReset(
                 rpg, definitions, playerId, paidPlan, cost, timestampEpochMillis, transactionId);
-        if (applied.status() != RpgSkillService.Status.SUCCESS
-                && applied.status() != RpgSkillService.Status.DUPLICATE) {
+        boolean exactDuplicate = applied.status() == RpgSkillService.Status.DUPLICATE
+                && RpgSkillService.hasResetEvidence(rpg.state(playerId), paidPlan, cost, transactionId);
+        if (applied.status() != RpgSkillService.Status.SUCCESS && !exactDuplicate) {
             return new Result(Status.RPG_FAILED, applied.status(), Optional.of(payment.status()),
                     cost, payment.balance(), transactionId);
         }
@@ -151,24 +153,36 @@ public final class RpgSkillResetCoordinator {
             LOGGER.error("RPG skill reset recovery is disabled because persistence is read-only");
             return;
         }
-        for (var entry : platform.pendingRpgSkillOperations(playerId)) {
+        for (var entry : platform.rpgSkillOperations(playerId)) {
             RpgSkillOperation operation = entry.getValue();
+            if (operation.kind() != RpgSkillOperation.Kind.SKILL_RESET) {
+                continue;
+            }
             SkillResetPlan plan = operation.plan().orElse(null);
             if (plan == null) {
-                LOGGER.error("Pending RPG skill reset {} has no plan", entry.getKey());
+                LOGGER.error("RPG skill reset {} cannot be recovered because its exact plan is absent", entry.getKey());
+                continue;
+            }
+            if (operation.phase() == RpgSkillOperation.Phase.COMPLETED
+                    && RpgSkillService.hasResetEvidence(
+                    rpg.state(playerId), plan, operation.cost(), entry.getKey())) {
                 continue;
             }
             RpgSkillService.Result applied = RpgSkillService.applyReset(
                     rpg, definitions, playerId, plan,
                     operation.cost(), operation.timestampEpochMillis(), entry.getKey());
-            if (applied.status() == RpgSkillService.Status.SUCCESS
-                    || applied.status() == RpgSkillService.Status.DUPLICATE) {
-                RpgSkillPaymentService.Result completed = RpgSkillPaymentService.complete(
-                        platform, playerId, entry.getKey(), timestampEpochMillis);
-                if (completed.status() != RpgSkillPaymentService.Status.SUCCESS
-                        && completed.status() != RpgSkillPaymentService.Status.DUPLICATE_COMPLETED) {
-                    LOGGER.error("Could not complete recovered RPG skill reset {} ({})",
-                            entry.getKey(), completed.status());
+            boolean exactDuplicate = applied.status() == RpgSkillService.Status.DUPLICATE
+                    && RpgSkillService.hasResetEvidence(
+                    rpg.state(playerId), plan, operation.cost(), entry.getKey());
+            if (applied.status() == RpgSkillService.Status.SUCCESS || exactDuplicate) {
+                if (operation.phase() == RpgSkillOperation.Phase.PENDING) {
+                    RpgSkillPaymentService.Result completed = RpgSkillPaymentService.complete(
+                            platform, playerId, entry.getKey(), timestampEpochMillis);
+                    if (completed.status() != RpgSkillPaymentService.Status.SUCCESS
+                            && completed.status() != RpgSkillPaymentService.Status.DUPLICATE_COMPLETED) {
+                        LOGGER.error("Could not complete recovered RPG skill reset {} ({})",
+                                entry.getKey(), completed.status());
+                    }
                 }
             } else {
                 LOGGER.error("Could not apply recovered RPG skill reset {} ({})", entry.getKey(), applied.status());
@@ -183,6 +197,9 @@ public final class RpgSkillResetCoordinator {
             SkillResetPlan.Mode mode = parseMode(evidence.source()).orElse(null);
             if (mode == null) {
                 LOGGER.error("RPG skill reset {} has invalid recovery evidence", evidence.transactionId());
+                continue;
+            }
+            if (!PlatformSavedData.isEconomyRecoveryWindow(evidence.timestamp(), timestampEpochMillis)) {
                 continue;
             }
             RpgSkillPaymentService.Result recovered = RpgSkillPaymentService.recoverCompleted(
@@ -206,7 +223,12 @@ public final class RpgSkillResetCoordinator {
         if (source == null || !source.startsWith("skill_reset:")) {
             return Optional.empty();
         }
-        String value = source.substring("skill_reset:".length()).toUpperCase(Locale.ROOT);
+        String value = source.substring("skill_reset:".length());
+        int fingerprintSeparator = value.indexOf(':');
+        if (fingerprintSeparator >= 0) {
+            value = value.substring(0, fingerprintSeparator);
+        }
+        value = value.toUpperCase(Locale.ROOT);
         try {
             return Optional.of(SkillResetPlan.Mode.valueOf(value));
         } catch (IllegalArgumentException exception) {

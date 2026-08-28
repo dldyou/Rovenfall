@@ -5,16 +5,15 @@ import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.resources.Identifier;
 import org.dldyou.rovenfall.Rovenfall;
-import org.dldyou.rovenfall.rpg.RpgPlayerState;
-import org.dldyou.rovenfall.rpg.SkillResetPlan;
+import org.dldyou.rovenfall.rpg.CareerDefinition;
 
-/** Economy-side half of a paid skill reset. RPG mutations are deliberately not reversible here. */
-public final class RpgSkillPaymentService {
+/** Durable economy half of a paid career promotion. */
+public final class CareerPromotionPaymentService {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
-    private static final Identifier PAYMENT = action("rpg_skill_reset_payment");
-    private static final Identifier PAYMENT_RECOVERED = action("rpg_skill_reset_payment_recovered");
-    private static final Identifier COMPLETED = action("rpg_skill_reset_completed");
-    private static final Identifier PAYMENT_DENIED = action("rpg_skill_reset_payment_denied");
+    private static final Identifier PAYMENT = action("career_promotion_payment");
+    private static final Identifier PAYMENT_RECOVERED = action("career_promotion_payment_recovered");
+    private static final Identifier COMPLETED = action("career_promotion_completed");
+    private static final Identifier PAYMENT_DENIED = action("career_promotion_payment_denied");
 
     public enum Status {
         SUCCESS,
@@ -41,42 +40,35 @@ public final class RpgSkillPaymentService {
         }
     }
 
-    private RpgSkillPaymentService() {
+    private CareerPromotionPaymentService() {
     }
 
     public static Result begin(
             PlatformSavedData state,
             UUID playerId,
-            SkillResetPlan plan,
+            Identifier careerId,
             long cost,
             long timestampEpochMillis,
             UUID transactionId,
             long initialBalance,
             long maximumBalance) {
-        if (plan == null || !plan.isValid()) {
-            return result(Status.INVALID_REQUEST, 0, 0, null, false);
-        }
-        RpgSkillOperation operation = new RpgSkillOperation(
-                playerId, plan.mode(), plan.target(), cost, timestampEpochMillis,
-                Optional.of(plan), RpgSkillOperation.Phase.PENDING);
-        return pay(state, operation, transactionId, initialBalance, maximumBalance, false);
+        return pay(state, RpgSkillOperation.careerPromotion(
+                        playerId, careerId, cost, timestampEpochMillis, RpgSkillOperation.Phase.PENDING),
+                transactionId, initialBalance, maximumBalance, false);
     }
 
-    /** Recreates the economy half when the RPG root reached disk before the platform root. */
     public static Result recoverCompleted(
             PlatformSavedData state,
             UUID playerId,
-            SkillResetPlan.Mode mode,
-            Identifier target,
+            Identifier careerId,
             long cost,
             long timestampEpochMillis,
             UUID transactionId,
             long initialBalance,
             long maximumBalance) {
-        RpgSkillOperation operation = new RpgSkillOperation(
-                playerId, mode, target, cost, timestampEpochMillis,
-                Optional.empty(), RpgSkillOperation.Phase.COMPLETED);
-        return pay(state, operation, transactionId, initialBalance, maximumBalance, true);
+        return pay(state, RpgSkillOperation.careerPromotion(
+                        playerId, careerId, cost, timestampEpochMillis, RpgSkillOperation.Phase.COMPLETED),
+                transactionId, initialBalance, maximumBalance, true);
     }
 
     public static Result complete(
@@ -93,17 +85,14 @@ public final class RpgSkillPaymentService {
         }
         RpgSkillOperation operation = state.rpgSkillOperation(transactionId).orElse(null);
         long balance = state.economyBalance(playerId).orElse(0L);
-        if (operation == null || operation.kind() != RpgSkillOperation.Kind.SKILL_RESET
+        if (operation == null || operation.kind() != RpgSkillOperation.Kind.CAREER_PROMOTION
                 || !operation.playerId().equals(playerId)) {
             return result(Status.STATE_CONFLICT, balance, balance, operation, false);
         }
         if (operation.phase() == RpgSkillOperation.Phase.COMPLETED) {
             return result(Status.DUPLICATE_COMPLETED, balance, balance, operation, false);
         }
-        EconomyTransactionReceipt receipt = state.economyReceipt(transactionId).orElse(null);
-        if (receipt == null || !receipt.actorId().equals(AdministrationService.SYSTEM_ACTOR)
-                || receipt.kind() != EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT
-                || !receipt.playerId().equals(playerId) || receipt.amount() != operation.cost()) {
+        if (!receiptMatches(state, transactionId, operation)) {
             return result(Status.STATE_CONFLICT, balance, balance, operation, false);
         }
         state.completeRpgSkillOperation(transactionId, operation, audit(
@@ -119,11 +108,12 @@ public final class RpgSkillPaymentService {
             long initialBalance,
             long maximumBalance,
             boolean recovered) {
-        if (state == null || operation.kind() != RpgSkillOperation.Kind.SKILL_RESET
+        if (state == null || operation.kind() != RpgSkillOperation.Kind.CAREER_PROMOTION
                 || operation.playerId() == null || ZERO_UUID.equals(operation.playerId())
-                || operation.mode() == null || operation.target() == null || operation.cost() < 1
-                || operation.cost() > RpgPlayerState.MAX_XP || operation.timestampEpochMillis() < 0
-                || transactionId == null || ZERO_UUID.equals(transactionId)) {
+                || operation.target() == null || operation.cost() < 1
+                || operation.cost() > CareerDefinition.MAX_PROMOTION_COST
+                || operation.timestampEpochMillis() < 0 || transactionId == null
+                || ZERO_UUID.equals(transactionId)) {
             return result(Status.INVALID_REQUEST, 0, 0, null, false);
         }
         if (!state.isWritable()) {
@@ -132,13 +122,9 @@ public final class RpgSkillPaymentService {
         long before = state.economyBalance(operation.playerId()).orElse(Math.max(0, initialBalance));
         RpgSkillOperation existing = state.rpgSkillOperation(transactionId).orElse(null);
         if (existing != null) {
-            boolean matches = existing.kind() == RpgSkillOperation.Kind.SKILL_RESET && (recovered
-                    ? existing.playerId().equals(operation.playerId())
-                    && existing.mode() == operation.mode()
-                    && existing.target().equals(operation.target())
-                    && existing.cost() == operation.cost()
-                    : existing.matches(operation.playerId(), operation.plan().orElseThrow(), operation.cost()));
-            if (!matches || !receiptMatches(state, transactionId, operation)) {
+            boolean matches = existing.matchesPromotion(
+                    operation.playerId(), operation.target(), operation.cost());
+            if (!matches || !receiptMatches(state, transactionId, existing)) {
                 return denied(state, operation, transactionId, Status.TRANSACTION_CONFLICT, before);
             }
             Status duplicate = existing.phase() == RpgSkillOperation.Phase.COMPLETED
@@ -164,7 +150,7 @@ public final class RpgSkillPaymentService {
         long after = before - operation.cost();
         EconomyTransactionReceipt receipt = new EconomyTransactionReceipt(
                 operation.timestampEpochMillis(), AdministrationService.SYSTEM_ACTOR, operation.playerId(),
-                EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT, operation.cost(), Optional.empty(),
+                EconomyTransactionReceipt.Kind.CAREER_PROMOTION_PAYMENT, operation.cost(), Optional.empty(),
                 Optional.empty(), Optional.empty(), Optional.empty(), 0, Optional.empty(), Optional.empty(),
                 Optional.empty(), Optional.empty(), Optional.empty(),
                 EconomyTransactionReceipt.CompensationDecision.NONE);
@@ -173,7 +159,7 @@ public final class RpgSkillPaymentService {
         state.commitRpgSkillPayment(
                 operation.playerId(), after, transactionId, operation.timestampEpochMillis(), receipt, alerts,
                 operation, audit(operation.timestampEpochMillis(), recovered ? PAYMENT_RECOVERED : PAYMENT,
-                        operation, before, after, recovered ? "rpg_evidence_recovery" : "paid_skill_reset",
+                        operation, before, after, recovered ? "rpg_evidence_recovery" : "paid_career_promotion",
                         transactionId));
         EconomyMonitoringService.publish(alerts);
         return result(Status.SUCCESS, before, after, operation, true);
@@ -183,10 +169,10 @@ public final class RpgSkillPaymentService {
             PlatformSavedData state, UUID transactionId, RpgSkillOperation operation) {
         EconomyTransactionReceipt receipt = state.economyReceipt(transactionId).orElse(null);
         return receipt != null
-                && operation.kind() == RpgSkillOperation.Kind.SKILL_RESET
+                && operation.kind() == RpgSkillOperation.Kind.CAREER_PROMOTION
                 && receipt.actorId().equals(AdministrationService.SYSTEM_ACTOR)
                 && receipt.playerId().equals(operation.playerId())
-                && receipt.kind() == EconomyTransactionReceipt.Kind.RPG_SKILL_PAYMENT
+                && receipt.kind() == EconomyTransactionReceipt.Kind.CAREER_PROMOTION_PAYMENT
                 && receipt.amount() == operation.cost();
     }
 
@@ -200,16 +186,12 @@ public final class RpgSkillPaymentService {
             UUID transactionId) {
         return new AuditEntry(
                 timestamp, AdministrationService.SYSTEM_ACTOR, action,
-                operation.playerId() + ":" + operation.mode().getSerializedName() + ":" + operation.target(),
-                Optional.empty(), Optional.empty(), Long.toString(before), Long.toString(after), reason, transactionId);
+                operation.playerId() + ":" + operation.target(), Optional.empty(), Optional.empty(),
+                Long.toString(before), Long.toString(after), reason, transactionId);
     }
 
     private static Result result(
-            Status status,
-            long before,
-            long after,
-            RpgSkillOperation operation,
-            boolean committed) {
+            Status status, long before, long after, RpgSkillOperation operation, boolean committed) {
         return new Result(status, before, after, Optional.ofNullable(operation), committed);
     }
 

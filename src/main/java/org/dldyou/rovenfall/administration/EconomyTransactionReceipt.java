@@ -134,6 +134,7 @@ public record EconomyTransactionReceipt(
         SALE("sale"),
         CLAIM_PURCHASE("claim_purchase"),
         CLAIM_SALE("claim_sale"),
+        CAREER_PROMOTION_PAYMENT("career_promotion_payment"),
         RPG_SKILL_PAYMENT("rpg_skill_payment"),
         BOSS_REWARD("boss_reward"),
         REVERSAL("reversal");

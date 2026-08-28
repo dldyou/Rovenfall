@@ -12,6 +12,7 @@ import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.IdentifierArgument;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import org.dldyou.rovenfall.administration.CareerPromotionPaymentService;
 import org.dldyou.rovenfall.administration.RpgSkillPaymentService;
 
 /** Player-facing career and skill commands. All mutations remain in server-owned service boundaries. */
@@ -95,16 +96,25 @@ public final class RpgCommands {
     }
 
     private static int promote(CommandSourceStack source, Identifier careerId) throws CommandSyntaxException {
-        var result = CareerProgressionService.promote(
-                RpgPlayerSavedData.get(source.getServer()),
-                RpgDefinitionReloadListener.snapshot(source.getServer()),
-                source.getPlayerOrException().getUUID(),
-                careerId,
-                Instant.now().toEpochMilli(),
-                UUID.randomUUID(),
-                "player_command");
+        var coordinated = PlayerCareerPromotionService.promote(
+                source.getServer(), source.getPlayerOrException().getUUID(), careerId,
+                Instant.now().toEpochMilli());
+        if (coordinated.status() == PlayerCareerPromotionService.Status.PAYMENT_FAILED) {
+            if (coordinated.paymentStatus().orElse(null)
+                    == CareerPromotionPaymentService.Status.INSUFFICIENT_FUNDS) {
+                return failure(source, "command.rovenfall.career.promote.error.funds",
+                        coordinated.cost(), coordinated.balance());
+            }
+            return failure(source, "command.rovenfall.career.error.failed",
+                    coordinated.paymentStatus().map(value -> value.name().toLowerCase(java.util.Locale.ROOT))
+                            .orElse("payment_failed"));
+        }
+        if (coordinated.status() == PlayerCareerPromotionService.Status.COMPLETION_FAILED) {
+            return failure(source, "command.rovenfall.career.error.failed", "completion_failed");
+        }
+        var result = coordinated.promotion();
         return switch (result.status()) {
-            case SUCCESS -> success(source, "command.rovenfall.career.promote.success",
+            case SUCCESS, DUPLICATE -> success(source, "command.rovenfall.career.promote.success",
                     careerName(source, careerId), result.transactionId());
             case MISSING_PARENT -> failure(source, "command.rovenfall.career.promote.error.missing_parent",
                     careerName(source, result.blocker().orElseThrow()));
@@ -119,7 +129,6 @@ public final class RpgCommands {
             case UNKNOWN_CAREER -> failure(source, "command.rovenfall.career.error.unknown", careerId);
             case READ_ONLY -> failure(source, "command.rovenfall.career.error.read_only");
             case STATE_FULL -> failure(source, "command.rovenfall.career.error.state_full");
-            case DUPLICATE -> failure(source, "command.rovenfall.career.error.duplicate");
             case INVALID_REQUEST, ALREADY_ACTIVE, CAREER_NOT_PROMOTED -> failure(
                     source, "command.rovenfall.career.error.failed",
                     result.status().name().toLowerCase(java.util.Locale.ROOT));
