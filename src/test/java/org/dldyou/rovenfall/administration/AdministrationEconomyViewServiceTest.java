@@ -38,6 +38,54 @@ final class AdministrationEconomyViewServiceTest {
         assertTrue(AdministrationEconomyViewService.players(state, id(9), true, "", 0).entries().isEmpty());
     }
 
+    @Test
+    void boundedPlayerSearchIsDeterministicAndExactUuidBypassesTheWindow() {
+        PlatformSavedData state = new PlatformSavedData();
+        UUID actor = id(1);
+        UUID target = new UUID(Long.MIN_VALUE, 2_047L);
+        AdministrationService.changeRole(
+                state, AdministrationService.SYSTEM_ACTOR, true, actor, "viewer",
+                "bootstrap", 1_000, id(101));
+        for (long value = 10; value < 1_010; value++) {
+            PlayerRecordService.observeLogin(state, id(value), "Player" + value, value + 2_000);
+        }
+        PlayerRecordService.observeLogin(state, target, "NeedleHero", 4_000);
+
+        var byName = AdministrationEconomyViewService.players(state, actor, false, "needlehero", 0);
+        var byId = AdministrationEconomyViewService.players(state, actor, false, target.toString(), 0);
+
+        assertEquals(target, byName.entries().getFirst().playerId());
+        assertEquals(target, byId.entries().getFirst().playerId());
+        assertTrue(byName.truncated());
+        assertTrue(!byId.truncated());
+    }
+
+    @Test
+    void exactReceiptLookupBypassesTheRecentWindow() {
+        PlatformSavedData state = new PlatformSavedData();
+        UUID actor = id(1);
+        UUID player = id(2);
+        UUID target = new UUID(Long.MIN_VALUE, 2_047L);
+        AdministrationService.changeRole(
+                state, AdministrationService.SYSTEM_ACTOR, true, actor, "viewer",
+                "bootstrap", 1_000, id(101));
+        for (long value = 10; value < 1_010; value++) {
+            EconomyService.award(
+                    state, player, 1, "bounded lookup", value + 2_000, id(value + 10_000),
+                    0, EconomyConfig.DEFAULT_MAXIMUM_BALANCE);
+        }
+        EconomyService.award(
+                state, player, 1, "bounded lookup", 4_000, target,
+                0, EconomyConfig.DEFAULT_MAXIMUM_BALANCE);
+
+        var page = AdministrationEconomyViewService.receipts(
+                state, actor, false, null, target.toString(), 0);
+
+        assertEquals(1, page.totalEntries());
+        assertEquals(target, page.entries().getFirst().transactionId());
+        assertTrue(!page.truncated());
+    }
+
     private static UUID id(long value) {
         return new UUID(0L, value);
     }

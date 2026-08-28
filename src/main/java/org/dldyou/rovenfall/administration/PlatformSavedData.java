@@ -318,8 +318,8 @@ public final class PlatformSavedData extends SavedData {
             throw new IllegalArgumentException("Player record query must be bounded");
         }
         return playerRecords.entrySet().stream()
-                .limit(maximumEntries)
                 .sorted(Map.Entry.comparingByKey())
+                .limit(maximumEntries)
                 .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
                 .toList();
     }
@@ -366,8 +366,8 @@ public final class PlatformSavedData extends SavedData {
             throw new IllegalArgumentException("Claim query must be bounded");
         }
         return claims.entrySet().stream()
-                .limit(maximumEntries)
                 .sorted(Comparator.comparing(entry -> entry.getKey().auditTarget()))
+                .limit(maximumEntries)
                 .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
                 .toList();
     }
@@ -417,8 +417,8 @@ public final class PlatformSavedData extends SavedData {
             throw new IllegalArgumentException("Portal query must be bounded");
         }
         return portalDefinitions.entrySet().stream()
-                .limit(maximumEntries)
                 .sorted(Map.Entry.comparingByKey())
+                .limit(maximumEntries)
                 .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
                 .toList();
     }
@@ -559,8 +559,8 @@ public final class PlatformSavedData extends SavedData {
             throw new IllegalArgumentException("Shop query must be bounded");
         }
         return shopInstances.entrySet().stream()
-                .limit(maximumEntries)
                 .sorted(Map.Entry.comparingByKey())
+                .limit(maximumEntries)
                 .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
                 .toList();
     }
@@ -574,10 +574,10 @@ public final class PlatformSavedData extends SavedData {
             throw new IllegalArgumentException("Receipt query must be bounded");
         }
         return economyReceipts.entrySet().stream()
-                .limit(maximumEntries)
                 .sorted(Comparator.<Map.Entry<UUID, EconomyTransactionReceipt>>comparingLong(
                                 entry -> entry.getValue().timestampEpochMillis())
                         .reversed().thenComparing(Map.Entry::getKey))
+                .limit(maximumEntries)
                 .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
                 .toList();
     }

@@ -20,6 +20,15 @@ final class AdministrationEconomyViewService {
         if (!authorized(state, actorId, authorizationOverride)) {
             return Page.denied(page);
         }
+        UUID exactPlayerId = parseUuid(query);
+        if (exactPlayerId != null) {
+            List<PlayerRow> exact = state.playerRecord(exactPlayerId).stream()
+                    .map(record -> new PlayerRow(
+                            exactPlayerId, record.displayName().orElse(""), state.economyBalance(exactPlayerId),
+                            record.firstSeenEpochMillis(), record.lastSeenEpochMillis()))
+                    .toList();
+            return filterAndPage(exact, query, page, false, row -> row.displayName() + " " + row.playerId());
+        }
         List<PlayerRow> source = state.playerRecords(MAX_SCANNED_ROWS).stream()
                 .map(entry -> new PlayerRow(
                         entry.getKey(), entry.getValue().displayName().orElse(""),
@@ -55,6 +64,16 @@ final class AdministrationEconomyViewService {
         if (!authorized(state, actorId, authorizationOverride)) {
             return Page.denied(page);
         }
+        UUID exactTransactionId = parseUuid(query);
+        if (exactTransactionId != null) {
+            List<ReceiptRow> exact = state.economyReceipt(exactTransactionId).stream()
+                    .map(receipt -> new ReceiptRow(exactTransactionId, receipt))
+                    .filter(row -> playerFilter == null || row.receipt().playerId().equals(playerFilter))
+                    .toList();
+            return filterAndPage(exact, query, page, false,
+                    row -> row.transactionId() + " " + row.receipt().playerId() + " "
+                            + row.receipt().kind().getSerializedName());
+        }
         List<ReceiptRow> source = state.economyReceipts(MAX_SCANNED_ROWS).stream()
                 .map(entry -> new ReceiptRow(entry.getKey(), entry.getValue()))
                 .filter(row -> playerFilter == null || row.receipt().playerId().equals(playerFilter))
@@ -66,6 +85,17 @@ final class AdministrationEconomyViewService {
 
     static boolean authorized(PlatformSavedData state, UUID actorId, boolean authorizationOverride) {
         return state != null && actorId != null && (authorizationOverride || state.hasAdminRole(actorId));
+    }
+
+    private static UUID parseUuid(String query) {
+        if (query == null) {
+            return null;
+        }
+        try {
+            return UUID.fromString(query.strip());
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 
     private static <T> Page<T> filterAndPage(
