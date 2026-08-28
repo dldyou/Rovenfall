@@ -22,10 +22,12 @@ import org.slf4j.Logger;
 public final class PlayerMenuNetwork {
     static final int PACKET_REVISION = 1;
     static final int MIN_OPEN_INTERVAL_TICKS = 5;
+    static final int MIN_MUTATION_INTERVAL_TICKS = 20;
     static final int MAX_OPEN_PACKET_BYTES = 10;
     private static final String NETWORK_VERSION = "1";
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final Map<UUID, Long> LAST_OPEN_TICK = new HashMap<>();
+    private static final Map<UUID, Long> LAST_MUTATION_TICK = new HashMap<>();
     private static final Map<UUID, Long> LAST_REJECTION_AUDIT_TICK = new HashMap<>();
 
     private PlayerMenuNetwork() {
@@ -38,12 +40,27 @@ public final class PlayerMenuNetwork {
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         UUID playerId = event.getEntity().getUUID();
         LAST_OPEN_TICK.remove(playerId);
+        LAST_MUTATION_TICK.remove(playerId);
         LAST_REJECTION_AUDIT_TICK.remove(playerId);
     }
 
     static boolean canOpen(Long lastOpenTick, long gameTick) {
         return lastOpenTick == null || gameTick < lastOpenTick
                 || gameTick - lastOpenTick >= MIN_OPEN_INTERVAL_TICKS;
+    }
+
+    static boolean canMutate(Long lastMutationTick, long gameTick) {
+        return lastMutationTick == null || gameTick < lastMutationTick
+                || gameTick - lastMutationTick >= MIN_MUTATION_INTERVAL_TICKS;
+    }
+
+    static boolean beginMutation(UUID playerId, long gameTick) {
+        Long lastMutationTick = LAST_MUTATION_TICK.get(playerId);
+        if (!canMutate(lastMutationTick, gameTick)) {
+            return false;
+        }
+        LAST_MUTATION_TICK.put(playerId, gameTick);
+        return true;
     }
 
     private static void handleOpen(Open payload, IPayloadContext context) {
@@ -72,7 +89,7 @@ public final class PlayerMenuNetwork {
         LAST_OPEN_TICK.put(player.getUUID(), gameTick);
         switch (target.orElseThrow()) {
             case OVERVIEW -> PlayerDashboardMenu.open(player);
-            case CLAIMS -> PlayerDashboardMenu.open(player, PlayerDashboardMenu.Page.CLAIMS);
+            case CLAIMS -> PlayerClaimMenu.open(player);
             case SKILLS -> PlayerDashboardMenu.open(player, PlayerDashboardMenu.Page.RPG);
             case SHOPS -> PlayerShopMenu.open(player);
         }

@@ -441,13 +441,26 @@ public final class ClaimManagementService {
         return result(Status.NO_CHANGE, transactionId, 0, state.economyBalance(actorId).orElse(0L), true);
     }
 
-    private static boolean canManage(
+    static boolean canManage(
             PlatformSavedData state, Claim claim, UUID actorId, boolean authorizationOverride) {
         if (claim.roleOf(actorId).atLeast(ClaimRole.MANAGER)) {
             return true;
         }
         AdminRole adminRole = state.roleOf(actorId).orElse(null);
         return authorizationOverride || adminRole == AdminRole.MODERATOR || adminRole == AdminRole.OWNER;
+    }
+
+    static Result rejectUnauthorizedIntent(
+            PlatformSavedData state,
+            UUID actorId,
+            ClaimKey key,
+            String payload,
+            long timestampEpochMillis) {
+        if (!state.isWritable()) {
+            return result(Status.READ_ONLY_SCHEMA, null, 0, 0, false);
+        }
+        return denied(state, actorId, key, Status.UNAUTHORIZED, "unauthorized",
+                payload, timestampEpochMillis, UUID.randomUUID());
     }
 
     private static Result denied(
@@ -513,7 +526,7 @@ public final class ClaimManagementService {
                 + ";pending_transfer=" + claim.pendingTransferTo().map(UUID::toString).orElse("none");
     }
 
-    private static long refund(long purchasePrice, int percent) {
+    static long refund(long purchasePrice, int percent) {
         long whole = Math.multiplyExact(purchasePrice / 100, percent);
         long remainder = Math.multiplyExact(purchasePrice % 100, percent) / 100;
         return Math.addExact(whole, remainder);
