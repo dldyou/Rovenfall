@@ -494,6 +494,7 @@
   "gui.rovenfall.claim.action.sale": "現在の土地を売却",
   "gui.rovenfall.claim.updated": "土地の状態を更新しました。",
   "gui.rovenfall.claim.error.stale": "チャンク、価格、所有権、または譲渡状態が変更されました。更新された土地を確認してから再試行してください。",
+  "gui.rovenfall.claim.error.rate_limit": "土地の状態を再度変更する前にしばらくお待ちください。",
   "gui.rovenfall.shop.title": "Rovenfall ショップ",
   "gui.rovenfall.shop.list": "利用可能なショップ",
   "gui.rovenfall.shop.offers": "商品数: %s",

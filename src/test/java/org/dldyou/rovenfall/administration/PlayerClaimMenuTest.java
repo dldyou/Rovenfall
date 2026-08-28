@@ -91,9 +91,35 @@ final class PlayerClaimMenuTest {
         assertEquals(PlayerClaimMenu.MAX_CANDIDATES, candidates.size());
         assertFalse(candidates.contains(owner));
         assertFalse(candidates.contains(excluded));
-        assertEquals(id(3), candidates.getFirst());
-        assertEquals(id(38), candidates.getLast());
+        assertEquals(id(15), candidates.getFirst());
+        assertEquals(id(50), candidates.getLast());
         assertEquals(candidates.size(), Set.copyOf(candidates).size());
+
+        List<UUID> excludedPrefix = new ArrayList<>();
+        for (long value = 1; value <= PlayerClaimMenu.MAX_CANDIDATE_SCAN; value++) {
+            excludedPrefix.add(owner);
+        }
+        excludedPrefix.add(id(999));
+        assertTrue(PlayerClaimMenu.boundedCandidateIds(excludedPrefix, owner, Set.of()).isEmpty());
+    }
+
+    @Test
+    void boundsMutationsAcrossMenuReopensAndRateLimitsDeniedAudit() {
+        assertTrue(PlayerMenuNetwork.canMutate(null, 100));
+        assertFalse(PlayerMenuNetwork.canMutate(100L, 119));
+        assertTrue(PlayerMenuNetwork.canMutate(100L, 120));
+
+        UUID actor = id(20);
+        PlatformSavedData state = new PlatformSavedData();
+        var first = ClaimManagementService.rejectUnauthorizedIntent(
+                state, actor, KEY, "gui=sale", 1_000);
+        var repeated = ClaimManagementService.rejectUnauthorizedIntent(
+                state, actor, KEY, "gui=sale", 1_500);
+        assertEquals(ClaimManagementService.Status.UNAUTHORIZED, first.status());
+        assertTrue(first.auditRecorded());
+        assertEquals(ClaimManagementService.Status.UNAUTHORIZED, repeated.status());
+        assertFalse(repeated.auditRecorded());
+        assertEquals(1, state.auditCount());
     }
 
     @Test

@@ -450,6 +450,19 @@ public final class ClaimManagementService {
         return authorizationOverride || adminRole == AdminRole.MODERATOR || adminRole == AdminRole.OWNER;
     }
 
+    static Result rejectUnauthorizedIntent(
+            PlatformSavedData state,
+            UUID actorId,
+            ClaimKey key,
+            String payload,
+            long timestampEpochMillis) {
+        if (!state.isWritable()) {
+            return result(Status.READ_ONLY_SCHEMA, null, 0, 0, false);
+        }
+        return denied(state, actorId, key, Status.UNAUTHORIZED, "unauthorized",
+                payload, timestampEpochMillis, UUID.randomUUID());
+    }
+
     private static Result denied(
             PlatformSavedData state,
             UUID actorId,

@@ -3,6 +3,7 @@ package org.dldyou.rovenfall.administration;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.EnumSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -30,6 +31,7 @@ import org.dldyou.rovenfall.world.WorldTopology;
 /** Server-owned current-chunk claim lifecycle exposed through a native menu. */
 public final class PlayerClaimMenu extends ChestMenu {
     static final int MAX_CANDIDATES = 36;
+    static final int MAX_CANDIDATE_SCAN = MAX_CANDIDATES * 4;
     static final int PAGE_SIZE = 36;
     private static final int MENU_SIZE = 54;
     private static final int CONTENT_START = 9;
@@ -189,13 +191,17 @@ public final class PlayerClaimMenu extends ChestMenu {
         if (onlinePlayers == null || ownerId == null || excluded == null) {
             return List.of();
         }
-        return onlinePlayers.stream()
-                .filter(java.util.Objects::nonNull)
-                .filter(id -> !id.equals(ownerId) && !excluded.contains(id))
-                .distinct()
-                .sorted()
-                .limit(MAX_CANDIDATES)
-                .toList();
+        Set<UUID> candidates = new LinkedHashSet<>();
+        int inspected = 0;
+        for (UUID id : onlinePlayers) {
+            if (inspected++ >= MAX_CANDIDATE_SCAN || candidates.size() >= MAX_CANDIDATES) {
+                break;
+            }
+            if (id != null && !id.equals(ownerId) && !excluded.contains(id)) {
+                candidates.add(id);
+            }
+        }
+        return candidates.stream().sorted().toList();
     }
 
     static boolean confirmationIsCurrent(
@@ -255,6 +261,8 @@ public final class PlayerClaimMenu extends ChestMenu {
                 if (actions.contains(PermissionAction.MANAGE_SETTINGS)) {
                     page = Page.SETTINGS;
                     render();
+                } else {
+                    rejectUnauthorized("open_settings");
                 }
             }
             case 23 -> {
@@ -262,6 +270,8 @@ public final class PlayerClaimMenu extends ChestMenu {
                     candidatePurpose = CandidatePurpose.TRUST;
                     page = Page.CANDIDATES;
                     render();
+                } else {
+                    rejectUnauthorized("open_trust");
                 }
             }
             case 25 -> {
@@ -273,12 +283,16 @@ public final class PlayerClaimMenu extends ChestMenu {
                     confirm(ConfirmationKind.TRANSFER_CANCEL, claim, 0, claim.pendingTransferTo().orElse(null));
                 } else if (actions.contains(PermissionAction.ACCEPT_TRANSFER)) {
                     confirm(ConfirmationKind.TRANSFER_ACCEPT, claim, 0, viewerId);
+                } else {
+                    rejectUnauthorized("transfer");
                 }
             }
             case 33 -> {
                 if (actions.contains(PermissionAction.SELL) && claim.purchasePrice() > 0) {
                     confirm(ConfirmationKind.SALE, claim, ClaimManagementService.refund(
                             claim.purchasePrice(), ClaimConfig.saleRefundPercent()), null);
+                } else if (!claim.ownerId().equals(viewerId)) {
+                    rejectUnauthorized("sale");
                 }
             }
             default -> {
@@ -298,6 +312,8 @@ public final class PlayerClaimMenu extends ChestMenu {
                 candidatePurpose = CandidatePurpose.TRUST;
                 page = Page.CANDIDATES;
                 render();
+            } else {
+                rejectUnauthorized("open_trust");
             }
             return;
         }
@@ -318,9 +334,7 @@ public final class PlayerClaimMenu extends ChestMenu {
             return;
         }
         if (!allowedActions(platform(), viewerId, claim).contains(PermissionAction.MANAGE_TRUST)) {
-            message("command.rovenfall.claim.error.unauthorized");
-            resetToOverview();
-            render();
+            rejectUnauthorized("manage_role");
             return;
         }
         ClaimRole role = switch (slot) {
@@ -330,6 +344,14 @@ public final class PlayerClaimMenu extends ChestMenu {
             case 25 -> ClaimRole.VISITOR;
             default -> null;
         };
+        if (slot != 31 && claim.trustedRoles().get(selectedPlayer) == role) {
+            message("command.rovenfall.claim.no_change");
+            render();
+            return;
+        }
+        if (!beginMutation()) {
+            return;
+        }
         ClaimManagementService.Result result = slot == 31
                 ? ClaimManagementService.removeRole(
                         platform(), viewerId, false, viewedKey, selectedPlayer,
@@ -360,6 +382,9 @@ public final class PlayerClaimMenu extends ChestMenu {
             case 24 -> new ClaimSettings(settings.entryRestricted(), !settings.publicInteractions());
             default -> settings;
         };
+        if (!beginMutation()) {
+            return;
+        }
         ClaimManagementService.Result result = ClaimManagementService.setSettings(
                 platform(), viewerId, false, viewedKey, updated,
                 "player claim GUI settings", now(), UUID.randomUUID());
@@ -381,7 +406,7 @@ public final class PlayerClaimMenu extends ChestMenu {
         }
         if (candidatePurpose == CandidatePurpose.TRANSFER) {
             if (!allowedActions(platform(), viewerId, claim).contains(PermissionAction.OFFER_TRANSFER)) {
-                stale();
+                rejectUnauthorized("transfer_offer");
                 return;
             }
             confirm(ConfirmationKind.TRANSFER_OFFER, claim, 0, target);
@@ -389,6 +414,9 @@ public final class PlayerClaimMenu extends ChestMenu {
         }
         if (claim.trustedRoles().containsKey(target)) {
             stale();
+            return;
+        }
+        if (!beginMutation()) {
             return;
         }
         ClaimManagementService.Result result = ClaimManagementService.setRole(
@@ -422,6 +450,9 @@ public final class PlayerClaimMenu extends ChestMenu {
         if (!confirmationIsCurrent(
                 currentKey(), platform().claim(viewedKey), confirmation, currentAmount)) {
             stale();
+            return;
+        }
+        if (!beginMutation()) {
             return;
         }
         Confirmation action = confirmation;
@@ -903,6 +934,24 @@ public final class PlayerClaimMenu extends ChestMenu {
 
     private void stale() {
         message("gui.rovenfall.claim.error.stale");
+        resetToOverview();
+        render();
+    }
+
+    private boolean beginMutation() {
+        if (PlayerMenuNetwork.beginMutation(viewerId, viewer.level().getGameTime())) {
+            return true;
+        }
+        message("gui.rovenfall.claim.error.rate_limit");
+        return false;
+    }
+
+    private void rejectUnauthorized(String payload) {
+        if (!beginMutation()) {
+            return;
+        }
+        showMutationResult(ClaimManagementService.rejectUnauthorizedIntent(
+                platform(), viewerId, viewedKey, "gui=" + payload, now()));
         resetToOverview();
         render();
     }

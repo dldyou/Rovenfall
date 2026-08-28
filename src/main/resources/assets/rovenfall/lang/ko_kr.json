@@ -494,6 +494,7 @@
   "gui.rovenfall.claim.action.sale": "현재 토지 매각",
   "gui.rovenfall.claim.updated": "토지 상태를 갱신했습니다.",
   "gui.rovenfall.claim.error.stale": "청크, 가격, 소유권 또는 양도 상태가 변경되었습니다. 갱신된 토지를 확인한 뒤 다시 시도하세요.",
+  "gui.rovenfall.claim.error.rate_limit": "토지 상태를 다시 변경하기 전에 잠시 기다리세요.",
   "gui.rovenfall.shop.title": "Rovenfall 상점",
   "gui.rovenfall.shop.list": "이용 가능한 상점",
   "gui.rovenfall.shop.offers": "상품: %s개",

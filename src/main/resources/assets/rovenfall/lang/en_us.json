@@ -494,6 +494,7 @@
   "gui.rovenfall.claim.action.sale": "Sell this claim",
   "gui.rovenfall.claim.updated": "Claim state updated.",
   "gui.rovenfall.claim.error.stale": "The chunk, price, ownership, or transfer state changed. Review the refreshed claim before trying again.",
+  "gui.rovenfall.claim.error.rate_limit": "Please wait before changing claim state again.",
   "gui.rovenfall.shop.title": "Rovenfall Shops",
   "gui.rovenfall.shop.list": "Accessible Shops",
   "gui.rovenfall.shop.offers": "Offers: %s",

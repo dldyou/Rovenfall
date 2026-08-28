@@ -94,6 +94,7 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.shop.stock.unlimited",
             "gui.rovenfall.claim.title",
             "gui.rovenfall.claim.error.stale",
+            "gui.rovenfall.claim.error.rate_limit",
             "command.rovenfall.admin.operations.summary",
             "command.rovenfall.admin.operations.anomalies",
             "command.rovenfall.admin.help.header",
