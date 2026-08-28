@@ -25,7 +25,8 @@ final class PlatformDataMigrations {
             Map.entry(9, state -> state.atVersion(10)),
             Map.entry(10, state -> state.atVersion(11)),
             Map.entry(11, state -> state.atVersion(12)),
-            Map.entry(12, state -> state.atVersion(13))
+            Map.entry(12, state -> state.atVersion(13)),
+            Map.entry(13, state -> state.atVersion(14))
     );
 
     private PlatformDataMigrations() {

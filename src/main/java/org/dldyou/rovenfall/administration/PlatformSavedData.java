@@ -32,7 +32,7 @@ import org.dldyou.rovenfall.world.WorldTopology;
 
 public final class PlatformSavedData extends SavedData {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
-    public static final int CURRENT_SCHEMA_VERSION = 13;
+    public static final int CURRENT_SCHEMA_VERSION = 14;
     public static final int MAX_PROTECTED_REGIONS = 128;
     public static final int MAX_INDEXED_PROTECTED_CHUNKS = 131_072;
     public static final int MAX_AUDIT_PAGE_SIZE = 50;
@@ -449,7 +449,7 @@ public final class PlatformSavedData extends SavedData {
 
     public List<Map.Entry<UUID, RpgSkillOperation>> pendingRpgSkillOperations(UUID playerId) {
         return rpgSkillOperations(playerId).stream()
-                .filter(entry -> entry.getValue().phase() == RpgSkillOperation.Phase.PENDING)
+                .filter(entry -> entry.getValue().phase() != RpgSkillOperation.Phase.COMPLETED)
                 .toList();
     }
 
@@ -905,7 +905,7 @@ public final class PlatformSavedData extends SavedData {
                 ? 0
                 : timestampEpochMillis - ECONOMY_TRANSACTION_RETENTION_MILLIS;
         long retained = rpgSkillOperations.values().stream()
-                .filter(operation -> operation.phase() == RpgSkillOperation.Phase.PENDING
+                .filter(operation -> operation.phase() != RpgSkillOperation.Phase.COMPLETED
                         || operation.timestampEpochMillis() >= cutoff)
                 .count();
         return retained < MAX_RPG_SKILL_OPERATIONS;
@@ -981,6 +981,7 @@ public final class PlatformSavedData extends SavedData {
         validateEvidence(playerId, transactionId, timestampEpochMillis, receipt, alerts);
         if (!operation.playerId().equals(playerId)
                 || operation.timestampEpochMillis() != timestampEpochMillis
+                || !operation.hasInventoryEvidence()
                 || receipt.kind() != operationReceiptKind(operation)
                 || !canCommitRpgSkillPayment(transactionId, timestampEpochMillis)) {
             throw new IllegalStateException("Paid RPG operation cannot be committed");
@@ -998,7 +999,7 @@ public final class PlatformSavedData extends SavedData {
         RpgSkillOperation current = rpgSkillOperations.get(transactionId);
         EconomyTransactionReceipt receipt = economyReceipts.get(transactionId);
         if (current == null || !current.equals(expected)
-                || current.phase() != RpgSkillOperation.Phase.PENDING
+                || current.phase() == RpgSkillOperation.Phase.COMPLETED
                 || receipt == null || receipt.kind() != operationReceiptKind(current)
                 || !receipt.actorId().equals(AdministrationService.SYSTEM_ACTOR)
                 || !receipt.playerId().equals(current.playerId()) || receipt.amount() != current.cost()) {
@@ -1399,6 +1400,7 @@ public final class PlatformSavedData extends SavedData {
             EconomyTransactionReceipt receipt = receipts.get(entry.getKey());
             Long timestamp = transactions.get(entry.getKey());
             if (receipt == null || receipt.kind() != operationReceiptKind(operation)
+                    || !operation.hasInventoryEvidence()
                     || !receipt.actorId().equals(AdministrationService.SYSTEM_ACTOR)
                     || !receipt.playerId().equals(operation.playerId()) || receipt.amount() != operation.cost()
                     || timestamp == null || timestamp != operation.timestampEpochMillis()

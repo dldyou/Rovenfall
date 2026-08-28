@@ -298,7 +298,11 @@ public record RpgPlayerState(
             long timestamp,
             UUID transactionId,
             String source,
-            Optional<Identifier> previousTarget) {
+            Optional<Identifier> previousTarget,
+            List<RpgItemCost> itemCosts,
+            List<Long> itemCountsBefore,
+            List<Long> itemCountsAfter,
+            Optional<SkillResetPlan> resetPlan) {
         public static final Codec<ProgressionProvenance> CODEC = RecordCodecBuilder.<ProgressionProvenance>create(instance -> instance.group(
                 Kind.CODEC.fieldOf("kind").forGetter(ProgressionProvenance::kind),
                 Identifier.CODEC.fieldOf("target").forGetter(ProgressionProvenance::target),
@@ -306,7 +310,17 @@ public record RpgPlayerState(
                 TICK_CODEC.fieldOf("timestamp").forGetter(ProgressionProvenance::timestamp),
                 UUIDUtil.STRING_CODEC.fieldOf("transaction").forGetter(ProgressionProvenance::transactionId),
                 Codec.string(1, 160).fieldOf("source").forGetter(ProgressionProvenance::source),
-                Identifier.CODEC.optionalFieldOf("previous_target").forGetter(ProgressionProvenance::previousTarget)
+                Identifier.CODEC.optionalFieldOf("previous_target").forGetter(ProgressionProvenance::previousTarget),
+                RpgItemCost.LIST_CODEC.optionalFieldOf("item_costs", List.of())
+                        .forGetter(ProgressionProvenance::itemCosts),
+                Codec.LONG.listOf(0, RpgItemCost.MAX_ENTRIES)
+                        .optionalFieldOf("item_counts_before", List.of())
+                        .forGetter(ProgressionProvenance::itemCountsBefore),
+                Codec.LONG.listOf(0, RpgItemCost.MAX_ENTRIES)
+                        .optionalFieldOf("item_counts_after", List.of())
+                        .forGetter(ProgressionProvenance::itemCountsAfter),
+                SkillResetPlan.CODEC.optionalFieldOf("reset_plan")
+                        .forGetter(ProgressionProvenance::resetPlan)
         ).apply(instance, ProgressionProvenance::new)).validate(ProgressionProvenance::validate);
 
         public ProgressionProvenance(
@@ -315,19 +329,82 @@ public record RpgPlayerState(
                 long amount,
                 long timestamp,
                 UUID transactionId,
+                String source,
+                Optional<Identifier> previousTarget,
+                List<RpgItemCost> itemCosts) {
+            this(kind, target, amount, timestamp, transactionId, source,
+                    previousTarget, itemCosts, List.of(), List.of(), Optional.empty());
+        }
+
+        public ProgressionProvenance(
+                Kind kind,
+                Identifier target,
+                long amount,
+                long timestamp,
+                UUID transactionId,
+                String source,
+                Optional<Identifier> previousTarget,
+                List<RpgItemCost> itemCosts,
+                Optional<SkillResetPlan> resetPlan) {
+            this(kind, target, amount, timestamp, transactionId, source,
+                    previousTarget, itemCosts, List.of(), List.of(), resetPlan);
+        }
+
+        public ProgressionProvenance(
+                Kind kind,
+                Identifier target,
+                long amount,
+                long timestamp,
+                UUID transactionId,
+                String source,
+                Optional<Identifier> previousTarget) {
+            this(kind, target, amount, timestamp, transactionId, source,
+                    previousTarget, List.of(), List.of(), List.of(), Optional.empty());
+        }
+
+        public ProgressionProvenance(
+                Kind kind,
+                Identifier target,
+                long amount,
+                long timestamp,
+                UUID transactionId,
                 String source) {
-            this(kind, target, amount, timestamp, transactionId, source, Optional.empty());
+            this(kind, target, amount, timestamp, transactionId, source,
+                    Optional.empty(), List.of(), List.of(), List.of(), Optional.empty());
         }
 
         public ProgressionProvenance {
             previousTarget = previousTarget == null ? Optional.empty() : previousTarget;
+            itemCosts = itemCosts == null ? List.of() : List.copyOf(itemCosts);
+            itemCountsBefore = itemCountsBefore == null ? List.of() : List.copyOf(itemCountsBefore);
+            itemCountsAfter = itemCountsAfter == null ? List.of() : List.copyOf(itemCountsAfter);
+            resetPlan = resetPlan == null ? Optional.empty() : resetPlan;
         }
 
         boolean isValid() {
             return kind != null && target != null && amount >= 0 && amount <= MAX_XP && timestamp >= 0
                     && transactionId != null && !ZERO_UUID.equals(transactionId)
                     && source != null && !source.isBlank() && source.length() <= 160
-                    && previousTarget != null;
+                    && previousTarget != null && itemCosts != null && itemCosts.size() <= RpgItemCost.MAX_ENTRIES
+                    && itemCosts.stream().allMatch(item -> item != null && item.item() != null
+                            && item.count() >= 1 && item.count() <= RpgItemCost.MAX_COUNT)
+                    && itemCosts.stream().map(RpgItemCost::item).distinct().count() == itemCosts.size()
+                    && itemCountsBefore != null && itemCountsAfter != null
+                    && (itemCosts.isEmpty()
+                            ? itemCountsBefore.isEmpty() && itemCountsAfter.isEmpty()
+                            : itemCountsBefore.size() == itemCosts.size()
+                                    && itemCountsAfter.size() == itemCosts.size()
+                                    && java.util.stream.IntStream.range(0, itemCosts.size()).allMatch(index -> {
+                                        long before = itemCountsBefore.get(index);
+                                        long after = itemCountsAfter.get(index);
+                                        return before >= itemCosts.get(index).count()
+                                                && after == before - itemCosts.get(index).count();
+                                    }))
+                    && resetPlan != null
+                    && (kind == Kind.SKILL_RESET
+                            ? resetPlan.filter(plan -> plan.target().equals(target)).isPresent()
+                                    || itemCosts.isEmpty() && resetPlan.isEmpty()
+                            : resetPlan.isEmpty());
         }
 
         private static DataResult<ProgressionProvenance> validate(ProgressionProvenance provenance) {

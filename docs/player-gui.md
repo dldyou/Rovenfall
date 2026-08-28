@@ -26,3 +26,14 @@ The inventory tabs are the normal player path. `/rovenfall menu` reopens the Ove
 Remote claim transfer acceptance or cancellation by dimension and chunk coordinates is command-only because the current-chunk GUI intentionally has no remote claim browser. `/rovenfall portal use <portal_id>` is also command-only until a player portal browser exists.
 
 The Admin tab is the normal operator path. `/rovenfall admin gui` and the other `/rovenfall admin ...` commands remain permission-gated fallbacks for automation, recovery, and records outside bounded GUI result windows.
+
+## RPG item costs
+
+Career promotion and skill reset definitions may combine currency with exact item requirements. The confirmation page shows each item identifier, required quantity, and the player's current quantity. Changing the definition or the owned quantity while confirmation is open makes the action stale and requires a fresh confirmation.
+
+- Career definitions use `promotion_items` and `full_reset_items`.
+- Skill definitions use `branch_reset_items`.
+- Each entry is `{ "item": "namespace:item", "count": N }`; unknown registry items, duplicate item identifiers, more than 16 entries, and counts outside `1..1,000,000` reject the definition reload.
+- Commands and the inventory GUI call the same inventory-aware server services, so neither route can bypass item costs.
+
+Item payment is journaled with an exact 36-slot inventory snapshot, required-item counts before and after consumption, the transaction identifier, and a bounded player-side completion receipt. Recovery handles all three independent save orders: platform-first consumes the still-present items, RPG-first reconstructs the platform payment, and an item escrow with neither platform nor RPG evidence is rolled back. Replaying a completed transaction does not consume currency or newly acquired copies of the required items.

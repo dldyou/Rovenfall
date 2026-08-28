@@ -30,6 +30,8 @@ import org.dldyou.rovenfall.rpg.RpgDefinitionReloadListener;
 import org.dldyou.rovenfall.rpg.RpgDefinitionSnapshot;
 import org.dldyou.rovenfall.rpg.RpgPlayerSavedData;
 import org.dldyou.rovenfall.rpg.RpgPlayerState;
+import org.dldyou.rovenfall.rpg.RpgItemCost;
+import org.dldyou.rovenfall.rpg.RpgItemPayment;
 import org.dldyou.rovenfall.rpg.RpgSkillNetwork;
 import org.dldyou.rovenfall.rpg.RpgSkillResetCoordinator;
 import org.dldyou.rovenfall.rpg.RpgSkillService;
@@ -314,7 +316,8 @@ public final class PlayerRpgMenu extends ChestMenu {
                 mutation, target, plan, renderedRevision, renderedState,
                 plan.map(SkillResetPlan::refundedPoints).orElse(0L),
                 cost, PlatformSavedData.get(viewer.level().getServer())
-                        .economyBalance(viewerId).orElse(0L));
+                        .economyBalance(viewerId).orElse(0L),
+                currentItemCosts(mutation, target), ownedItemCounts(currentItemCosts(mutation, target)));
         page = Page.CONFIRM;
         pageIndex = 0;
         render();
@@ -342,6 +345,12 @@ public final class PlayerRpgMenu extends ChestMenu {
             stale();
             return;
         }
+        List<RpgItemCost> currentItems = currentItemCosts(confirmation.mutation(), confirmation.target());
+        if (!canConfirmItems(
+                confirmation.itemCosts(), confirmation.ownedItems(), currentItems, ownedItemCounts(currentItems))) {
+            stale();
+            return;
+        }
         if (!beginMutation()) {
             return;
         }
@@ -351,7 +360,7 @@ public final class PlayerRpgMenu extends ChestMenu {
         switch (action.mutation()) {
             case PROMOTE -> {
                 PlayerCareerPromotionService.Result result = PlayerCareerPromotionService.promote(
-                        viewer.level().getServer(), viewerId, action.target(), Instant.now().toEpochMilli());
+                        viewer, action.target(), Instant.now().toEpochMilli());
                 success = result.status() == PlayerCareerPromotionService.Status.SUCCESS;
                 status = result.status().name();
             }
@@ -366,8 +375,7 @@ public final class PlayerRpgMenu extends ChestMenu {
                 SkillResetPlan.Mode mode = action.mutation() == Mutation.RESET_BRANCH
                         ? SkillResetPlan.Mode.BRANCH : SkillResetPlan.Mode.FULL;
                 RpgSkillResetCoordinator.Result result = RpgSkillResetCoordinator.reset(
-                        viewer.level().getServer(), viewerId, mode, action.target(),
-                        Instant.now().toEpochMilli(), UUID.randomUUID());
+                        viewer, mode, action.target(), Instant.now().toEpochMilli(), UUID.randomUUID());
                 success = result.status() == RpgSkillResetCoordinator.Status.SUCCESS;
                 status = result.status().name();
             }
@@ -382,11 +390,14 @@ public final class PlayerRpgMenu extends ChestMenu {
     }
 
     private void result(boolean success, String status) {
-        viewer.sendOverlayMessage(Component.translatable(resultKey(success, status), status.toLowerCase(Locale.ROOT)));
+        viewer.sendOverlayMessage(Component.translatable(resultKey(success, status)));
         reopen();
     }
 
     static String resultKey(boolean success, String status) {
+        if (status.equals("ITEM_PAYMENT_FAILED")) {
+            return "gui.rovenfall.rpg.result.item_payment_failed";
+        }
         return status.equals("COMPLETION_FAILED") || status.equals("RPG_FAILED")
                 ? "gui.rovenfall.rpg.result.pending"
                 : success ? "gui.rovenfall.rpg.result.success" : "gui.rovenfall.rpg.result.failed";
@@ -548,8 +559,9 @@ public final class PlayerRpgMenu extends ChestMenu {
             }
         }
         if (row.rank() > 0) {
-            content.setItem(33, resetIcon(SkillResetPlan.Mode.BRANCH));
-            content.setItem(34, resetIcon(SkillResetPlan.Mode.FULL));
+            content.setItem(33, resetIcon(SkillResetPlan.Mode.BRANCH, row.id()));
+            row.career().ifPresent(career ->
+                    content.setItem(34, resetIcon(SkillResetPlan.Mode.FULL, career)));
         }
         addBackHome();
     }
@@ -579,6 +591,12 @@ public final class PlayerRpgMenu extends ChestMenu {
                 "gui.rovenfall.rpg.confirm.balance_after",
                 Math.max(0L, confirmation.balance() - confirmation.cost())));
         consequences.add(Component.translatable("gui.rovenfall.rpg.confirm.refund", confirmation.refundedPoints()));
+        for (int index = 0; index < confirmation.itemCosts().size(); index++) {
+            RpgItemCost item = confirmation.itemCosts().get(index);
+            consequences.add(Component.translatable(
+                    "gui.rovenfall.rpg.confirm.item_cost", item.item().toString(), item.count(),
+                    confirmation.ownedItems().get(index)));
+        }
         content.setItem(4, PlayerDashboardMenu.icon(
                 Items.WRITABLE_BOOK, Component.translatable("gui.rovenfall.rpg.confirm.title"),
                 consequences.toArray(Component[]::new)));
@@ -625,6 +643,8 @@ public final class PlayerRpgMenu extends ChestMenu {
         lore.add(Component.translatable("gui.rovenfall.rpg.xp", row.experience()));
         lore.add(Component.translatable("gui.rovenfall.rpg.skill.points", row.skillPoints()));
         lore.add(Component.translatable("gui.rovenfall.rpg.career.cost", row.promotionCost()));
+        definitions().career(row.id()).ifPresent(definition -> definition.promotionItems().forEach(item ->
+                lore.add(itemCostLine(item))));
         row.requirements().stream().limit(8).forEach(requirement -> lore.add(requirementLine(requirement)));
         if (row.active()) {
             lore.add(Component.translatable("gui.rovenfall.rpg.career.active"));
@@ -685,12 +705,16 @@ public final class PlayerRpgMenu extends ChestMenu {
                         "gui.rovenfall.rpg.unresolved", row.skill().orElseThrow().toString()) : Component.empty());
     }
 
-    private net.minecraft.world.item.ItemStack resetIcon(SkillResetPlan.Mode mode) {
+    private net.minecraft.world.item.ItemStack resetIcon(SkillResetPlan.Mode mode, Identifier target) {
+        List<Component> lore = new java.util.ArrayList<>();
+        lore.add(Component.translatable("gui.rovenfall.rpg.confirm.cost", ActivityXpConfig.skillResetCost(mode)));
+        RpgSkillResetCoordinator.resetItemCosts(definitions(), mode, target)
+                .forEach(item -> lore.add(itemCostLine(item)));
+        lore.add(Component.translatable("gui.rovenfall.player.click"));
         return PlayerDashboardMenu.icon(
                 Items.REDSTONE,
                 Component.translatable("gui.rovenfall.rpg.reset." + mode.getSerializedName()),
-                Component.translatable("gui.rovenfall.rpg.confirm.cost", ActivityXpConfig.skillResetCost(mode)),
-                Component.translatable("gui.rovenfall.player.click"));
+                lore.toArray(Component[]::new));
     }
 
     private net.minecraft.world.item.ItemStack header(Item item, String key, int count) {
@@ -765,6 +789,36 @@ public final class PlayerRpgMenu extends ChestMenu {
             long expectedBalance, long expectedCost, long currentBalance, long currentCost) {
         return expectedBalance >= 0 && expectedCost >= 0
                 && expectedBalance == currentBalance && expectedCost == currentCost;
+    }
+
+    static boolean canConfirmItems(
+            List<RpgItemCost> expectedCosts,
+            List<Long> expectedOwned,
+            List<RpgItemCost> currentCosts,
+            List<Long> currentOwned) {
+        return expectedCosts != null && expectedOwned != null
+                && expectedCosts.equals(currentCosts) && expectedOwned.equals(currentOwned)
+                && expectedCosts.size() == expectedOwned.size();
+    }
+
+    private List<RpgItemCost> currentItemCosts(Mutation mutation, Identifier target) {
+        return switch (mutation) {
+            case PROMOTE -> definitions().career(target).map(CareerDefinition::promotionItems).orElse(List.of());
+            case RESET_BRANCH -> RpgSkillResetCoordinator.resetItemCosts(
+                    definitions(), SkillResetPlan.Mode.BRANCH, target);
+            case RESET_FULL -> RpgSkillResetCoordinator.resetItemCosts(
+                    definitions(), SkillResetPlan.Mode.FULL, target);
+            case SWITCH -> List.of();
+        };
+    }
+
+    private List<Long> ownedItemCounts(List<RpgItemCost> costs) {
+        return costs.stream().map(cost -> RpgItemPayment.owned(viewer, cost.item())).toList();
+    }
+
+    private Component itemCostLine(RpgItemCost item) {
+        return Component.translatable("gui.rovenfall.rpg.confirm.item_cost",
+                item.item().toString(), item.count(), RpgItemPayment.owned(viewer, item.item()));
     }
 
     private long currentCost(Confirmation action) {
@@ -908,9 +962,13 @@ public final class PlayerRpgMenu extends ChestMenu {
             RpgPlayerState state,
             long refundedPoints,
             long cost,
-            long balance) {
+            long balance,
+            List<RpgItemCost> itemCosts,
+            List<Long> ownedItems) {
         Confirmation {
             plan = plan == null ? Optional.empty() : plan;
+            itemCosts = itemCosts == null ? List.of() : List.copyOf(itemCosts);
+            ownedItems = ownedItems == null ? List.of() : List.copyOf(ownedItems);
         }
     }
 

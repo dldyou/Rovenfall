@@ -53,9 +53,40 @@ public final class CareerProgressionService {
             long timestamp,
             UUID transactionId,
             String source) {
+        return promote(state, definitions, playerId, careerId, timestamp, transactionId, source, List.of());
+    }
+
+    public static Result promote(
+            RpgPlayerSavedData state,
+            RpgDefinitionSnapshot definitions,
+            UUID playerId,
+            Identifier careerId,
+            long timestamp,
+            UUID transactionId,
+            String source,
+            List<RpgItemCost> itemCosts) {
+        return promote(state, definitions, playerId, careerId, timestamp, transactionId, source,
+                itemCosts, List.of(), List.of());
+    }
+
+    public static Result promote(
+            RpgPlayerSavedData state,
+            RpgDefinitionSnapshot definitions,
+            UUID playerId,
+            Identifier careerId,
+            long timestamp,
+            UUID transactionId,
+            String source,
+            List<RpgItemCost> itemCosts,
+            List<Long> itemCountsBefore,
+            List<Long> itemCountsAfter) {
         Result invalid = validateRequest(state, definitions, playerId, careerId, timestamp, transactionId, source);
         if (invalid != null) {
             return invalid;
+        }
+        if (itemCosts == null || itemCosts.size() > RpgItemCost.MAX_ENTRIES
+                || itemCountsBefore == null || itemCountsAfter == null) {
+            return result(Status.INVALID_REQUEST, careerId, transactionId);
         }
         Optional<CareerDefinition> careerDefinition = definitions.career(careerId);
         if (careerDefinition.isEmpty()) {
@@ -114,7 +145,8 @@ public final class CareerProgressionService {
         List<RpgPlayerState.ProgressionProvenance> careerProvenance = appendCareerEvidence(
                 current, new RpgPlayerState.ProgressionProvenance(
                         RpgPlayerState.ProgressionProvenance.Kind.CAREER_PROMOTION,
-                        careerId, definition.tier(), timestamp, transactionId, source, current.activeCareer()));
+                        careerId, definition.tier(), timestamp, transactionId, source,
+                        current.activeCareer(), itemCosts, itemCountsBefore, itemCountsAfter, Optional.empty()));
         RpgPlayerState candidate = new RpgPlayerState(
                 current.activityXp(), careers, Optional.of(careerId), current.activeSkillSlots(),
                 current.cooldowns(), current.explorationDiscoveries(), activityEvidence(current), careerProvenance,

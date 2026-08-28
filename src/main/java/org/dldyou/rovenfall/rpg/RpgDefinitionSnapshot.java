@@ -13,6 +13,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.regex.Pattern;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
 import org.dldyou.rovenfall.Rovenfall;
 
@@ -162,6 +163,8 @@ public final class RpgDefinitionSnapshot {
             if (definition.requiredActivities().size() > CareerDefinition.MAX_REQUIREMENTS) {
                 problems.add(problem(source, "activity requirement count exceeds " + CareerDefinition.MAX_REQUIREMENTS));
             }
+            validateItemCosts(source.file(), source.id(), "promotion", definition.promotionItems(), problems);
+            validateItemCosts(source.file(), source.id(), "full reset", definition.fullResetItems(), problems);
 
             Set<Identifier> seenParents = new HashSet<>();
             for (Identifier parentId : definition.parents()) {
@@ -216,6 +219,7 @@ public final class RpgDefinitionSnapshot {
             if (definition.prerequisites().size() > SkillDefinition.MAX_PREREQUISITES) {
                 problems.add(problem(source, "skill prerequisite count exceeds " + SkillDefinition.MAX_PREREQUISITES));
             }
+            validateItemCosts(source.file(), source.id(), "branch reset", definition.branchResetItems(), problems);
             if (definition.kind() == SkillDefinition.Kind.ACTIVE && definition.cooldownTicks().isEmpty()) {
                 problems.add(problem(source, "active skill requires cooldown_ticks"));
             } else if (definition.kind() == SkillDefinition.Kind.PASSIVE && definition.cooldownTicks().isPresent()) {
@@ -364,6 +368,31 @@ public final class RpgDefinitionSnapshot {
             List<Problem> problems) {
         if (translationKey == null || !TRANSLATION_KEY.matcher(translationKey).matches()) {
             problems.add(new Problem(file, definitionId, "invalid translation key: " + translationKey));
+        }
+    }
+
+    private static void validateItemCosts(
+            Identifier file,
+            Identifier definitionId,
+            String operation,
+            List<RpgItemCost> costs,
+            List<Problem> problems) {
+        if (costs == null || costs.size() > RpgItemCost.MAX_ENTRIES) {
+            problems.add(new Problem(file, definitionId,
+                    operation + " item cost count exceeds " + RpgItemCost.MAX_ENTRIES));
+            return;
+        }
+        Set<Identifier> seen = new HashSet<>();
+        for (RpgItemCost cost : costs) {
+            if (cost == null || cost.item() == null || cost.count() < 1 || cost.count() > RpgItemCost.MAX_COUNT) {
+                problems.add(new Problem(file, definitionId, operation + " item cost is invalid"));
+            } else if (!seen.add(cost.item())) {
+                problems.add(new Problem(file, definitionId,
+                        "duplicate " + operation + " item: " + cost.item()));
+            } else if (!BuiltInRegistries.ITEM.containsKey(cost.item())) {
+                problems.add(new Problem(file, definitionId,
+                        "unknown " + operation + " item: " + cost.item()));
+            }
         }
     }
 

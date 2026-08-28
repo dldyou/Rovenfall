@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.Set;
 import net.minecraft.resources.Identifier;
 import org.dldyou.rovenfall.rpg.RpgPlayerState;
+import org.dldyou.rovenfall.rpg.RpgItemCost;
 import org.junit.jupiter.api.Test;
 
 final class PlayerRpgMenuTest {
@@ -34,6 +35,7 @@ final class PlayerRpgMenuTest {
         assertTrue(PlayerRpgMenu.resultKey(false, "RPG_FAILED").endsWith("pending"));
         assertTrue(PlayerRpgMenu.resultKey(false, "COMPLETION_FAILED").endsWith("pending"));
         assertTrue(PlayerRpgMenu.resultKey(false, "PAYMENT_FAILED").endsWith("failed"));
+        assertTrue(PlayerRpgMenu.resultKey(false, "ITEM_PAYMENT_FAILED").endsWith("item_payment_failed"));
     }
 
     @Test
@@ -41,6 +43,15 @@ final class PlayerRpgMenuTest {
         assertTrue(PlayerRpgMenu.canConfirmEconomy(1_000, 100, 1_000, 100));
         assertFalse(PlayerRpgMenu.canConfirmEconomy(1_000, 100, 900, 100));
         assertFalse(PlayerRpgMenu.canConfirmEconomy(1_000, 100, 1_000, 200));
+    }
+
+    @Test
+    void confirmationRejectsChangedItemDefinitionsOrInventory() {
+        var iron = new RpgItemCost(Identifier.parse("minecraft:iron_ingot"), 8);
+        var emerald = new RpgItemCost(Identifier.parse("minecraft:emerald"), 1);
+        assertTrue(PlayerRpgMenu.canConfirmItems(List.of(iron), List.of(8L), List.of(iron), List.of(8L)));
+        assertFalse(PlayerRpgMenu.canConfirmItems(List.of(iron), List.of(8L), List.of(iron), List.of(7L)));
+        assertFalse(PlayerRpgMenu.canConfirmItems(List.of(iron), List.of(8L), List.of(emerald), List.of(8L)));
     }
 
     private static RpgPlayerState state(long xp) {

@@ -13,7 +13,9 @@ public record CareerDefinition(
         List<Long> levelXp,
         long promotionCost,
         List<ActivityRequirement> requiredActivities,
-        int careerXpMultiplier) {
+        int careerXpMultiplier,
+        List<RpgItemCost> promotionItems,
+        List<RpgItemCost> fullResetItems) {
     public static final int MAX_TIER = 1_000;
     public static final int MAX_LEVELS = 1_000;
     public static final int MAX_PARENTS = 16;
@@ -35,8 +37,24 @@ public record CareerDefinition(
             ActivityRequirement.CODEC.listOf(0, MAX_REQUIREMENTS).optionalFieldOf("required_activities", List.of())
                     .forGetter(CareerDefinition::requiredActivities),
             Codec.intRange(1, MAX_CAREER_XP_MULTIPLIER).optionalFieldOf("career_xp_multiplier", 1)
-                    .forGetter(CareerDefinition::careerXpMultiplier)
+                    .forGetter(CareerDefinition::careerXpMultiplier),
+            RpgItemCost.LIST_CODEC.optionalFieldOf("promotion_items", List.of())
+                    .forGetter(CareerDefinition::promotionItems),
+            RpgItemCost.LIST_CODEC.optionalFieldOf("full_reset_items", List.of())
+                    .forGetter(CareerDefinition::fullResetItems)
     ).apply(instance, CareerDefinition::new));
+
+    public CareerDefinition(
+            String translationKey,
+            int tier,
+            List<Identifier> parents,
+            List<Long> levelXp,
+            long promotionCost,
+            List<ActivityRequirement> requiredActivities,
+            int careerXpMultiplier) {
+        this(translationKey, tier, parents, levelXp, promotionCost, requiredActivities,
+                careerXpMultiplier, List.of(), List.of());
+    }
 
     public CareerDefinition(
             String translationKey,
@@ -52,6 +70,8 @@ public record CareerDefinition(
         parents = List.copyOf(parents);
         levelXp = List.copyOf(levelXp);
         requiredActivities = List.copyOf(requiredActivities);
+        promotionItems = List.copyOf(promotionItems);
+        fullResetItems = List.copyOf(fullResetItems);
     }
 
     public record ActivityRequirement(Identifier activity, int level) {

@@ -138,6 +138,44 @@ final class RpgDefinitionStoreTest {
     }
 
     @Test
+    void itemBackedCostsAreBoundedAndValidatedAtSnapshotCompile() {
+        CareerDefinition decodedCareer = CareerDefinition.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseString("""
+                {"translation_key":"career.rovenfall.item_test","tier":1,"level_xp":[100],
+                 "promotion_items":[{"item":"minecraft:iron_ingot","count":8}],
+                 "full_reset_items":[{"item":"minecraft:emerald","count":1}]}
+                """)).getOrThrow();
+        SkillDefinition decodedSkill = SkillDefinition.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseString("""
+                {"translation_key":"skill.rovenfall.item_test","career":"rovenfall:item_test",
+                 "kind":"passive","max_rank":1,"point_cost":1,
+                 "passive_effect":{"type":"damage_taken_reduction","basis_points_per_rank":100},
+                 "branch_reset_items":[{"item":"minecraft:lapis_lazuli","count":4}]}
+                """)).getOrThrow();
+
+        assertEquals(new RpgItemCost(Identifier.parse("minecraft:iron_ingot"), 8),
+                decodedCareer.promotionItems().getFirst());
+        assertEquals(new RpgItemCost(Identifier.parse("minecraft:emerald"), 1),
+                decodedCareer.fullResetItems().getFirst());
+        assertEquals(new RpgItemCost(Identifier.parse("minecraft:lapis_lazuli"), 4),
+                decodedSkill.branchResetItems().getFirst());
+
+        CareerDefinition invalid = new CareerDefinition(
+                "career.rovenfall.invalid_items", 1, List.of(), List.of(100L), 0, List.of(), 1,
+                List.of(
+                        new RpgItemCost(Identifier.parse("minecraft:iron_ingot"), 1),
+                        new RpgItemCost(Identifier.parse("minecraft:iron_ingot"), 2),
+                        new RpgItemCost(Identifier.parse("rovenfall:not_registered"), 1)),
+                List.of());
+        var error = assertThrows(RpgDefinitionSnapshot.ValidationException.class, () ->
+                RpgDefinitionSnapshot.compile(
+                        List.of(),
+                        List.of(new RpgDefinitionSnapshot.CareerSource(
+                                file("invalid_items"), "test", id("invalid_items"), invalid)),
+                        List.of()));
+        assertTrue(error.getMessage().contains("duplicate promotion item"));
+        assertTrue(error.getMessage().contains("unknown promotion item"));
+    }
+
+    @Test
     void skillKindsRequireOnlyTheirMatchingEffect() {
         var passiveWithoutEffect = new RpgDefinitionSnapshot.SkillSource(
                 file("missing_effect"), "test", id("missing_effect"),

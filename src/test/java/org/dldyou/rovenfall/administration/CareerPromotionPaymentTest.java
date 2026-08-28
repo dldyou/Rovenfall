@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
 import java.util.UUID;
+import java.util.List;
 import java.util.stream.IntStream;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -12,6 +13,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import org.junit.jupiter.api.Test;
+import org.dldyou.rovenfall.rpg.RpgItemCost;
 
 final class CareerPromotionPaymentTest {
     @Test
@@ -85,5 +87,36 @@ final class CareerPromotionPaymentTest {
 
         PlatformSavedData loaded = PlatformSavedData.CODEC.parse(NbtOps.INSTANCE, encoded).getOrThrow();
         assertFalse(loaded.isWritable());
+    }
+
+    @Test
+    void itemOnlyPromotionHasDurableExactEvidence() {
+        PlatformSavedData state = new PlatformSavedData();
+        UUID player = UUID.randomUUID();
+        UUID transaction = UUID.randomUUID();
+        Identifier career = Identifier.fromNamespaceAndPath("rovenfall", "item_only");
+        List<RpgItemCost> items = List.of(
+                new RpgItemCost(Identifier.parse("minecraft:iron_ingot"), 8));
+        assertEquals(EconomyService.TransactionStatus.SUCCESS,
+                EconomyService.createAccount(state, player, 500, 1_000, 1, UUID.randomUUID()).status());
+
+        CareerPromotionPaymentService.Result payment = CareerPromotionPaymentService.begin(
+                state, player, career, 0, items, List.of(8L), List.of(0L),
+                2, transaction, 0, 1_000);
+
+        assertEquals(CareerPromotionPaymentService.Status.SUCCESS, payment.status());
+        assertEquals(500, payment.balance());
+        assertEquals(items, payment.operation().orElseThrow().itemCosts());
+        assertEquals(List.of(8L), payment.operation().orElseThrow().itemCountsBefore());
+        assertEquals(List.of(0L), payment.operation().orElseThrow().itemCountsAfter());
+        assertEquals(RpgSkillOperation.Phase.ITEMS_CONSUMED,
+                payment.operation().orElseThrow().phase());
+        PlatformSavedData loaded = PlatformSavedData.CODEC.parse(
+                NbtOps.INSTANCE, PlatformSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state)
+                        .getOrThrow()).getOrThrow();
+        assertEquals(items, loaded.rpgSkillOperation(transaction).orElseThrow().itemCosts());
+        assertEquals(List.of(8L), loaded.rpgSkillOperation(transaction).orElseThrow().itemCountsBefore());
+        assertEquals(CareerPromotionPaymentService.Status.SUCCESS,
+                CareerPromotionPaymentService.complete(loaded, player, transaction, 3).status());
     }
 }

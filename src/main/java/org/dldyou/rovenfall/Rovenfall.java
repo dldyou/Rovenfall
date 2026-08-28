@@ -145,6 +145,7 @@ import org.dldyou.rovenfall.rpg.RpgSkillClient;
 import org.dldyou.rovenfall.rpg.RpgSkillNetwork;
 import org.dldyou.rovenfall.rpg.RpgSkillResetCoordinator;
 import org.dldyou.rovenfall.rpg.PlayerCareerPromotionService;
+import org.dldyou.rovenfall.rpg.RpgItemPaymentGameTestScenario;
 import org.dldyou.rovenfall.world.ProtectedRegion;
 import org.dldyou.rovenfall.world.PortalDefinition;
 import org.dldyou.rovenfall.world.WorldTopology;
@@ -1377,6 +1378,153 @@ public final class Rovenfall {
                                 && passive.passiveEffect().orElseThrow().type()
                                 == SkillDefinition.EffectType.DAMAGE_DEALT,
                         "Passive skill effect metadata was not preserved");
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("rpg_item_payment"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var definitions = RpgDefinitionReloadListener.snapshot(server);
+                var rpg = RpgPlayerSavedData.get(server);
+                var platform = PlatformSavedData.get(server);
+                var player = FakePlayerFactory.get(
+                        helper.getLevel(), new GameProfile(UUID.randomUUID(), "[RpgItemPayment]"));
+                long timestamp = System.currentTimeMillis();
+
+                helper.assertTrue(EconomyService.award(
+                                platform, player.getUUID(), 2_000, "gametest item payment account", timestamp,
+                                UUID.randomUUID(), EconomyConfig.initialBalance(), EconomyConfig.maximumBalance())
+                                .status() == EconomyService.TransactionStatus.SUCCESS,
+                        "Could not create the RPG item-payment economy fixture");
+                helper.assertTrue(CareerProgressionService.promote(
+                                rpg, definitions, player.getUUID(), id("novice"), timestamp + 1,
+                                UUID.randomUUID(), "gametest:item_payment:novice").status()
+                                == CareerProgressionService.Status.SUCCESS,
+                        "Could not promote the RPG item-payment fixture to novice");
+                for (int index = 0; index < 60; index++) {
+                    helper.assertTrue(ActivityXpAwardService.award(
+                                    rpg, definitions, player.getUUID(), id("combat"), 10,
+                                    timestamp + (index + 1L) * 4_000L, UUID.randomUUID(),
+                                    "gametest:item_payment:combat_" + index).status()
+                                    == ActivityXpAwardService.Status.SUCCESS,
+                            "Could not satisfy the RPG item-payment activity prerequisite");
+                }
+                helper.assertTrue(RpgSkillService.learn(
+                                rpg, definitions, player.getUUID(), id("sturdy_body"),
+                                timestamp + 245_000L, UUID.randomUUID(), "gametest:item_payment").status()
+                                == RpgSkillService.Status.SUCCESS
+                                && RpgSkillService.learn(
+                                rpg, definitions, player.getUUID(), id("sturdy_body"),
+                                timestamp + 245_001L, UUID.randomUUID(), "gametest:item_payment").status()
+                                == RpgSkillService.Status.SUCCESS,
+                        "Could not learn the RPG item-payment skill prerequisite");
+
+                long beforeBalance = platform.economyBalance(player.getUUID()).orElseThrow();
+                var denied = PlayerCareerPromotionService.promote(
+                        player, id("warrior"), timestamp + 250_000L);
+                helper.assertTrue(denied.status() == PlayerCareerPromotionService.Status.ITEM_PAYMENT_FAILED
+                                && platform.economyBalance(player.getUUID()).orElseThrow() == beforeBalance
+                                && !rpg.state(player.getUUID()).careers().containsKey(id("warrior")),
+                        "Insufficient items changed currency or RPG progression");
+
+                player.getInventory().add(new ItemStack(Items.IRON_INGOT, 8));
+                var promoted = PlayerCareerPromotionService.promote(
+                        player, id("warrior"), timestamp + 250_001L);
+                long afterBalance = platform.economyBalance(player.getUUID()).orElseThrow();
+                int remainingIron = player.getInventory().getNonEquipmentItems().stream()
+                        .filter(stack -> stack.is(Items.IRON_INGOT))
+                        .mapToInt(ItemStack::getCount).sum();
+                helper.assertTrue(promoted.status() == PlayerCareerPromotionService.Status.SUCCESS,
+                        "Item-backed promotion failed with status " + promoted.status()
+                                + " and payment " + promoted.paymentStatus());
+                helper.assertTrue(afterBalance == beforeBalance - 100,
+                        "Item-backed promotion balance was " + afterBalance + " after " + beforeBalance);
+                helper.assertTrue(remainingIron == 0,
+                        "Item-backed promotion left " + remainingIron + " iron ingots");
+                helper.assertTrue(rpg.state(player.getUUID()).careers().containsKey(id("warrior")),
+                        "Item-backed promotion did not commit warrior progression");
+
+                player.getInventory().add(new ItemStack(Items.IRON_INGOT, 8));
+                var replay = PlayerCareerPromotionService.promote(
+                        player, id("warrior"), timestamp + 250_002L);
+                helper.assertTrue(replay.status() == PlayerCareerPromotionService.Status.SUCCESS
+                                && platform.economyBalance(player.getUUID()).orElseThrow() == afterBalance
+                                && player.getInventory().getNonEquipmentItems().stream()
+                                        .filter(stack -> stack.is(Items.IRON_INGOT))
+                                        .mapToInt(ItemStack::getCount).sum() == 8
+                                && platform.rpgSkillOperation(replay.transactionId()).orElseThrow().phase()
+                                        == org.dldyou.rovenfall.administration.RpgSkillOperation.Phase.COMPLETED,
+                        "Promotion replay charged currency or newly acquired items twice");
+
+                for (int index = 0; index < 100; index++) {
+                    helper.assertTrue(ActivityXpAwardService.award(
+                                    rpg, definitions, player.getUUID(), id("combat"), 10,
+                                    timestamp + 260_000L + index * 4_000L, UUID.randomUUID(),
+                                    "gametest:item_payment:warrior_" + index).status()
+                                    == ActivityXpAwardService.Status.SUCCESS,
+                            "Could not rank the RPG item-payment warrior fixture");
+                }
+                helper.assertTrue(RpgSkillService.learn(
+                                rpg, definitions, player.getUUID(), id("power_strike"),
+                                timestamp + 665_000L, UUID.randomUUID(), "gametest:item_payment").status()
+                                == RpgSkillService.Status.SUCCESS,
+                        "Could not learn the item-backed reset fixture skill");
+                UUID resetTransaction = UUID.randomUUID();
+                long beforeResetBalance = platform.economyBalance(player.getUUID()).orElseThrow();
+                var deniedReset = RpgSkillResetCoordinator.reset(
+                        player, org.dldyou.rovenfall.rpg.SkillResetPlan.Mode.BRANCH, id("power_strike"),
+                        timestamp + 665_001L, resetTransaction);
+                helper.assertTrue(deniedReset.status() == RpgSkillResetCoordinator.Status.ITEM_PAYMENT_FAILED
+                                && platform.economyBalance(player.getUUID()).orElseThrow() == beforeResetBalance
+                                && rpg.state(player.getUUID()).careers().get(id("warrior"))
+                                        .learnedSkills().containsKey(id("power_strike")),
+                        "Insufficient reset items changed currency or learned skills");
+
+                player.getInventory().add(new ItemStack(Items.LAPIS_LAZULI, 4));
+                var reset = RpgSkillResetCoordinator.reset(
+                        player, org.dldyou.rovenfall.rpg.SkillResetPlan.Mode.BRANCH, id("power_strike"),
+                        timestamp + 665_002L, resetTransaction);
+                long afterResetBalance = platform.economyBalance(player.getUUID()).orElseThrow();
+                helper.assertTrue(reset.status() == RpgSkillResetCoordinator.Status.SUCCESS
+                                && afterResetBalance == beforeResetBalance
+                                        - ActivityXpConfig.skillResetCost(
+                                                org.dldyou.rovenfall.rpg.SkillResetPlan.Mode.BRANCH)
+                                && !rpg.state(player.getUUID()).careers().get(id("warrior"))
+                                        .learnedSkills().containsKey(id("power_strike"))
+                                && player.getInventory().getNonEquipmentItems().stream()
+                                        .filter(stack -> stack.is(Items.LAPIS_LAZULI))
+                                        .mapToInt(ItemStack::getCount).sum() == 0,
+                        "Combined item and currency reset was not committed exactly once");
+                player.getInventory().add(new ItemStack(Items.LAPIS_LAZULI, 4));
+                var resetReplay = RpgSkillResetCoordinator.reset(
+                        player, org.dldyou.rovenfall.rpg.SkillResetPlan.Mode.BRANCH, id("power_strike"),
+                        timestamp + 665_003L, resetTransaction);
+                helper.assertTrue(resetReplay.status() == RpgSkillResetCoordinator.Status.SUCCESS
+                                && platform.economyBalance(player.getUUID()).orElseThrow() == afterResetBalance
+                                && player.getInventory().getNonEquipmentItems().stream()
+                                        .filter(stack -> stack.is(Items.LAPIS_LAZULI))
+                                        .mapToInt(ItemStack::getCount).sum() == 4,
+                        "Reset replay charged currency or newly acquired items twice");
+                helper.assertTrue(RpgItemPaymentGameTestScenario.platformRootSavedFirst(
+                                player, id("guardian"), Identifier.parse("minecraft:iron_ingot"), 2,
+                                timestamp + 665_004L),
+                        "Platform-first item payment was not recovered exactly once");
+                helper.assertTrue(RpgItemPaymentGameTestScenario.rpgRootSavedFirst(
+                                player, id("recovery_evidence"), Identifier.parse("minecraft:iron_ingot"), 2,
+                                timestamp + 665_005L),
+                        "RPG-first item payment was not recovered exactly once");
+                helper.assertTrue(RpgItemPaymentGameTestScenario.orphanPromotionRollsBack(
+                                player, id("guardian"), Identifier.parse("minecraft:iron_ingot"), 2,
+                                timestamp + 665_006L),
+                        "Orphaned item escrow was not rolled back on recovery");
+                helper.assertTrue(RpgItemPaymentGameTestScenario.expiredRpgRootPreservesMarkerForManualRecovery(
+                                player, id("berserker"),
+                                Identifier.parse("minecraft:iron_ingot"), 2,
+                                timestamp - 31L * 24 * 60 * 60 * 1_000),
+                        "Expired RPG-first item marker was not preserved for manual reconciliation");
+                player.discard();
                 helper.succeed();
             }
         });

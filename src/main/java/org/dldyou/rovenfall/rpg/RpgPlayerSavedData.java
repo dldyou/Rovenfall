@@ -19,7 +19,7 @@ import org.dldyou.rovenfall.Rovenfall;
 /** Persistent RPG state, deliberately separate from the platform/economy root. */
 public final class RpgPlayerSavedData extends SavedData {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
-    public static final int CURRENT_SCHEMA_VERSION = 2;
+    public static final int CURRENT_SCHEMA_VERSION = 3;
     public static final int MAX_PLAYERS = 100_000;
 
     private static final Codec<Map<UUID, RpgPlayerState>> PLAYERS_CODEC =
@@ -38,7 +38,8 @@ public final class RpgPlayerSavedData extends SavedData {
 
     private static final Map<Integer, UnaryOperator<PersistedState>> MIGRATIONS = Map.of(
             0, state -> state.atVersion(1),
-            1, state -> state.atVersion(2));
+            1, state -> state.atVersion(2),
+            2, state -> state.atVersion(3));
 
     private final int schemaVersion;
     private final boolean writable;

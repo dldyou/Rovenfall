@@ -5,6 +5,12 @@
   "level_xp": [200, 600, 1200, 2000],
   "career_xp_multiplier": 2,
   "promotion_cost": 100,
+  "promotion_items": [
+    {"item": "minecraft:iron_ingot", "count": 8}
+  ],
+  "full_reset_items": [
+    {"item": "minecraft:emerald", "count": 1}
+  ],
   "required_activities": [
     {"activity": "rovenfall:combat", "level": 2}
   ]

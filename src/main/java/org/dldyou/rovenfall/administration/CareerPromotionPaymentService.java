@@ -6,6 +6,7 @@ import java.util.UUID;
 import net.minecraft.resources.Identifier;
 import org.dldyou.rovenfall.Rovenfall;
 import org.dldyou.rovenfall.rpg.CareerDefinition;
+import org.dldyou.rovenfall.rpg.RpgItemCost;
 
 /** Durable economy half of a paid career promotion. */
 public final class CareerPromotionPaymentService {
@@ -52,8 +53,26 @@ public final class CareerPromotionPaymentService {
             UUID transactionId,
             long initialBalance,
             long maximumBalance) {
+        return begin(state, playerId, careerId, cost, List.of(), List.of(), List.of(), timestampEpochMillis,
+                transactionId, initialBalance, maximumBalance);
+    }
+
+    public static Result begin(
+            PlatformSavedData state,
+            UUID playerId,
+            Identifier careerId,
+            long cost,
+            List<RpgItemCost> itemCosts,
+            List<Long> itemCountsBefore,
+            List<Long> itemCountsAfter,
+            long timestampEpochMillis,
+            UUID transactionId,
+            long initialBalance,
+            long maximumBalance) {
         return pay(state, RpgSkillOperation.careerPromotion(
-                        playerId, careerId, cost, timestampEpochMillis, RpgSkillOperation.Phase.PENDING),
+                        playerId, careerId, cost, itemCosts, itemCountsBefore, itemCountsAfter, timestampEpochMillis,
+                        itemCosts.isEmpty() ? RpgSkillOperation.Phase.PENDING
+                                : RpgSkillOperation.Phase.ITEMS_CONSUMED),
                 transactionId, initialBalance, maximumBalance, false);
     }
 
@@ -66,8 +85,26 @@ public final class CareerPromotionPaymentService {
             UUID transactionId,
             long initialBalance,
             long maximumBalance) {
+        return recoverCompleted(state, playerId, careerId, cost, List.of(), List.of(), List.of(),
+                timestampEpochMillis,
+                transactionId, initialBalance, maximumBalance);
+    }
+
+    public static Result recoverCompleted(
+            PlatformSavedData state,
+            UUID playerId,
+            Identifier careerId,
+            long cost,
+            List<RpgItemCost> itemCosts,
+            List<Long> itemCountsBefore,
+            List<Long> itemCountsAfter,
+            long timestampEpochMillis,
+            UUID transactionId,
+            long initialBalance,
+            long maximumBalance) {
         return pay(state, RpgSkillOperation.careerPromotion(
-                        playerId, careerId, cost, timestampEpochMillis, RpgSkillOperation.Phase.COMPLETED),
+                        playerId, careerId, cost, itemCosts, itemCountsBefore, itemCountsAfter,
+                        timestampEpochMillis, RpgSkillOperation.Phase.COMPLETED),
                 transactionId, initialBalance, maximumBalance, true);
     }
 
@@ -110,8 +147,10 @@ public final class CareerPromotionPaymentService {
             boolean recovered) {
         if (state == null || operation.kind() != RpgSkillOperation.Kind.CAREER_PROMOTION
                 || operation.playerId() == null || ZERO_UUID.equals(operation.playerId())
-                || operation.target() == null || operation.cost() < 1
+                || operation.target() == null || operation.cost() < 0
                 || operation.cost() > CareerDefinition.MAX_PROMOTION_COST
+                || operation.cost() == 0 && operation.itemCosts().isEmpty()
+                || !operation.hasInventoryEvidence()
                 || operation.timestampEpochMillis() < 0 || transactionId == null
                 || ZERO_UUID.equals(transactionId)) {
             return result(Status.INVALID_REQUEST, 0, 0, null, false);
@@ -123,13 +162,18 @@ public final class CareerPromotionPaymentService {
         RpgSkillOperation existing = state.rpgSkillOperation(transactionId).orElse(null);
         if (existing != null) {
             boolean matches = existing.matchesPromotion(
-                    operation.playerId(), operation.target(), operation.cost());
+                    operation.playerId(), operation.target(), operation.cost(), operation.itemCosts());
+            matches = matches && existing.itemCountsBefore().equals(operation.itemCountsBefore())
+                    && existing.itemCountsAfter().equals(operation.itemCountsAfter());
             if (!matches || !receiptMatches(state, transactionId, existing)) {
                 return denied(state, operation, transactionId, Status.TRANSACTION_CONFLICT, before);
             }
             Status duplicate = existing.phase() == RpgSkillOperation.Phase.COMPLETED
                     ? Status.DUPLICATE_COMPLETED : Status.DUPLICATE_PENDING;
             return result(duplicate, before, before, existing, false);
+        }
+        if (!state.pendingRpgSkillOperations(operation.playerId()).isEmpty()) {
+            return denied(state, operation, transactionId, Status.STATE_CONFLICT, before);
         }
         if (state.economyReceipt(transactionId).isPresent()
                 || state.hasEconomyTransaction(transactionId, operation.timestampEpochMillis())) {

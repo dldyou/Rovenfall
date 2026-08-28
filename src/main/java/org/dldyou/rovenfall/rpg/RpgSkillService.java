@@ -206,8 +206,39 @@ public final class RpgSkillService {
             long paymentCost,
             long timestamp,
             UUID transactionId) {
+        return applyReset(state, definitions, playerId, plan, paymentCost,
+                List.of(), timestamp, transactionId);
+    }
+
+    public static Result applyReset(
+            RpgPlayerSavedData state,
+            RpgDefinitionSnapshot definitions,
+            UUID playerId,
+            SkillResetPlan plan,
+            long paymentCost,
+            List<RpgItemCost> itemCosts,
+            long timestamp,
+            UUID transactionId) {
+        return applyReset(state, definitions, playerId, plan, paymentCost, itemCosts,
+                List.of(), List.of(), timestamp, transactionId);
+    }
+
+    public static Result applyReset(
+            RpgPlayerSavedData state,
+            RpgDefinitionSnapshot definitions,
+            UUID playerId,
+            SkillResetPlan plan,
+            long paymentCost,
+            List<RpgItemCost> itemCosts,
+            List<Long> itemCountsBefore,
+            List<Long> itemCountsAfter,
+            long timestamp,
+            UUID transactionId) {
         if (state == null || definitions == null || playerId == null || ZERO_UUID.equals(playerId) || plan == null
-                || paymentCost < 1 || paymentCost > RpgPlayerState.MAX_XP || timestamp < 0
+                || paymentCost < 0 || paymentCost > RpgPlayerState.MAX_XP || timestamp < 0
+                || itemCosts == null || itemCosts.size() > RpgItemCost.MAX_ENTRIES
+                || itemCountsBefore == null || itemCountsAfter == null
+                || paymentCost == 0 && itemCosts.isEmpty()
                 || transactionId == null || ZERO_UUID.equals(transactionId)) {
             return result(Status.INVALID_REQUEST, plan == null ? null : plan.target());
         }
@@ -233,7 +264,8 @@ public final class RpgSkillService {
                 changed, new RpgPlayerState.ProgressionProvenance(
                         RpgPlayerState.ProgressionProvenance.Kind.SKILL_RESET,
                         plan.target(), paymentCost, timestamp, transactionId,
-                        resetEvidenceSource(plan)));
+                        resetEvidenceSource(plan), Optional.empty(), itemCosts,
+                        itemCountsBefore, itemCountsAfter, Optional.of(plan)));
         RpgPlayerState candidate = new RpgPlayerState(
                 changed.activityXp(), changed.careers(), changed.activeCareer(), changed.activeSkillSlots(),
                 changed.cooldowns(), changed.explorationDiscoveries(),
@@ -331,14 +363,38 @@ public final class RpgSkillService {
             SkillResetPlan plan,
             long paymentCost,
             UUID transactionId) {
+        return hasResetEvidence(state, plan, paymentCost, List.of(), transactionId);
+    }
+
+    static boolean hasResetEvidence(
+            RpgPlayerState state,
+            SkillResetPlan plan,
+            long paymentCost,
+            List<RpgItemCost> itemCosts,
+            UUID transactionId) {
+        return hasResetEvidence(state, plan, paymentCost, itemCosts, List.of(), List.of(), transactionId);
+    }
+
+    static boolean hasResetEvidence(
+            RpgPlayerState state,
+            SkillResetPlan plan,
+            long paymentCost,
+            List<RpgItemCost> itemCosts,
+            List<Long> itemCountsBefore,
+            List<Long> itemCountsAfter,
+            UUID transactionId) {
         String currentSource = resetEvidenceSource(plan);
         String legacySource = "skill_reset:" + plan.mode().getSerializedName();
         return state.careerProvenance().stream()
                 .filter(entry -> entry.kind() == RpgPlayerState.ProgressionProvenance.Kind.SKILL_RESET)
                 .filter(entry -> entry.target().equals(plan.target()))
                 .filter(entry -> entry.amount() == paymentCost)
+                .filter(entry -> entry.itemCosts().equals(itemCosts))
+                .filter(entry -> entry.itemCountsBefore().equals(itemCountsBefore))
+                .filter(entry -> entry.itemCountsAfter().equals(itemCountsAfter))
                 .filter(entry -> entry.transactionId().equals(transactionId))
-                .anyMatch(entry -> entry.source().equals(currentSource) || entry.source().equals(legacySource));
+                .anyMatch(entry -> entry.source().equals(currentSource)
+                        || itemCosts.isEmpty() && entry.source().equals(legacySource));
     }
 
     static String resetEvidenceSource(SkillResetPlan plan) {

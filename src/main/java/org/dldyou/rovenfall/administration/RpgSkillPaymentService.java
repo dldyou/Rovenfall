@@ -6,6 +6,7 @@ import java.util.UUID;
 import net.minecraft.resources.Identifier;
 import org.dldyou.rovenfall.Rovenfall;
 import org.dldyou.rovenfall.rpg.RpgPlayerState;
+import org.dldyou.rovenfall.rpg.RpgItemCost;
 import org.dldyou.rovenfall.rpg.SkillResetPlan;
 
 /** Economy-side half of a paid skill reset. RPG mutations are deliberately not reversible here. */
@@ -53,12 +54,30 @@ public final class RpgSkillPaymentService {
             UUID transactionId,
             long initialBalance,
             long maximumBalance) {
+        return begin(state, playerId, plan, cost, List.of(), List.of(), List.of(), timestampEpochMillis,
+                transactionId, initialBalance, maximumBalance);
+    }
+
+    public static Result begin(
+            PlatformSavedData state,
+            UUID playerId,
+            SkillResetPlan plan,
+            long cost,
+            List<RpgItemCost> itemCosts,
+            List<Long> itemCountsBefore,
+            List<Long> itemCountsAfter,
+            long timestampEpochMillis,
+            UUID transactionId,
+            long initialBalance,
+            long maximumBalance) {
         if (plan == null || !plan.isValid()) {
             return result(Status.INVALID_REQUEST, 0, 0, null, false);
         }
         RpgSkillOperation operation = new RpgSkillOperation(
                 playerId, plan.mode(), plan.target(), cost, timestampEpochMillis,
-                Optional.of(plan), RpgSkillOperation.Phase.PENDING);
+                Optional.of(plan), itemCosts.isEmpty() ? RpgSkillOperation.Phase.PENDING
+                        : RpgSkillOperation.Phase.ITEMS_CONSUMED,
+                RpgSkillOperation.Kind.SKILL_RESET, itemCosts, itemCountsBefore, itemCountsAfter);
         return pay(state, operation, transactionId, initialBalance, maximumBalance, false);
     }
 
@@ -73,9 +92,50 @@ public final class RpgSkillPaymentService {
             UUID transactionId,
             long initialBalance,
             long maximumBalance) {
+        return recoverCompleted(state, playerId, mode, target, cost, List.of(), List.of(), List.of(),
+                timestampEpochMillis,
+                transactionId, initialBalance, maximumBalance);
+    }
+
+    public static Result recoverCompleted(
+            PlatformSavedData state,
+            UUID playerId,
+            SkillResetPlan plan,
+            long cost,
+            List<RpgItemCost> itemCosts,
+            List<Long> itemCountsBefore,
+            List<Long> itemCountsAfter,
+            long timestampEpochMillis,
+            UUID transactionId,
+            long initialBalance,
+            long maximumBalance) {
+        if (plan == null || !plan.isValid()) {
+            return result(Status.INVALID_REQUEST, 0, 0, null, false);
+        }
+        RpgSkillOperation operation = new RpgSkillOperation(
+                playerId, plan.mode(), plan.target(), cost, timestampEpochMillis,
+                Optional.of(plan), RpgSkillOperation.Phase.COMPLETED,
+                RpgSkillOperation.Kind.SKILL_RESET, itemCosts, itemCountsBefore, itemCountsAfter);
+        return pay(state, operation, transactionId, initialBalance, maximumBalance, true);
+    }
+
+    public static Result recoverCompleted(
+            PlatformSavedData state,
+            UUID playerId,
+            SkillResetPlan.Mode mode,
+            Identifier target,
+            long cost,
+            List<RpgItemCost> itemCosts,
+            List<Long> itemCountsBefore,
+            List<Long> itemCountsAfter,
+            long timestampEpochMillis,
+            UUID transactionId,
+            long initialBalance,
+            long maximumBalance) {
         RpgSkillOperation operation = new RpgSkillOperation(
                 playerId, mode, target, cost, timestampEpochMillis,
-                Optional.empty(), RpgSkillOperation.Phase.COMPLETED);
+                Optional.empty(), RpgSkillOperation.Phase.COMPLETED,
+                RpgSkillOperation.Kind.SKILL_RESET, itemCosts, itemCountsBefore, itemCountsAfter);
         return pay(state, operation, transactionId, initialBalance, maximumBalance, true);
     }
 
@@ -121,8 +181,10 @@ public final class RpgSkillPaymentService {
             boolean recovered) {
         if (state == null || operation.kind() != RpgSkillOperation.Kind.SKILL_RESET
                 || operation.playerId() == null || ZERO_UUID.equals(operation.playerId())
-                || operation.mode() == null || operation.target() == null || operation.cost() < 1
+                || operation.mode() == null || operation.target() == null || operation.cost() < 0
                 || operation.cost() > RpgPlayerState.MAX_XP || operation.timestampEpochMillis() < 0
+                || operation.cost() == 0 && operation.itemCosts().isEmpty()
+                || !operation.hasInventoryEvidence()
                 || transactionId == null || ZERO_UUID.equals(transactionId)) {
             return result(Status.INVALID_REQUEST, 0, 0, null, false);
         }
@@ -137,13 +199,20 @@ public final class RpgSkillPaymentService {
                     && existing.mode() == operation.mode()
                     && existing.target().equals(operation.target())
                     && existing.cost() == operation.cost()
-                    : existing.matches(operation.playerId(), operation.plan().orElseThrow(), operation.cost()));
+                    && existing.itemCosts().equals(operation.itemCosts())
+                    && existing.itemCountsBefore().equals(operation.itemCountsBefore())
+                    && existing.itemCountsAfter().equals(operation.itemCountsAfter())
+                    : existing.matches(operation.playerId(), operation.plan().orElseThrow(), operation.cost(),
+                            operation.itemCosts(), operation.itemCountsBefore(), operation.itemCountsAfter()));
             if (!matches || !receiptMatches(state, transactionId, operation)) {
                 return denied(state, operation, transactionId, Status.TRANSACTION_CONFLICT, before);
             }
             Status duplicate = existing.phase() == RpgSkillOperation.Phase.COMPLETED
                     ? Status.DUPLICATE_COMPLETED : Status.DUPLICATE_PENDING;
             return result(duplicate, before, before, existing, false);
+        }
+        if (!state.pendingRpgSkillOperations(operation.playerId()).isEmpty()) {
+            return denied(state, operation, transactionId, Status.STATE_CONFLICT, before);
         }
         if (state.economyReceipt(transactionId).isPresent()
                 || state.hasEconomyTransaction(transactionId, operation.timestampEpochMillis())) {
