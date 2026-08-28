@@ -525,6 +525,18 @@ public final class MobContentSnapshot {
         return mutations;
     }
 
+    public Map<Identifier, MobContentCatalog.ArenaPolicy> arenas() {
+        return arenas;
+    }
+
+    public Map<Identifier, MobContentCatalog.ContributionRule> contributionRules() {
+        return contributionRules;
+    }
+
+    public Map<Identifier, MobContentCatalog.LootDefinition> lootDefinitions() {
+        return loot;
+    }
+
     public Map<Identifier, MobContentCatalog.BossDefinition> bosses() {
         return bosses;
     }

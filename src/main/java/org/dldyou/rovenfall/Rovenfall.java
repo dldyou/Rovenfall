@@ -81,6 +81,7 @@ import org.dldyou.rovenfall.administration.EconomyTransactionReceipt;
 import org.dldyou.rovenfall.administration.AdministrationService;
 import org.dldyou.rovenfall.administration.AdministrationControlCenterMenu;
 import org.dldyou.rovenfall.administration.AdministrationEconomyMenu;
+import org.dldyou.rovenfall.administration.AdministrationRpgBossMenu;
 import org.dldyou.rovenfall.administration.AdministrationWorldMenu;
 import org.dldyou.rovenfall.administration.AdminRole;
 import org.dldyou.rovenfall.administration.BossRewardService;
@@ -292,6 +293,86 @@ public final class Rovenfall {
                             "A role change did not invalidate the now-forbidden open claims view");
                     player.discard();
                     helper.succeed();
+                });
+            }
+        });
+        event.registerTest(id("admin_rpg_gui_xp_and_role_revalidation"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS,
+                new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 40, 0, true)) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var player = helper.makeMockServerPlayerInLevel();
+                var platform = PlatformSavedData.get(server);
+                var rpg = RpgPlayerSavedData.get(server);
+                Identifier combat = id("combat");
+                helper.assertTrue(AdministrationService.changeRole(
+                                platform, AdministrationService.SYSTEM_ACTOR, true, player.getUUID(),
+                                AdminRole.MODERATOR.getSerializedName(), "gametest rpg gui",
+                                System.currentTimeMillis(), UUID.randomUUID()).status()
+                                == AdministrationService.RoleChangeStatus.SUCCESS,
+                        "Could not assign the RPG-GUI moderator role");
+                helper.assertTrue(ActivityXpAwardService.awardBossReward(
+                                rpg, RpgDefinitionReloadListener.snapshot(server), player.getUUID(), combat,
+                                10, System.currentTimeMillis(), UUID.randomUUID(), "gametest:rpg_gui_seed").status()
+                                == ActivityXpAwardService.Status.SUCCESS,
+                        "Could not seed activity XP for the RPG-GUI test");
+                helper.assertTrue(AdministrationControlCenterMenu.open(player),
+                        "Moderator could not open the administration control center");
+                player.containerMenu.clicked(13, 0, ContainerInput.PICKUP, player);
+                helper.assertTrue(player.containerMenu instanceof AdministrationRpgBossMenu,
+                        "RPG domain did not open the typed RPG administration menu");
+                helper.assertTrue(PlayerMenuNetwork.isPlayerMenu(player.containerMenu),
+                        "RPG administration menu was not protected by player-menu session validation");
+                helper.assertTrue(((AdministrationRpgBossMenu) player.containerMenu)
+                                .applyTextInput(player, player.getUUID().toString()),
+                        "Could not search the RPG player by exact server UUID");
+                player.containerMenu.clicked(9, 0, ContainerInput.PICKUP, player);
+                helper.runAfterDelay(1, () -> {
+                    player.containerMenu.clicked(46, 0, ContainerInput.PICKUP, player);
+                    helper.runAfterDelay(1, () -> {
+                        player.containerMenu.clicked(9, 0, ContainerInput.PICKUP, player);
+                        helper.assertTrue(((AdministrationRpgBossMenu) player.containerMenu)
+                                        .applyTextInput(player, "5 | gametest xp correction"),
+                                "XP adjustment form did not produce a server preview");
+                        helper.runAfterDelay(1, () -> {
+                            player.containerMenu.clicked(31, 0, ContainerInput.PICKUP, player);
+                            helper.assertTrue(rpg.state(player.getUUID()).activityXp().getOrDefault(combat, 0L) == 15,
+                                    "Confirmed RPG GUI adjustment did not commit through the RPG service");
+                            helper.assertTrue(platform.recentAuditEntries(30).stream()
+                                            .anyMatch(entry -> entry.actionType().getPath().equals("rpg_admin_xp_adjust")
+                                                    && entry.reason().equals("gametest xp correction")),
+                                    "Confirmed RPG GUI adjustment did not retain audit evidence");
+                            helper.runAfterDelay(1, () -> {
+                                player.containerMenu.clicked(31, 0, ContainerInput.PICKUP, player);
+                                helper.runAfterDelay(1, () -> {
+                                    player.containerMenu.clicked(9, 0, ContainerInput.PICKUP, player);
+                                    helper.assertTrue(((AdministrationRpgBossMenu) player.containerMenu)
+                                                    .applyTextInput(player, "5 | gametest revoked preview"),
+                                            "Second XP adjustment did not reach preview");
+                                    helper.assertTrue(AdministrationService.changeRole(
+                                                    platform, AdministrationService.SYSTEM_ACTOR, true,
+                                                    player.getUUID(), AdminRole.CONTENT_MANAGER.getSerializedName(),
+                                                    "gametest rpg mutation revocation", System.currentTimeMillis(),
+                                                    UUID.randomUUID()).status()
+                                                    == AdministrationService.RoleChangeStatus.SUCCESS,
+                                            "Could not revoke XP mutation authority before confirmation");
+                                    helper.runAfterDelay(20, () -> {
+                                        player.containerMenu.clicked(31, 0, ContainerInput.PICKUP, player);
+                                        helper.assertTrue(rpg.state(player.getUUID()).activityXp()
+                                                        .getOrDefault(combat, 0L) == 15,
+                                                "A stale role preview committed an unauthorized XP adjustment");
+                                        helper.assertTrue(platform.recentAuditEntries(30).stream()
+                                                        .anyMatch(entry -> entry.actionType().getPath()
+                                                                .equals("admin_gui_unauthorized_denied")),
+                                                "Rejected stale-role confirmation did not retain denial evidence");
+                                        player.discard();
+                                        helper.succeed();
+                                    });
+                                });
+                            });
+                        });
+                    });
                 });
             }
         });

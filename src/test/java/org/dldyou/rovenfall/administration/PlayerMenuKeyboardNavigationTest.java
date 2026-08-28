@@ -32,10 +32,14 @@ final class PlayerMenuKeyboardNavigationTest {
                 Component.translatable("gui.rovenfall.admin.economy.title")));
         assertEquals(true, RovenfallInventoryClient.isPlayerMenuTitle(
                 Component.translatable("gui.rovenfall.admin.world.title")));
+        assertEquals(true, RovenfallInventoryClient.isPlayerMenuTitle(
+                Component.translatable("gui.rovenfall.admin.rpg_boss.title")));
         assertEquals(true, RovenfallInventoryClient.isAdminMenuTitle(
                 Component.translatable("gui.rovenfall.admin.title")));
         assertEquals(true, RovenfallInventoryClient.isAdminMenuTitle(
                 Component.translatable("gui.rovenfall.admin.world.title")));
+        assertEquals(true, RovenfallInventoryClient.isAdminMenuTitle(
+                Component.translatable("gui.rovenfall.admin.rpg_boss.title")));
         assertEquals(AdministrationReadViewService.MAX_QUERY_LENGTH,
                 RovenfallInventoryClient.adminInputLength(Component.translatable("gui.rovenfall.admin.title")));
         assertEquals(AdministrationTextInputMenu.MAX_INPUT_LENGTH,
@@ -44,6 +48,9 @@ final class PlayerMenuKeyboardNavigationTest {
         assertEquals(AdministrationTextInputMenu.MAX_INPUT_LENGTH,
                 RovenfallInventoryClient.adminInputLength(
                         Component.translatable("gui.rovenfall.admin.world.title")));
+        assertEquals(AdministrationTextInputMenu.MAX_INPUT_LENGTH,
+                RovenfallInventoryClient.adminInputLength(
+                        Component.translatable("gui.rovenfall.admin.rpg_boss.title")));
         assertEquals(false, RovenfallInventoryClient.isPlayerMenuTitle(
                 Component.translatable("container.chest")));
         assertEquals(false, RovenfallInventoryClient.isPlayerMenuTitle(Component.literal("Rovenfall")));

@@ -109,8 +109,8 @@ public final class RpgPlayerSavedData extends SavedData {
             throw new IllegalArgumentException("RPG player query must be bounded");
         }
         return players.entrySet().stream()
-                .limit(maximumEntries)
                 .sorted(Map.Entry.comparingByKey())
+                .limit(maximumEntries)
                 .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
                 .toList();
     }

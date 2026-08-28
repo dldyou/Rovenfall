@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import net.minecraft.resources.FileToIdConverter;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
@@ -29,6 +30,8 @@ public final class MobContentReloadListener extends SimplePreparableReloadListen
     private static final Logger LOGGER = LogUtils.getLogger();
 
     private final MobContentStore store = new MobContentStore();
+    private final AtomicReference<List<MobContentSnapshot.Problem>> lastProblems =
+            new AtomicReference<>(List.of());
 
     @Override
     protected MobContentSnapshot prepare(ResourceManager resourceManager, ProfilerFiller profiler) {
@@ -36,8 +39,10 @@ public final class MobContentReloadListener extends SimplePreparableReloadListen
         var resources = FILES.listMatchingResourceStacks(resourceManager);
         if (resources.size() > MobContentSnapshot.MAX_CATALOGS) {
             Identifier catalog = Identifier.fromNamespaceAndPath(Rovenfall.MOD_ID, "mob_content_catalog");
-            throw new MobContentSnapshot.ValidationException(List.of(new MobContentSnapshot.Problem(
-                    catalog, catalog, "catalog count exceeds " + MobContentSnapshot.MAX_CATALOGS)));
+            List<MobContentSnapshot.Problem> problems = List.of(new MobContentSnapshot.Problem(
+                    catalog, catalog, "catalog count exceeds " + MobContentSnapshot.MAX_CATALOGS));
+            lastProblems.set(problems);
+            throw new MobContentSnapshot.ValidationException(problems);
         }
 
         List<MobContentSnapshot.Source> candidates = new ArrayList<>();
@@ -46,9 +51,15 @@ public final class MobContentReloadListener extends SimplePreparableReloadListen
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(entry -> loadResource(entry.getKey(), entry.getValue(), ops, candidates, problems));
         if (!problems.isEmpty()) {
+            lastProblems.set(List.copyOf(problems));
             throw new MobContentSnapshot.ValidationException(problems);
         }
-        return MobContentSnapshot.compile(candidates);
+        try {
+            return MobContentSnapshot.compile(candidates);
+        } catch (MobContentSnapshot.ValidationException exception) {
+            lastProblems.set(exception.problems());
+            throw exception;
+        }
     }
 
     private void loadResource(
@@ -85,8 +96,10 @@ public final class MobContentReloadListener extends SimplePreparableReloadListen
     protected void apply(MobContentSnapshot prepared, ResourceManager resourceManager, ProfilerFiller profiler) {
         try {
             store.install(prepared.validateRuntimeBindings(runtimeBindings()));
+            lastProblems.set(List.of());
             LOGGER.info("Loaded {} validated Rovenfall mob content definitions", prepared.size());
         } catch (MobContentSnapshot.ValidationException exception) {
+            lastProblems.set(exception.problems());
             for (MobContentSnapshot.Problem problem : exception.problems()) {
                 LOGGER.error("Rejected Rovenfall mob content file={} definition={} cause={}",
                         problem.file(), problem.definitionId(), problem.cause());
@@ -104,6 +117,14 @@ public final class MobContentReloadListener extends SimplePreparableReloadListen
         return store.current();
     }
 
+    public List<MobContentSnapshot.Problem> lastProblems() {
+        return lastProblems.get();
+    }
+
+    public void beginValidationAttempt() {
+        lastProblems.set(List.of());
+    }
+
     public static Optional<MobContentCatalog.MobDefinition> mob(MinecraftServer server, Identifier id) {
         return snapshot(server).mob(id);
     }
@@ -119,5 +140,17 @@ public final class MobContentReloadListener extends SimplePreparableReloadListen
     public static MobContentSnapshot snapshot(MinecraftServer server) {
         MobContentReloadListener listener = server.getServerResources().managers().getListener(KEY);
         return listener == null ? MobContentSnapshot.empty() : listener.snapshot();
+    }
+
+    public static List<MobContentSnapshot.Problem> lastProblems(MinecraftServer server) {
+        MobContentReloadListener listener = server.getServerResources().managers().getListener(KEY);
+        return listener == null ? List.of() : listener.lastProblems();
+    }
+
+    public static void beginValidationAttempt(MinecraftServer server) {
+        MobContentReloadListener listener = server.getServerResources().managers().getListener(KEY);
+        if (listener != null) {
+            listener.beginValidationAttempt();
+        }
     }
 }

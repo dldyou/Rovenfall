@@ -75,3 +75,25 @@ disable are labeled irreversible and always require a form submission, a current
 preview, and a second explicit confirmation. Wilderness reset/restore still use the existing
 snapshot, evacuation, precommit, rollback, and restart lifecycle services; the GUI never
 edits saved collections or filesystem state directly.
+
+## RPG content, custom mobs, and boss operations
+
+The RPG domain lists persisted players, progression, award evidence, promotion recovery
+candidates, and all loaded activity, career, skill, mob, mutation, arena, contribution,
+reward, and boss definitions. Moderators and Owners may adjust activity XP. Content
+managers and Owners may recover a missing promotion, reset a career or skill branch, and
+request a normal datapack reload. Every mutation binds the exact player state and RPG
+definition revision shown by its preview; skill resets also bind the server-computed reset
+plan.
+
+The reload screen retains a bounded diagnostic list with source, file, definition ID, and
+sanitized cause. A failed validation keeps the previously active RPG and mob snapshots.
+Only one audited reload can run at a time, and completion is shown separately from the
+initial request result.
+
+The Encounters domain shows active mutations, boss stages, protected-arena state,
+participant contribution ratios, reward eligibility inputs, and reward-operation phases.
+Only Owners can reset one encounter or run global recovery. The confirmation snapshot
+includes the encounter, its arena, and reward operations (or the complete global recovery
+set), then rechecks that evidence at click time before calling the existing resumable,
+restart-safe boss administration service.
