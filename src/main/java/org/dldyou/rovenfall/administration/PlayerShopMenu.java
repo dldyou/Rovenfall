@@ -19,6 +19,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.ItemLore;
 import org.dldyou.rovenfall.economy.ShopInstance;
+import org.dldyou.rovenfall.economy.ShopTemplateReloadListener;
 
 /** Native shop catalog and confirmation flow; all mutations remain inside {@link ShopTradeService}. */
 public final class PlayerShopMenu extends ChestMenu {
@@ -246,13 +247,10 @@ public final class PlayerShopMenu extends ChestMenu {
                 Instant.now().toEpochMilli());
         if (result.status() == ShopTradeService.Status.SUCCESS) {
             viewer.sendOverlayMessage(Component.translatable(
-                    preview.direction() == ShopTradeService.Direction.BUY
-                            ? "command.rovenfall.shop.buy.success"
-                            : "command.rovenfall.shop.sell.success",
-                    preview.quantity(), preview.offerId().toString(), transactionId.toString()));
+                    "gui.rovenfall.shop.result." + preview.direction().name().toLowerCase(java.util.Locale.ROOT),
+                    preview.quantity(), preview.expectedItem().getHoverName()));
         } else if (result.status() == ShopTradeService.Status.DUPLICATE_TRANSACTION) {
-            viewer.sendOverlayMessage(Component.translatable(
-                    "command.rovenfall.shop.duplicate", transactionId.toString()));
+            viewer.sendOverlayMessage(Component.translatable("gui.rovenfall.shop.result.duplicate"));
         } else {
             viewer.sendOverlayMessage(Component.translatable(errorTranslationKey(result.status())));
         }
@@ -316,7 +314,7 @@ public final class PlayerShopMenu extends ChestMenu {
                 ShopInstance shop = platform().shopInstance(entry.value()).orElseThrow();
                 catalog.setItem(CONTENT_START + entry.offset(), PlayerDashboardMenu.icon(
                         Items.CHEST,
-                        Component.literal(entry.value().toString()),
+                        shopName(shop),
                         Component.translatable("gui.rovenfall.shop.offers", shop.offers().size()),
                         bindingLine(shop),
                         Component.translatable("gui.rovenfall.player.click")));
@@ -338,7 +336,7 @@ public final class PlayerShopMenu extends ChestMenu {
         pageIndex = boundedPage(pageIndex, offers.size());
         catalog.setItem(4, PlayerDashboardMenu.icon(
                 Items.CHEST,
-                Component.literal(selectedShop.toString()),
+                shopName(shop()),
                 Component.translatable("gui.rovenfall.player.balance", balance()),
                 pageLine(offers.size())));
         if (offers.isEmpty()) {
@@ -348,7 +346,7 @@ public final class PlayerShopMenu extends ChestMenu {
         } else {
             pageEntries(offers).forEach(entry -> catalog.setItem(
                     CONTENT_START + entry.offset(),
-                    offerIcon(entry.value(), shop().offers().get(entry.value()))));
+                    offerIcon(shop().offers().get(entry.value()))));
         }
         addBackAndPaging(offers.size());
     }
@@ -373,9 +371,9 @@ public final class PlayerShopMenu extends ChestMenu {
         ShopInstance.Offer offer = current.orElseThrow();
         catalog.setItem(4, PlayerDashboardMenu.icon(
                 Items.CHEST,
-                Component.literal(selectedShop + " / " + selectedOffer),
+                shopName(shop()),
                 Component.translatable("gui.rovenfall.player.balance", balance())));
-        catalog.setItem(13, offerIcon(selectedOffer, offer));
+        catalog.setItem(13, offerIcon(offer));
         catalog.setItem(19, quantityButton("-10"));
         catalog.setItem(20, quantityButton("-1"));
         catalog.setItem(22, PlayerDashboardMenu.icon(
@@ -404,7 +402,6 @@ public final class PlayerShopMenu extends ChestMenu {
                 Component.translatable("gui.rovenfall.shop.total", preview.total())));
         ItemStack item = preview.expectedItem();
         item.set(DataComponents.LORE, new ItemLore(List.of(
-                Component.translatable("gui.rovenfall.shop.offer_id", preview.offerId().toString()),
                 Component.translatable("gui.rovenfall.shop.item_count", safeItemCount(item, preview.quantity())))));
         catalog.setItem(13, item);
         catalog.setItem(29, PlayerDashboardMenu.icon(
@@ -419,10 +416,9 @@ public final class PlayerShopMenu extends ChestMenu {
         addBack();
     }
 
-    private ItemStack offerIcon(Identifier offerId, ShopInstance.Offer offer) {
+    private ItemStack offerIcon(ShopInstance.Offer offer) {
         ItemStack stack = offer.item();
         stack.set(DataComponents.LORE, new ItemLore(List.of(
-                Component.translatable("gui.rovenfall.shop.offer_id", offerId.toString()),
                 priceLine("buy", offer.buyPrice()),
                 priceLine("sell", offer.sellPrice()),
                 stockLine(offer.stock()),
@@ -514,12 +510,14 @@ public final class PlayerShopMenu extends ChestMenu {
 
     private Component bindingLine(ShopInstance shop) {
         return shop.binding()
-                .<Component>map(binding -> Component.translatable(
-                        "gui.rovenfall.shop.binding",
-                        binding.dimension().identifier().toString(),
-                        binding.position().getX(), binding.position().getY(), binding.position().getZ(),
-                        shop.accessPolicy().maxDistance()))
+                .<Component>map(binding -> Component.translatable("gui.rovenfall.shop.binding.nearby"))
                 .orElseGet(() -> Component.translatable("gui.rovenfall.shop.unbound"));
+    }
+
+    private Component shopName(ShopInstance shop) {
+        return ShopTemplateReloadListener.get(viewer.level().getServer(), shop.templateId())
+                .<Component>map(template -> Component.translatable(template.translationKey()))
+                .orElseGet(() -> Component.translatable("gui.rovenfall.player.unknown_shop"));
     }
 
     private static Component priceLine(String direction, Optional<Long> price) {

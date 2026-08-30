@@ -268,7 +268,7 @@ public final class PlayerDashboardMenu extends ChestMenu {
     private static Component careerName(RpgDefinitionSnapshot definitions, Identifier id) {
         return definitions.career(id)
                 .<Component>map(definition -> Component.translatable(definition.translationKey()))
-                .orElseGet(() -> Component.literal(id.toString()));
+                .orElseGet(() -> Component.translatable("gui.rovenfall.player.unknown_career"));
     }
 
     static ItemStack icon(Item item, Component name, Component... lore) {
