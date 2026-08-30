@@ -168,7 +168,7 @@ public final class Rovenfall {
         if (FMLEnvironment.getDist() == Dist.CLIENT) {
             RpgSkillClient.register(modBus);
             RovenfallMobClient.register(modBus);
-            RovenfallInventoryClient.register();
+            RovenfallInventoryClient.register(modBus);
         }
         NeoForge.EVENT_BUS.addListener(RovenfallCommands::register);
         NeoForge.EVENT_BUS.addListener(EconomyService::onPlayerLoggedIn);
