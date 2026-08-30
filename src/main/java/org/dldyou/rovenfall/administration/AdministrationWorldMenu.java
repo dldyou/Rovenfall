@@ -61,6 +61,10 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
     private net.minecraft.resources.Identifier selectedPortal;
     private WildernessResetState.Evidence selectedEvidence;
     private UUID selectedSnapshot;
+    private UUID selectedClaimTarget;
+    private net.minecraft.resources.Identifier selectedRegionDimension;
+    private net.minecraft.resources.Identifier selectedPortalOriginDimension;
+    private net.minecraft.resources.Identifier selectedPortalDestinationDimension;
     private AdministrationWorldActionService.PendingAction pending;
     private AdministrationWorldActionService.Result result;
     private long lastHandledGameTime = Long.MIN_VALUE;
@@ -131,6 +135,10 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
             case WILDERNESS -> clickWilderness(slotIndex);
             case EVIDENCE -> clickEvidence(slotIndex);
             case EVIDENCE_DETAIL -> clickEvidenceDetail(slotIndex);
+            case CLAIM_TARGET_SELECT -> clickClaimTargetSelect(slotIndex);
+            case REGION_DIMENSION_SELECT -> clickRegionDimensionSelect(slotIndex);
+            case PORTAL_ORIGIN_DIMENSION_SELECT -> clickPortalOriginDimensionSelect(slotIndex);
+            case PORTAL_DESTINATION_DIMENSION_SELECT -> clickPortalDestinationDimensionSelect(slotIndex);
             case FORM -> {
             }
             case PREVIEW -> {
@@ -158,7 +166,9 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
         if (mode == Mode.FORM) {
             return parseForm(input);
         }
-        if (mode != Mode.CLAIMS && mode != Mode.REGIONS && mode != Mode.PORTALS && mode != Mode.EVIDENCE) {
+        if (mode != Mode.CLAIMS && mode != Mode.REGIONS && mode != Mode.PORTALS && mode != Mode.EVIDENCE
+                && mode != Mode.CLAIM_TARGET_SELECT && mode != Mode.REGION_DIMENSION_SELECT
+                && mode != Mode.PORTAL_ORIGIN_DIMENSION_SELECT && mode != Mode.PORTAL_DESTINATION_DIMENSION_SELECT) {
             return false;
         }
         if (input.length() > AdministrationReadViewService.MAX_QUERY_LENGTH) {
@@ -252,9 +262,19 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
             return;
         }
         if (slot == PRIMARY_SLOT) {
-            enterForm(FormKind.CLAIM_ROLE, Mode.CLAIM_DETAIL);
+            selectedClaimTarget = null;
+            query = "";
+            page = 0;
+            formKind = FormKind.CLAIM_ROLE;
+            mode = Mode.CLAIM_TARGET_SELECT;
+            render();
         } else if (slot == SECONDARY_SLOT) {
-            enterForm(FormKind.CLAIM_UNTRUST, Mode.CLAIM_DETAIL);
+            selectedClaimTarget = null;
+            query = "";
+            page = 0;
+            mode = Mode.CLAIM_TARGET_SELECT;
+            formKind = FormKind.CLAIM_UNTRUST;
+            render();
         } else if (slot == TERTIARY_SLOT) {
             enterForm(FormKind.CLAIM_SETTINGS, Mode.CLAIM_DETAIL);
         } else if (slot == DANGER_SLOT) {
@@ -264,7 +284,11 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
 
     private void clickRegions(int slot) {
         if (slot == PRIMARY_SLOT && canManageRegions(currentRole())) {
-            enterForm(FormKind.REGION_CREATE, Mode.REGIONS);
+            selectedRegionDimension = null;
+            query = "";
+            page = 0;
+            mode = Mode.REGION_DIMENSION_SELECT;
+            render();
             return;
         }
         if (slot == PREVIOUS_SLOT) {
@@ -302,7 +326,12 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
 
     private void clickPortals(int slot) {
         if (slot == PRIMARY_SLOT && canManagePortals(currentRole())) {
-            enterForm(FormKind.PORTAL_CREATE, Mode.PORTALS);
+            selectedPortalOriginDimension = null;
+            selectedPortalDestinationDimension = null;
+            query = "";
+            page = 0;
+            mode = Mode.PORTAL_ORIGIN_DIMENSION_SELECT;
+            render();
             return;
         }
         if (slot == CENTER_SLOT) {
@@ -391,72 +420,219 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
         }
     }
 
+    private void clickClaimTargetSelect(int slot) {
+        if (slot == PREVIOUS_SLOT) {
+            page = Math.max(0, page - 1);
+        } else if (slot == NEXT_SLOT) {
+            page++;
+        } else if (slot >= CONTENT_START && slot < CONTENT_START + CONTENT_SIZE) {
+            List<Map.Entry<UUID, PlayerRecord>> players = claimTargets();
+            int index = page * CONTENT_SIZE + slot - CONTENT_START;
+            if (index >= players.size()) {
+                return;
+            }
+            selectedClaimTarget = players.get(index).getKey();
+            enterForm(formKind == FormKind.CLAIM_UNTRUST ? FormKind.CLAIM_UNTRUST : FormKind.CLAIM_ROLE, Mode.CLAIM_DETAIL);
+            return;
+        } else {
+            return;
+        }
+        render();
+    }
+
+    private void clickRegionDimensionSelect(int slot) {
+        Optional<net.minecraft.resources.Identifier> dimension = selectedDimension(slot);
+        if (dimension.isPresent()) {
+            selectedRegionDimension = dimension.orElseThrow();
+            enterForm(FormKind.REGION_CREATE, Mode.REGIONS);
+            return;
+        }
+        if (slot == PREVIOUS_SLOT) {
+            page = Math.max(0, page - 1);
+        } else if (slot == NEXT_SLOT) {
+            page++;
+        } else {
+            return;
+        }
+        render();
+    }
+
+    private void clickPortalOriginDimensionSelect(int slot) {
+        Optional<net.minecraft.resources.Identifier> dimension = selectedDimension(slot);
+        if (dimension.isPresent()) {
+            selectedPortalOriginDimension = dimension.orElseThrow();
+            query = "";
+            page = 0;
+            mode = Mode.PORTAL_DESTINATION_DIMENSION_SELECT;
+            render();
+            return;
+        }
+        if (slot == PREVIOUS_SLOT) {
+            page = Math.max(0, page - 1);
+        } else if (slot == NEXT_SLOT) {
+            page++;
+        } else {
+            return;
+        }
+        render();
+    }
+
+    private void clickPortalDestinationDimensionSelect(int slot) {
+        Optional<net.minecraft.resources.Identifier> dimension = selectedDimension(slot);
+        if (dimension.isPresent()) {
+            selectedPortalDestinationDimension = dimension.orElseThrow();
+            enterForm(FormKind.PORTAL_CREATE, Mode.PORTALS);
+            return;
+        }
+        if (slot == PREVIOUS_SLOT) {
+            page = Math.max(0, page - 1);
+        } else if (slot == NEXT_SLOT) {
+            page++;
+        } else {
+            return;
+        }
+        render();
+    }
+
     private boolean parseForm(String input) {
+        if (input.startsWith("rf-form/")) {
+            Optional<List<String>> values = AdministrationStructuredFormCodec.decode(formType(formKind), input);
+            if (values.isEmpty()) {
+                formError = "invalid_form";
+                render();
+                return false;
+            }
+            return parseTypedForm(values.orElseThrow());
+        }
+        return parseLegacyForm(input);
+    }
+
+    private boolean parseTypedForm(List<String> values) {
         PlatformSavedData state = state();
         UUID transactionId = UUID.randomUUID();
         pending = switch (formKind) {
-            case CLAIM_ROLE -> AdministrationWorldFormParser.parseClaimRole(input)
-                    .map(value -> new AdministrationWorldActionService.ClaimRoleAction(
+            case CLAIM_ROLE -> AdministrationWorldTypedForm.claimRole(selectedClaimTarget, values)
+                .map(value -> new AdministrationWorldActionService.ClaimRoleAction(
                             transactionId, selectedClaim, state.claim(selectedClaim), value.playerId(), value.role(),
                             false, value.reason()))
                     .orElse(null);
-            case CLAIM_UNTRUST -> AdministrationWorldFormParser.parseClaimTarget(input)
+            case CLAIM_UNTRUST -> AdministrationWorldTypedForm.claimUntrust(selectedClaimTarget, values)
                     .map(value -> new AdministrationWorldActionService.ClaimRoleAction(
                             transactionId, selectedClaim, state.claim(selectedClaim), value.playerId(),
                             ClaimRole.VISITOR, true, value.reason()))
                     .orElse(null);
-            case CLAIM_SETTINGS -> AdministrationWorldFormParser.parseClaimSettings(input)
+            case CLAIM_SETTINGS -> AdministrationWorldTypedForm.claimSettings(values)
                     .map(value -> new AdministrationWorldActionService.ClaimSettingsAction(
                             transactionId, selectedClaim, state.claim(selectedClaim),
                             new ClaimSettings(value.entryRestricted(), value.publicInteractions()), value.reason()))
                     .orElse(null);
-            case CLAIM_RECLAIM -> reason(input)
+            case CLAIM_RECLAIM -> typedReason(values)
                     .map(value -> new AdministrationWorldActionService.ClaimReclaimAction(
                             transactionId, selectedClaim, state.claim(selectedClaim), value))
                     .orElse(null);
-            case REGION_CREATE -> AdministrationWorldFormParser.parseRegionCreate(input)
+            case REGION_CREATE -> AdministrationWorldTypedForm.regionCreate(transactionId, selectedRegionDimension, values)
                     .map(value -> new AdministrationWorldActionService.RegionCreateAction(
                             transactionId, value.regionId(), new ProtectedRegion(
                                     viewerId, dimension(value.dimensionId()), value.minChunkX(), value.minChunkZ(),
                                     value.maxChunkX(), value.maxChunkZ()), value.reason()))
                     .orElse(null);
-            case REGION_EDIT -> AdministrationWorldFormParser.parseRegionEdit(input)
+            case REGION_EDIT -> state.protectedRegion(selectedRegion).flatMap(region ->
+                    AdministrationWorldTypedForm.regionEdit(region.dimension().identifier(), values))
                     .map(value -> new AdministrationWorldActionService.RegionEditAction(
                             transactionId, selectedRegion, state.protectedRegion(selectedRegion), new ProtectedRegion(
                                     viewerId, dimension(value.dimensionId()), value.minChunkX(), value.minChunkZ(),
                                     value.maxChunkX(), value.maxChunkZ()), value.reason()))
                     .orElse(null);
-            case REGION_DELETE -> reason(input)
+            case REGION_DELETE -> typedReason(values)
                     .map(value -> new AdministrationWorldActionService.RegionDeleteAction(
                             transactionId, selectedRegion, state.protectedRegion(selectedRegion), value))
                     .orElse(null);
-            case PORTAL_CREATE -> AdministrationWorldFormParser.parsePortalCreate(input)
+            case PORTAL_CREATE -> AdministrationWorldTypedForm.portalCreate(
+                    transactionId, selectedPortalOriginDimension, selectedPortalDestinationDimension, values)
                     .map(value -> new AdministrationWorldActionService.PortalCreateAction(
                             transactionId, value.portalId(), portal(value), value.reason()))
                     .orElse(null);
-            case PORTAL_EDIT -> AdministrationWorldFormParser.parsePortalEdit(input)
+            case PORTAL_EDIT -> state.portalDefinition(selectedPortal).flatMap(portal ->
+                    AdministrationWorldTypedForm.portalEdit(
+                            portal.origin().dimension().identifier(), portal.destination().dimension().identifier(), values))
                     .map(value -> new AdministrationWorldActionService.PortalEditAction(
                             transactionId, selectedPortal, state.portalDefinition(selectedPortal), portal(value),
                             value.reason()))
                     .orElse(null);
-            case PORTAL_DISABLE -> reason(input)
+            case PORTAL_DISABLE -> typedReason(values)
                     .map(value -> new AdministrationWorldActionService.PortalDeleteAction(
                             transactionId, selectedPortal, state.portalDefinition(selectedPortal), value))
                     .orElse(null);
-            case WILDERNESS_WARN -> reason(input)
+            case WILDERNESS_WARN -> typedReason(values)
                     .map(value -> new AdministrationWorldActionService.WildernessWarnAction(
                             transactionId, state.wildernessResetState(), value))
                     .orElse(null);
-            case WILDERNESS_RESET -> reason(input).flatMap(value -> state.wildernessResetState().warning()
+            case WILDERNESS_RESET -> typedReason(values).flatMap(value -> state.wildernessResetState().warning()
                     .map(warning -> new AdministrationWorldActionService.WildernessResetAction(
                             transactionId, state.wildernessResetState(), warning.warningId(), value)))
                     .orElse(null);
-            case WILDERNESS_RESTORE -> reason(input)
+            case WILDERNESS_RESTORE -> typedReason(values)
                     .filter(value -> selectedSnapshot != null)
                     .map(value -> new AdministrationWorldActionService.WildernessRestoreAction(
                             transactionId, state.wildernessResetState(), selectedSnapshot, value))
                     .orElse(null);
         };
+        if (pending == null || !AdministrationWorldActionService.allowed(currentRole(), pending)
+                || !AdministrationWorldActionService.fresh(state, pending)) {
+            formError = "invalid_form";
+            pending = null;
+            render();
+            return false;
+        }
+        formError = "";
+        mode = Mode.PREVIEW;
+        render();
+        return true;
+    }
+
+    private boolean parseLegacyForm(String input) {
+        PlatformSavedData state = state();
+        UUID transactionId = UUID.randomUUID();
+        pending = switch (formKind) {
+            case CLAIM_ROLE -> AdministrationWorldFormParser.parseClaimRole(input)
+                    .map(value -> new AdministrationWorldActionService.ClaimRoleAction(transactionId, selectedClaim,
+                            state.claim(selectedClaim), value.playerId(), value.role(), false, value.reason())).orElse(null);
+            case CLAIM_UNTRUST -> AdministrationWorldFormParser.parseClaimTarget(input)
+                    .map(value -> new AdministrationWorldActionService.ClaimRoleAction(transactionId, selectedClaim,
+                            state.claim(selectedClaim), value.playerId(), ClaimRole.VISITOR, true, value.reason())).orElse(null);
+            case CLAIM_SETTINGS -> AdministrationWorldFormParser.parseClaimSettings(input)
+                    .map(value -> new AdministrationWorldActionService.ClaimSettingsAction(transactionId, selectedClaim,
+                            state.claim(selectedClaim), new ClaimSettings(value.entryRestricted(), value.publicInteractions()), value.reason())).orElse(null);
+            case CLAIM_RECLAIM -> reason(input).map(value -> new AdministrationWorldActionService.ClaimReclaimAction(
+                    transactionId, selectedClaim, state.claim(selectedClaim), value)).orElse(null);
+            case REGION_CREATE -> AdministrationWorldFormParser.parseRegionCreate(input).map(value ->
+                    new AdministrationWorldActionService.RegionCreateAction(transactionId, value.regionId(), new ProtectedRegion(
+                            viewerId, dimension(value.dimensionId()), value.minChunkX(), value.minChunkZ(),
+                            value.maxChunkX(), value.maxChunkZ()), value.reason())).orElse(null);
+            case REGION_EDIT -> AdministrationWorldFormParser.parseRegionEdit(input).map(value ->
+                    new AdministrationWorldActionService.RegionEditAction(transactionId, selectedRegion,
+                            state.protectedRegion(selectedRegion), new ProtectedRegion(viewerId, dimension(value.dimensionId()),
+                            value.minChunkX(), value.minChunkZ(), value.maxChunkX(), value.maxChunkZ()), value.reason())).orElse(null);
+            case REGION_DELETE -> reason(input).map(value -> new AdministrationWorldActionService.RegionDeleteAction(
+                    transactionId, selectedRegion, state.protectedRegion(selectedRegion), value)).orElse(null);
+            case PORTAL_CREATE -> AdministrationWorldFormParser.parsePortalCreate(input).map(value ->
+                    new AdministrationWorldActionService.PortalCreateAction(transactionId, value.portalId(), portal(value), value.reason())).orElse(null);
+            case PORTAL_EDIT -> AdministrationWorldFormParser.parsePortalEdit(input).map(value ->
+                    new AdministrationWorldActionService.PortalEditAction(transactionId, selectedPortal,
+                            state.portalDefinition(selectedPortal), portal(value), value.reason())).orElse(null);
+            case PORTAL_DISABLE -> reason(input).map(value -> new AdministrationWorldActionService.PortalDeleteAction(
+                    transactionId, selectedPortal, state.portalDefinition(selectedPortal), value)).orElse(null);
+            case WILDERNESS_WARN -> reason(input).map(value -> new AdministrationWorldActionService.WildernessWarnAction(
+                    transactionId, state.wildernessResetState(), value)).orElse(null);
+            case WILDERNESS_RESET -> reason(input).flatMap(value -> state.wildernessResetState().warning().map(warning ->
+                    new AdministrationWorldActionService.WildernessResetAction(transactionId, state.wildernessResetState(), warning.warningId(), value))).orElse(null);
+            case WILDERNESS_RESTORE -> reason(input).filter(value -> selectedSnapshot != null).map(value ->
+                    new AdministrationWorldActionService.WildernessRestoreAction(transactionId, state.wildernessResetState(), selectedSnapshot, value)).orElse(null);
+        };
+        return finishParsedForm(state);
+    }
+
+    private boolean finishParsedForm(PlatformSavedData state) {
         if (pending == null || !AdministrationWorldActionService.allowed(currentRole(), pending)
                 || !AdministrationWorldActionService.fresh(state, pending)) {
             formError = "invalid_form";
@@ -498,6 +674,15 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
 
     private static Optional<String> reason(String input) {
         return AdministrationWorldFormParser.parseReasonOnly(input)
+                .map(AdministrationWorldFormParser.ReasonForm::reason);
+    }
+
+    private Optional<String> typedReason(List<String> values) {
+        if (!formType(formKind).accepts(values)) {
+            return Optional.empty();
+        }
+        int index = values.size() - 1;
+        return AdministrationWorldFormParser.parseReasonOnly(" | " + values.get(index))
                 .map(AdministrationWorldFormParser.ReasonForm::reason);
     }
 
@@ -560,6 +745,24 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
     private void back() {
         switch (mode) {
             case CLAIMS, PORTALS -> AdministrationControlCenterMenu.open(viewer);
+            case CLAIM_TARGET_SELECT -> {
+                mode = Mode.CLAIM_DETAIL;
+                query = "";
+                page = 0;
+                render();
+            }
+            case REGION_DIMENSION_SELECT -> {
+                mode = Mode.REGIONS;
+                query = "";
+                page = 0;
+                render();
+            }
+            case PORTAL_ORIGIN_DIMENSION_SELECT, PORTAL_DESTINATION_DIMENSION_SELECT -> {
+                mode = Mode.PORTALS;
+                query = "";
+                page = 0;
+                render();
+            }
             case CLAIM_DETAIL -> {
                 selectedClaim = null;
                 mode = Mode.CLAIMS;
@@ -620,6 +823,10 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
             case WILDERNESS -> renderWilderness();
             case EVIDENCE -> renderEvidence();
             case EVIDENCE_DETAIL -> renderEvidenceDetail();
+            case CLAIM_TARGET_SELECT -> renderClaimTargetSelect();
+            case REGION_DIMENSION_SELECT -> renderDimensionSelect("gui.rovenfall.admin.world.region.create");
+            case PORTAL_ORIGIN_DIMENSION_SELECT -> renderDimensionSelect("gui.rovenfall.admin.world.field.origin");
+            case PORTAL_DESTINATION_DIMENSION_SELECT -> renderDimensionSelect("gui.rovenfall.admin.world.field.destination");
             case FORM -> renderForm();
             case PREVIEW -> renderPreview();
             case RESULT -> renderResult();
@@ -636,13 +843,14 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
             var row = resultPage.entries().get(index);
             Claim claim = row.claim();
             contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
-                    Items.GRASS_BLOCK, Component.literal(row.key().auditTarget()),
-                    Component.translatable("gui.rovenfall.admin.world.field.owner", claim.ownerId().toString()),
+                    Items.GRASS_BLOCK, claimName(row.key()),
+                    Component.translatable("gui.rovenfall.admin.world.field.owner", playerName(claim.ownerId())),
                     Component.translatable("gui.rovenfall.admin.world.field.trusted", claim.trustedRoles().size()),
                     Component.translatable("gui.rovenfall.admin.world.field.flags",
                             enabled(claim.settings().entryRestricted()), enabled(claim.settings().publicInteractions())),
                     Component.translatable("gui.rovenfall.admin.world.field.transfer",
-                            optionalUuid(claim.pendingTransferTo()))));
+                            optionalPlayerName(claim.pendingTransferTo())),
+                    Component.literal(row.key().auditTarget() + " | " + claim.ownerId())));
         }
         contents.setItem(PRIMARY_SLOT, icon(
                 Items.STRUCTURE_VOID, "gui.rovenfall.admin.world.regions", "gui.rovenfall.admin.click"));
@@ -658,13 +866,14 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
         }
         contents.setItem(4, PlayerDashboardMenu.icon(
                 Items.WRITABLE_BOOK, Component.translatable("gui.rovenfall.admin.world.claim.detail"),
-                Component.literal(selectedClaim.auditTarget()),
-                Component.translatable("gui.rovenfall.admin.world.field.owner", claim.ownerId().toString()),
+                claimName(selectedClaim),
+                Component.translatable("gui.rovenfall.admin.world.field.owner", playerName(claim.ownerId())),
                 Component.translatable("gui.rovenfall.admin.world.field.price", claim.purchasePrice()),
                 Component.translatable("gui.rovenfall.admin.world.field.flags",
                         enabled(claim.settings().entryRestricted()), enabled(claim.settings().publicInteractions())),
                 Component.translatable("gui.rovenfall.admin.world.field.transfer",
-                        optionalUuid(claim.pendingTransferTo()))));
+                        optionalPlayerName(claim.pendingTransferTo())),
+                Component.literal(selectedClaim.auditTarget() + " | " + claim.ownerId())));
         List<Map.Entry<UUID, ClaimRole>> allTrusted = claim.trustedRoles().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey()).toList();
         int trustedPages = allTrusted.isEmpty() ? 0 : (allTrusted.size() + CONTENT_SIZE - 1) / CONTENT_SIZE;
@@ -674,10 +883,12 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
                 : allTrusted.subList((int) offset, Math.min(allTrusted.size(), (int) offset + CONTENT_SIZE));
         for (int index = 0; index < trusted.size(); index++) {
             Map.Entry<UUID, ClaimRole> entry = trusted.get(index);
-            contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
-                    Items.PLAYER_HEAD, Component.literal(entry.getKey().toString()),
+            PlayerRecord player = state().playerRecord(entry.getKey()).orElse(null);
+            contents.setItem(CONTENT_START + index, AdministrationPlayerHead.create(entry.getKey(),
+                    player == null ? "" : player.displayName().orElse(""),
                     Component.translatable("gui.rovenfall.admin.world.field.claim_role",
-                            Component.translatable(entry.getValue().translationKey()))));
+                            Component.translatable(entry.getValue().translationKey())),
+                    Component.literal(entry.getKey().toString())));
         }
         if (canManageClaims(currentRole())) {
             contents.setItem(PRIMARY_SLOT, icon(
@@ -699,13 +910,15 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
             var row = resultPage.entries().get(index);
             ProtectedRegion region = row.region();
             contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
-                    Items.STRUCTURE_VOID, Component.literal(row.regionId().toString()),
-                    Component.translatable("gui.rovenfall.admin.world.field.dimension",
-                            region.dimension().identifier().toString()),
+                    Items.STRUCTURE_VOID, Component.literal(region.dimension().identifier().getPath().replace('_', ' ')),
                     Component.translatable("gui.rovenfall.admin.world.field.bounds",
                             region.minChunkX(), region.minChunkZ(), region.maxChunkX(), region.maxChunkZ()),
                     Component.translatable("gui.rovenfall.admin.world.field.administrator",
-                            region.administratorId().toString())));
+                            playerName(region.administratorId())),
+                    Component.translatable("gui.rovenfall.admin.world.field.dimension",
+                            region.dimension().identifier().toString()),
+                    Component.literal(region.administratorId().toString()),
+                    Component.literal(row.regionId().toString())));
         }
         if (canManageRegions(currentRole())) {
             contents.setItem(PRIMARY_SLOT, icon(
@@ -722,14 +935,16 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
             return;
         }
         contents.setItem(4, PlayerDashboardMenu.icon(
-                Items.STRUCTURE_VOID, Component.literal(selectedRegion.toString()),
-                Component.translatable("gui.rovenfall.admin.world.field.dimension",
-                        region.dimension().identifier().toString()),
+                Items.STRUCTURE_VOID, Component.literal(region.dimension().identifier().getPath().replace('_', ' ')),
                 Component.translatable("gui.rovenfall.admin.world.field.bounds",
                         region.minChunkX(), region.minChunkZ(), region.maxChunkX(), region.maxChunkZ()),
                 Component.translatable("gui.rovenfall.admin.world.field.area", region.areaChunks()),
                 Component.translatable("gui.rovenfall.admin.world.field.administrator",
-                        region.administratorId().toString())));
+                        playerName(region.administratorId())),
+                Component.translatable("gui.rovenfall.admin.world.field.dimension",
+                        region.dimension().identifier().toString()),
+                Component.literal(region.administratorId().toString()),
+                Component.literal(selectedRegion.toString())));
         if (canManageRegions(currentRole())) {
             contents.setItem(SECONDARY_SLOT, icon(
                     Items.WRITABLE_BOOK, "gui.rovenfall.admin.world.region.edit", "gui.rovenfall.admin.world.form.region_edit"));
@@ -739,6 +954,41 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
         renderBack();
     }
 
+    private void renderClaimTargetSelect() {
+        List<Map.Entry<UUID, PlayerRecord>> players = claimTargets();
+        int from = Math.min(players.size(), page * CONTENT_SIZE);
+        int to = Math.min(players.size(), from + CONTENT_SIZE);
+        ItemStack header = PlayerDashboardMenu.icon(Items.PLAYER_HEAD,
+                Component.translatable(formKind == FormKind.CLAIM_UNTRUST
+                        ? "gui.rovenfall.admin.world.claim.untrust" : "gui.rovenfall.admin.world.claim.role"),
+                Component.translatable("gui.rovenfall.admin.click"));
+        AdministrationFormMarker.writeSearch(header);
+        contents.setItem(4, header);
+        for (int index = from; index < to; index++) {
+            Map.Entry<UUID, PlayerRecord> entry = players.get(index);
+            contents.setItem(CONTENT_START + index - from, AdministrationPlayerHead.create(entry.getKey(),
+                    entry.getValue().displayName().orElse(""),
+                    Component.literal(entry.getKey().toString())));
+        }
+        renderPagination(page, pages(players.size()));
+    }
+
+    private void renderDimensionSelect(String titleKey) {
+        List<net.minecraft.resources.Identifier> dimensions = dimensions();
+        int from = Math.min(dimensions.size(), page * CONTENT_SIZE);
+        int to = Math.min(dimensions.size(), from + CONTENT_SIZE);
+        ItemStack header = PlayerDashboardMenu.icon(Items.COMPASS, Component.translatable(titleKey),
+                Component.translatable("gui.rovenfall.admin.click"));
+        AdministrationFormMarker.writeSearch(header);
+        contents.setItem(4, header);
+        for (int index = from; index < to; index++) {
+            net.minecraft.resources.Identifier dimension = dimensions.get(index);
+            contents.setItem(CONTENT_START + index - from, PlayerDashboardMenu.icon(
+                    Items.COMPASS, Component.literal(dimension.getPath().replace('_', ' ')), Component.literal(dimension.toString())));
+        }
+        renderPagination(page, pages(dimensions.size()));
+    }
+
     private void renderPortals() {
         var resultPage = portalsPage();
         renderListHeader(Items.ENDER_PEARL, "gui.rovenfall.admin.world.portals", resultPage);
@@ -746,13 +996,14 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
             var row = resultPage.entries().get(index);
             PortalDefinition portal = row.definition();
             contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
-                    Items.ENDER_PEARL, Component.literal(row.portalId().toString()),
+                    Items.ENDER_PEARL, Component.literal(portal.origin().dimension().identifier().getPath().replace('_', ' ')),
                     Component.translatable("gui.rovenfall.admin.world.field.origin", portal.origin().auditSummary()),
                     Component.translatable("gui.rovenfall.admin.world.field.destination",
                             portal.destination().auditSummary()),
                     Component.translatable("gui.rovenfall.admin.world.field.portal_policy",
                             portalPolicy(portal.safeArrivalPolicy()), portal.cooldownMillis(),
-                            enabled(portal.allowCombat()))));
+                            enabled(portal.allowCombat())),
+                    Component.literal(row.portalId().toString())));
         }
         if (canManagePortals(currentRole())) {
             contents.setItem(PRIMARY_SLOT, icon(
@@ -771,14 +1022,15 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
             return;
         }
         contents.setItem(4, PlayerDashboardMenu.icon(
-                Items.ENDER_EYE, Component.literal(selectedPortal.toString()),
+                Items.ENDER_EYE, Component.literal(portal.origin().dimension().identifier().getPath().replace('_', ' ')),
                 Component.translatable("gui.rovenfall.admin.world.field.origin", portal.origin().auditSummary()),
                 Component.translatable("gui.rovenfall.admin.world.field.destination", portal.destination().auditSummary()),
                 Component.translatable("gui.rovenfall.admin.world.field.radius", portal.protectionRadiusChunks()),
                 Component.translatable("gui.rovenfall.admin.world.field.cooldown", portal.cooldownMillis()),
                 Component.translatable("gui.rovenfall.admin.world.field.safe_policy",
                         portalPolicy(portal.safeArrivalPolicy())),
-                Component.translatable("gui.rovenfall.admin.world.field.combat", enabled(portal.allowCombat()))));
+                Component.translatable("gui.rovenfall.admin.world.field.combat", enabled(portal.allowCombat())),
+                Component.literal(selectedPortal.toString())));
         if (canManagePortals(currentRole())) {
             contents.setItem(SECONDARY_SLOT, icon(
                     Items.WRITABLE_BOOK, "gui.rovenfall.admin.world.portal.edit", "gui.rovenfall.admin.world.form.portal_edit"));
@@ -829,15 +1081,15 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
             WildernessResetState.Evidence evidence = resultPage.entries().get(index).evidence();
             WildernessResetState.Operation operation = evidence.operation();
             contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
-                    Items.FILLED_MAP, Component.literal(operation.transactionId().toString()),
+                    Items.FILLED_MAP, operationKind(operation.kind()),
                     Component.translatable("gui.rovenfall.admin.world.field.operation",
                             operationKind(operation.kind()), operationResult(evidence.result())),
+                    Component.translatable("gui.rovenfall.admin.world.field.completed",
+                            evidence.completedAtEpochMillis(), evidenceDetail(evidence.detail())),
                     Component.translatable("gui.rovenfall.admin.world.field.snapshot",
                             operation.snapshotId().toString()),
                     Component.translatable("gui.rovenfall.admin.world.field.recovery_snapshot",
-                            operation.recoverySnapshotId().toString()),
-                    Component.translatable("gui.rovenfall.admin.world.field.completed",
-                            evidence.completedAtEpochMillis(), evidenceDetail(evidence.detail()))));
+                            operation.recoverySnapshotId().toString())));
         }
         renderPagination(resultPage.page(), resultPage.totalPages());
     }
@@ -850,17 +1102,17 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
         }
         WildernessResetState.Operation operation = selectedEvidence.operation();
         contents.setItem(4, PlayerDashboardMenu.icon(
-                Items.FILLED_MAP, Component.literal(operation.transactionId().toString()),
+                Items.FILLED_MAP, operationKind(operation.kind()),
                 Component.translatable("gui.rovenfall.admin.world.field.operation",
                         operationKind(operation.kind()), operationResult(selectedEvidence.result())),
+                Component.translatable("gui.rovenfall.admin.world.field.completed",
+                        selectedEvidence.completedAtEpochMillis(), evidenceDetail(selectedEvidence.detail())),
                 Component.translatable("gui.rovenfall.admin.world.field.snapshot_evidence",
                         operation.snapshotId().toString(), operation.fileCount(), operation.byteCount(),
                         operation.sha256()),
                 Component.translatable("gui.rovenfall.admin.world.field.recovery_evidence",
                         operation.recoverySnapshotId().toString(), operation.recoveryFileCount(),
-                        operation.recoveryByteCount(), operation.recoverySha256()),
-                Component.translatable("gui.rovenfall.admin.world.field.completed",
-                        selectedEvidence.completedAtEpochMillis(), evidenceDetail(selectedEvidence.detail()))));
+                        operation.recoveryByteCount(), operation.recoverySha256())));
         if (canManageWilderness(currentRole())) {
             contents.setItem(CONFIRM_SLOT, icon(
                     Items.ENDER_EYE, "gui.rovenfall.admin.world.restore.target", "gui.rovenfall.admin.world.irreversible"));
@@ -872,12 +1124,17 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
     }
 
     private void renderForm() {
-        contents.setItem(4, PlayerDashboardMenu.icon(
+        ItemStack header = PlayerDashboardMenu.icon(
                 Items.WRITABLE_BOOK, Component.translatable("gui.rovenfall.admin.world.form.title"),
                 Component.translatable(formHint(formKind)),
                 Component.translatable("gui.rovenfall.admin.world.form.submit"),
                 formError.isBlank() ? Component.empty()
-                        : Component.translatable("gui.rovenfall.admin.world.error", inputError(formError))));
+                        : Component.translatable("gui.rovenfall.admin.world.error", inputError(formError)));
+        AdministrationFormMarker.write(header, new AdministrationFormMarker(formType(formKind), formDefaults(formKind)));
+        if (!formError.isBlank()) {
+            AdministrationFormMarker.writeError(header);
+        }
+        contents.setItem(4, header);
         renderBack();
     }
 
@@ -921,13 +1178,15 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
             denyAndClose();
             return;
         }
-        contents.setItem(4, PlayerDashboardMenu.icon(
+        ItemStack header = PlayerDashboardMenu.icon(
                 item, Component.translatable(titleKey),
                 Component.translatable("gui.rovenfall.admin.page", page + 1, Math.max(1, resultPage.totalPages())),
                 Component.translatable("gui.rovenfall.admin.total", resultPage.totalEntries()),
                 Component.translatable(resultPage.truncated()
                         ? "gui.rovenfall.admin.truncated" : "gui.rovenfall.admin.complete"),
-                Component.translatable("gui.rovenfall.admin.query", query.isBlank() ? "*" : query)));
+                Component.translatable("gui.rovenfall.admin.query", query.isBlank() ? "*" : query));
+        AdministrationFormMarker.writeSearch(header);
+        contents.setItem(4, header);
         if (resultPage.entries().isEmpty()) {
             contents.setItem(22, icon(
                     Items.BARRIER, "gui.rovenfall.admin.empty", "gui.rovenfall.admin.search_hint"));
@@ -958,21 +1217,21 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
             ClaimRole beforeRole = before.trustedRoles().getOrDefault(value.playerId(), ClaimRole.VISITOR);
             lines.add(Component.translatable(value.remove()
                     ? "gui.rovenfall.admin.world.claim.untrust" : "gui.rovenfall.admin.world.claim.role"));
-            lines.add(Component.translatable("gui.rovenfall.admin.world.preview.claim", value.key().auditTarget()));
+            lines.add(Component.translatable("gui.rovenfall.admin.world.preview.claim", claimName(value.key())));
             lines.add(Component.translatable("gui.rovenfall.admin.world.preview.role_change",
-                    value.playerId().toString(), Component.translatable(beforeRole.translationKey()),
+                    playerName(value.playerId()), Component.translatable(beforeRole.translationKey()),
                     Component.translatable((value.remove() ? ClaimRole.VISITOR : value.role()).translationKey())));
         } else if (action instanceof AdministrationWorldActionService.ClaimSettingsAction value) {
             ClaimSettings before = value.expectedClaim().orElseThrow().settings();
             lines.add(Component.translatable("gui.rovenfall.admin.world.claim.settings"));
-            lines.add(Component.translatable("gui.rovenfall.admin.world.preview.claim", value.key().auditTarget()));
+            lines.add(Component.translatable("gui.rovenfall.admin.world.preview.claim", claimName(value.key())));
             lines.add(Component.translatable("gui.rovenfall.admin.world.preview.settings_change",
                     enabled(before.entryRestricted()), enabled(before.publicInteractions()),
                     enabled(value.settings().entryRestricted()), enabled(value.settings().publicInteractions())));
         } else if (action instanceof AdministrationWorldActionService.ClaimReclaimAction value) {
             lines.add(Component.translatable("gui.rovenfall.admin.world.claim.reclaim"));
             lines.add(Component.translatable("gui.rovenfall.admin.world.preview.reclaim",
-                    value.key().auditTarget(), value.expectedClaim().orElseThrow().ownerId().toString()));
+                    claimName(value.key()), playerName(value.expectedClaim().orElseThrow().ownerId())));
         } else if (action instanceof AdministrationWorldActionService.RegionCreateAction value) {
             lines.add(Component.translatable("gui.rovenfall.admin.world.region.create"));
             lines.add(Component.translatable("gui.rovenfall.admin.world.preview.absent_to",
@@ -1010,9 +1269,9 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
             lines.add(Component.translatable("gui.rovenfall.admin.world.preview.snapshot", value.snapshotId().toString()));
             lines.add(Component.translatable("gui.rovenfall.admin.world.preview.shutdown"));
         }
+        lines.add(Component.translatable("gui.rovenfall.admin.world.preview.reason", action.reason()));
         lines.add(Component.translatable("gui.rovenfall.admin.world.preview.transaction",
                 action.transactionId().toString()));
-        lines.add(Component.translatable("gui.rovenfall.admin.world.preview.reason", action.reason()));
         return lines;
     }
 
@@ -1070,6 +1329,98 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
     private static Component optionalUuid(Optional<UUID> value) {
         return value.<Component>map(uuid -> Component.literal(uuid.toString()))
                 .orElseGet(() -> Component.translatable("gui.rovenfall.admin.world.none"));
+    }
+
+    private Component claimName(org.dldyou.rovenfall.claims.ClaimKey key) {
+        return Component.translatable("gui.rovenfall.admin.world.claim.location",
+                key.dimension().identifier().getPath().replace('_', ' '), key.chunkX(), key.chunkZ());
+    }
+
+    private Component playerName(UUID playerId) {
+        String name = state().playerRecord(playerId).flatMap(PlayerRecord::displayName).orElse("");
+        return name.isBlank()
+                ? Component.translatable("gui.rovenfall.player.unknown_player")
+                : Component.literal(name);
+    }
+
+    private Component optionalPlayerName(Optional<UUID> playerId) {
+        return playerId.<Component>map(this::playerName)
+                .orElseGet(() -> Component.translatable("gui.rovenfall.admin.world.none"));
+    }
+
+    private List<Map.Entry<UUID, PlayerRecord>> claimTargets() {
+        Claim claim = selectedClaim == null ? null : state().claim(selectedClaim).orElse(null);
+        if (claim == null) {
+            return List.of();
+        }
+        String normalized = query.strip().toLowerCase(java.util.Locale.ROOT);
+        List<Map.Entry<UUID, PlayerRecord>> source = formKind == FormKind.CLAIM_UNTRUST
+                ? claim.trustedRoles().keySet().stream()
+                        .map(playerId -> Map.entry(
+                                playerId, state().playerRecord(playerId).orElseGet(() -> new PlayerRecord(0L, 0L))))
+                        .toList()
+                : normalized.isBlank()
+                        ? state().playerRecords(AdministrationReadViewService.MAX_SCANNED_ROWS)
+                        : state().playerRecordsMatchingName(
+                                normalized, AdministrationReadViewService.MAX_SCANNED_ROWS);
+        return source.stream()
+                .filter(entry -> normalized.isBlank() || entry.getValue().displayName().orElse("")
+                        .toLowerCase(java.util.Locale.ROOT).contains(normalized))
+                .sorted(Comparator.comparing(entry -> entry.getValue().displayName().orElse("")))
+                .toList();
+    }
+
+    private List<net.minecraft.resources.Identifier> dimensions() {
+        String normalized = query.strip().toLowerCase(java.util.Locale.ROOT);
+        return server().levelKeys().stream().map(ResourceKey::identifier)
+                .filter(id -> normalized.isBlank() || id.toString().contains(normalized)).sorted().toList();
+    }
+
+    private Optional<net.minecraft.resources.Identifier> selectedDimension(int slot) {
+        if (slot < CONTENT_START || slot >= CONTENT_START + CONTENT_SIZE) {
+            return Optional.empty();
+        }
+        List<net.minecraft.resources.Identifier> dimensions = dimensions();
+        int index = page * CONTENT_SIZE + slot - CONTENT_START;
+        return index < dimensions.size() ? Optional.of(dimensions.get(index)) : Optional.empty();
+    }
+
+    private net.minecraft.server.MinecraftServer server() {
+        return viewer.level().getServer();
+    }
+
+    private static int pages(int entries) {
+        return entries == 0 ? 0 : (entries + CONTENT_SIZE - 1) / CONTENT_SIZE;
+    }
+
+    private static AdministrationFormType formType(FormKind kind) {
+        return switch (kind) {
+            case CLAIM_ROLE -> AdministrationFormType.WORLD_CLAIM_ROLE;
+            case CLAIM_UNTRUST -> AdministrationFormType.WORLD_CLAIM_UNTRUST;
+            case CLAIM_SETTINGS -> AdministrationFormType.WORLD_CLAIM_SETTINGS;
+            case CLAIM_RECLAIM -> AdministrationFormType.WORLD_CLAIM_RECLAIM;
+            case REGION_CREATE -> AdministrationFormType.WORLD_REGION_CREATE;
+            case REGION_EDIT -> AdministrationFormType.WORLD_REGION_EDIT;
+            case REGION_DELETE -> AdministrationFormType.WORLD_REGION_DELETE;
+            case PORTAL_CREATE -> AdministrationFormType.WORLD_PORTAL_CREATE;
+            case PORTAL_EDIT -> AdministrationFormType.WORLD_PORTAL_EDIT;
+            case PORTAL_DISABLE -> AdministrationFormType.WORLD_PORTAL_DISABLE;
+            case WILDERNESS_WARN -> AdministrationFormType.WORLD_WILDERNESS_WARN;
+            case WILDERNESS_RESET -> AdministrationFormType.WORLD_WILDERNESS_RESET;
+            case WILDERNESS_RESTORE -> AdministrationFormType.WORLD_WILDERNESS_RESTORE;
+        };
+    }
+
+    private List<String> formDefaults(FormKind kind) {
+        if (kind == FormKind.REGION_EDIT) {
+            return state().protectedRegion(selectedRegion).map(AdministrationWorldTypedForm::regionDefaults)
+                    .orElseGet(() -> formType(kind).defaults());
+        }
+        if (kind == FormKind.PORTAL_EDIT) {
+            return state().portalDefinition(selectedPortal).map(AdministrationWorldTypedForm::portalDefaults)
+                    .orElseGet(() -> formType(kind).defaults());
+        }
+        return formType(kind).defaults();
     }
 
     private static Component portalPolicy(PortalDefinition.SafeArrivalPolicy policy) {
@@ -1145,6 +1496,10 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
         WILDERNESS,
         EVIDENCE,
         EVIDENCE_DETAIL,
+        CLAIM_TARGET_SELECT,
+        REGION_DIMENSION_SELECT,
+        PORTAL_ORIGIN_DIMENSION_SELECT,
+        PORTAL_DESTINATION_DIMENSION_SELECT,
         FORM,
         PREVIEW,
         RESULT

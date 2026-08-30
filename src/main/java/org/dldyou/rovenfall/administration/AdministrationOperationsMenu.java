@@ -154,10 +154,22 @@ public final class AdministrationOperationsMenu extends ChestMenu implements Adm
             return false;
         }
         if (mode == Mode.FORM) {
-            return parseForm(input);
+            Optional<List<String>> structured = AdministrationStructuredFormCodec.decode(formType(formKind), input);
+            return structured.isPresent()
+                    ? parseForm(legacyFormInput(formKind, structured.orElseThrow()))
+                    : parseForm(input);
         }
         if (mode == Mode.AUDIT) {
-            if (input.isBlank()) {
+            if (input.startsWith("rf-form/")) {
+                Optional<List<String>> structured = AdministrationStructuredFormCodec.decode(
+                        AdministrationFormType.OPERATIONS_AUDIT_SEARCH, input);
+                auditQuery = structured.flatMap(this::typedAuditQuery).orElse(null);
+                if (auditQuery == null) {
+                    formError = "invalid_query";
+                    render();
+                    return false;
+                }
+            } else if (input.isBlank()) {
                 auditQuery = null;
             } else {
                 var parsed = AdministrationOperationsFormParser.parseAuditSearch(input, now());
@@ -327,6 +339,44 @@ public final class AdministrationOperationsMenu extends ChestMenu implements Adm
         return true;
     }
 
+    private String legacyFormInput(FormKind kind, List<String> values) {
+        if (kind != FormKind.EXPORT) {
+            return " | " + values.getFirst();
+        }
+        long until = now();
+        long duration = switch (values.getFirst()) {
+            case "hour" -> 60L * 60 * 1_000;
+            case "day" -> 24L * 60 * 60 * 1_000;
+            case "week" -> 7L * 24 * 60 * 60 * 1_000;
+            case "month" -> AuditQuery.MAX_WINDOW_MILLIS;
+            default -> 0L;
+        };
+        long since = Math.max(0L, until - duration);
+        return "since=" + since + " until=" + until + " | " + values.get(1);
+    }
+
+    private Optional<AuditQuery> typedAuditQuery(List<String> values) {
+        if (!AdministrationFormType.OPERATIONS_AUDIT_SEARCH.accepts(values)) {
+            return Optional.empty();
+        }
+        long until = now();
+        long duration = switch (values.getFirst()) {
+            case "hour" -> 60L * 60 * 1_000;
+            case "day" -> 24L * 60 * 60 * 1_000;
+            case "week" -> 7L * 24 * 60 * 60 * 1_000;
+            case "month" -> AuditQuery.MAX_WINDOW_MILLIS;
+            default -> 0L;
+        };
+        try {
+            return Optional.of(new AuditQuery(
+                    Math.max(0L, until - duration), until,
+                    Optional.empty(), Optional.empty(),
+                    Optional.of(values.get(1).strip()).filter(value -> !value.isEmpty()), Optional.empty()));
+        } catch (IllegalArgumentException exception) {
+            return Optional.empty();
+        }
+    }
+
     private void confirm() {
         if (pending == null) {
             return;
@@ -426,18 +476,27 @@ public final class AdministrationOperationsMenu extends ChestMenu implements Adm
         renderHeader(Items.WRITABLE_BOOK, "gui.rovenfall.admin.operations.audit",
                 resultPage.page(), resultPage.totalPages(), resultPage.totalEntries(), resultPage.truncated(),
                 auditQuery == null ? "*" : auditQuery.canonical());
+        ItemStack header = contents.getItem(4);
+        AdministrationFormMarker.write(header, new AdministrationFormMarker(
+                AdministrationFormType.OPERATIONS_AUDIT_SEARCH,
+                auditFormDefaults()));
+        if (!formError.isBlank()) {
+            AdministrationFormMarker.writeError(header);
+        }
+        contents.setItem(4, header);
         for (int index = 0; index < resultPage.entries().size(); index++) {
             var row = resultPage.entries().get(index);
             AuditEntry entry = row.entry();
             contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
                     row.attention() ? Items.REDSTONE_TORCH : Items.WRITTEN_BOOK,
-                    Component.literal(entry.actionType().toString()),
+                    Component.translatable("gui.rovenfall.admin.operations.audit_entry"),
+                    Component.translatable("gui.rovenfall.admin.operations.field.timestamp",
+                            entry.timestampEpochMillis()),
                     Component.translatable("gui.rovenfall.admin.operations.field.target", entry.target()),
+                    Component.literal(entry.actionType().toString()),
                     Component.translatable("gui.rovenfall.admin.operations.field.actor", entry.actorId().toString()),
                     Component.translatable("gui.rovenfall.admin.operations.field.transaction",
-                            entry.transactionId().toString()),
-                    Component.translatable("gui.rovenfall.admin.operations.field.timestamp",
-                            entry.timestampEpochMillis())));
+                            entry.transactionId().toString())));
         }
         if (isOwner()) {
             contents.setItem(PRIMARY_SLOT, icon(Items.WRITABLE_BOOK,
@@ -461,16 +520,17 @@ public final class AdministrationOperationsMenu extends ChestMenu implements Adm
             return;
         }
         contents.setItem(4, PlayerDashboardMenu.icon(
-                Items.WRITTEN_BOOK, Component.literal(selectedAudit.actionType().toString()),
-                Component.translatable("gui.rovenfall.admin.operations.field.target", selectedAudit.target()),
-                Component.translatable("gui.rovenfall.admin.operations.field.actor", selectedAudit.actorId().toString()),
-                Component.translatable("gui.rovenfall.admin.operations.field.transaction",
-                        selectedAudit.transactionId().toString()),
+                Items.WRITTEN_BOOK, Component.translatable("gui.rovenfall.admin.operations.audit_detail"),
                 Component.translatable("gui.rovenfall.admin.operations.field.timestamp",
                         selectedAudit.timestampEpochMillis()),
                 Component.translatable("gui.rovenfall.admin.operations.field.before", selectedAudit.beforeValue()),
                 Component.translatable("gui.rovenfall.admin.operations.field.after", selectedAudit.afterValue()),
-                Component.translatable("gui.rovenfall.admin.operations.field.reason", selectedAudit.reason())));
+                Component.translatable("gui.rovenfall.admin.operations.field.reason", selectedAudit.reason()),
+                Component.translatable("gui.rovenfall.admin.operations.field.target", selectedAudit.target()),
+                Component.literal(selectedAudit.actionType().toString()),
+                Component.translatable("gui.rovenfall.admin.operations.field.actor", selectedAudit.actorId().toString()),
+                Component.translatable("gui.rovenfall.admin.operations.field.transaction",
+                        selectedAudit.transactionId().toString())));
         if (receiptVisible(selectedAudit.transactionId())) {
             contents.setItem(SECONDARY_SLOT, icon(Items.GOLD_INGOT,
                     "gui.rovenfall.admin.operations.open_receipt",
@@ -485,6 +545,7 @@ public final class AdministrationOperationsMenu extends ChestMenu implements Adm
         renderHeader(Items.BELL, "gui.rovenfall.admin.operations.alerts",
                 resultPage.page(), resultPage.totalPages(), resultPage.totalEntries(), resultPage.truncated(),
                 query.isBlank() ? "*" : query);
+        markSearchHeader();
         for (int index = 0; index < resultPage.entries().size(); index++) {
             EconomyAlert alert = resultPage.entries().get(index).alert();
             contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
@@ -492,13 +553,13 @@ public final class AdministrationOperationsMenu extends ChestMenu implements Adm
                     Component.translatable(alert.type() == EconomyAlert.Type.AMOUNT
                             ? "gui.rovenfall.admin.operations.alert.amount"
                             : "gui.rovenfall.admin.operations.alert.rate"),
-                    Component.translatable("gui.rovenfall.admin.operations.field.player", alert.playerId().toString()),
-                    Component.translatable("gui.rovenfall.admin.operations.field.transaction",
-                            alert.transactionId().toString()),
                     Component.translatable("gui.rovenfall.admin.operations.field.observed",
                             alert.observedValue(), alert.threshold()),
                     Component.translatable("gui.rovenfall.admin.operations.field.timestamp",
-                            alert.timestampEpochMillis())));
+                            alert.timestampEpochMillis()),
+                    Component.translatable("gui.rovenfall.admin.operations.field.player", alert.playerId().toString()),
+                    Component.translatable("gui.rovenfall.admin.operations.field.transaction",
+                            alert.transactionId().toString())));
         }
         contents.setItem(CENTER_SLOT, PlayerDashboardMenu.icon(
                 Items.HOPPER, Component.translatable(alertFilterKey(alertFilter)),
@@ -531,8 +592,10 @@ public final class AdministrationOperationsMenu extends ChestMenu implements Adm
         List<UUID> evidence = metric.evidenceTransactionIds();
         for (int index = 0; index < evidence.size(); index++) {
             contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
-                    Items.WRITTEN_BOOK, Component.literal(evidence.get(index).toString()),
-                    Component.translatable("gui.rovenfall.admin.operations.metric_evidence_hint")));
+                    Items.WRITTEN_BOOK,
+                    Component.translatable("gui.rovenfall.admin.operations.metric_evidence"),
+                    Component.translatable("gui.rovenfall.admin.operations.metric_evidence_hint"),
+                    Component.literal(evidence.get(index).toString())));
         }
         contents.setItem(CENTER_SLOT, PlayerDashboardMenu.icon(
                 Items.CLOCK, Component.translatable("gui.rovenfall.admin.operations.metric_window",
@@ -547,18 +610,20 @@ public final class AdministrationOperationsMenu extends ChestMenu implements Adm
         renderHeader(Items.ENDER_CHEST, "gui.rovenfall.admin.operations.snapshots",
                 resultPage.page(), resultPage.totalPages(), resultPage.totalEntries(), resultPage.truncated(),
                 query.isBlank() ? "*" : query);
+        markSearchHeader();
         for (int index = 0; index < resultPage.entries().size(); index++) {
             var row = resultPage.entries().get(index);
             contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
                     row.kind() == AdministrationOperationsViewService.SnapshotKind.SAFETY
                             ? Items.TOTEM_OF_UNDYING : Items.ENDER_CHEST,
-                    Component.literal(row.snapshotId().toString()),
+                    Component.translatable(snapshotKindKey(row.kind())),
                     Component.translatable("gui.rovenfall.admin.operations.field.snapshot_kind",
                             Component.translatable(snapshotKindKey(row.kind()))),
                     Component.translatable("gui.rovenfall.admin.operations.field.timestamp",
                             row.recordedAtEpochMillis()),
                     Component.translatable("gui.rovenfall.admin.operations.field.transaction",
-                            row.auditTransactionId().toString())));
+                            row.auditTransactionId().toString()),
+                    Component.literal(row.snapshotId().toString())));
         }
         if (isOwner()) {
             contents.setItem(PRIMARY_SLOT, icon(Items.EMERALD,
@@ -575,9 +640,10 @@ public final class AdministrationOperationsMenu extends ChestMenu implements Adm
             return;
         }
         contents.setItem(4, PlayerDashboardMenu.icon(
-                Items.ENDER_CHEST, Component.literal(selectedSnapshot.toString()),
+                Items.ENDER_CHEST, Component.translatable("gui.rovenfall.admin.operations.snapshot_detail"),
                 Component.translatable("gui.rovenfall.admin.operations.snapshot_restore_warning"),
-                Component.translatable("gui.rovenfall.admin.operations.command_fallback.snapshot")));
+                Component.translatable("gui.rovenfall.admin.operations.command_fallback.snapshot"),
+                Component.literal(selectedSnapshot.toString())));
         if (isOwner()) {
             contents.setItem(DANGER_SLOT, icon(Items.TNT,
                     "gui.rovenfall.admin.operations.snapshot_restore",
@@ -587,12 +653,18 @@ public final class AdministrationOperationsMenu extends ChestMenu implements Adm
     }
 
     private void renderForm() {
-        contents.setItem(4, PlayerDashboardMenu.icon(
+        ItemStack header = PlayerDashboardMenu.icon(
                 Items.WRITABLE_BOOK, Component.translatable("gui.rovenfall.admin.operations.form.title"),
                 Component.translatable(formHint(formKind)),
                 Component.translatable("gui.rovenfall.admin.operations.form.submit"),
                 formError.isBlank() ? Component.empty()
-                        : Component.translatable("gui.rovenfall.admin.operations.error", inputError(formError))));
+                        : Component.translatable("gui.rovenfall.admin.operations.error", inputError(formError)));
+        AdministrationFormType type = formType(formKind);
+        AdministrationFormMarker.write(header, new AdministrationFormMarker(type, type.defaults()));
+        if (!formError.isBlank()) {
+            AdministrationFormMarker.writeError(header);
+        }
+        contents.setItem(4, header);
         renderBack();
     }
 
@@ -684,6 +756,12 @@ public final class AdministrationOperationsMenu extends ChestMenu implements Adm
                         : Component.translatable("gui.rovenfall.admin.operations.error", inputError(formError))));
     }
 
+    private void markSearchHeader() {
+        ItemStack header = contents.getItem(4);
+        AdministrationFormMarker.writeSearch(header);
+        contents.setItem(4, header);
+    }
+
     private void renderPagination(int currentPage, int totalPages) {
         renderBack();
         if (currentPage > 0) {
@@ -727,6 +805,18 @@ public final class AdministrationOperationsMenu extends ChestMenu implements Adm
                 ? new AuditQuery(Math.max(0L, now - AuditQuery.MAX_WINDOW_MILLIS), now,
                         Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty())
                 : auditQuery;
+    }
+
+    private List<String> auditFormDefaults() {
+        if (auditQuery == null) {
+            return List.of("month", "");
+        }
+        long duration = auditQuery.untilEpochMillis() - auditQuery.sinceEpochMillis();
+        String window = duration <= 60L * 60 * 1_000 ? "hour"
+                : duration <= 24L * 60 * 60 * 1_000 ? "day"
+                : duration <= 7L * 24 * 60 * 60 * 1_000 ? "week"
+                : "month";
+        return List.of(window, auditQuery.targetPrefix().orElse(""));
     }
 
     private boolean receiptVisible(UUID transactionId) {
@@ -787,6 +877,14 @@ public final class AdministrationOperationsMenu extends ChestMenu implements Adm
         return kind == FormKind.EXPORT
                 ? "gui.rovenfall.admin.operations.form.export"
                 : "gui.rovenfall.admin.operations.form.reason";
+    }
+
+    private static AdministrationFormType formType(FormKind kind) {
+        return switch (kind) {
+            case EXPORT -> AdministrationFormType.OPERATIONS_EXPORT;
+            case SNAPSHOT_CREATE -> AdministrationFormType.OPERATIONS_SNAPSHOT_CREATE;
+            case SNAPSHOT_RESTORE -> AdministrationFormType.OPERATIONS_SNAPSHOT_RESTORE;
+        };
     }
 
     private static Component inputError(String detail) {

@@ -11,6 +11,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.PriorityQueue;
@@ -322,6 +323,37 @@ public final class PlatformSavedData extends SavedData {
                 .limit(maximumEntries)
                 .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
                 .toList();
+    }
+
+    /** Bounded, deterministic name search without materializing the full player projection. */
+    public List<Map.Entry<UUID, PlayerRecord>> playerRecordsMatchingName(String query, int maximumEntries) {
+        if (maximumEntries < 1) {
+            throw new IllegalArgumentException("Player record query must be bounded");
+        }
+        String normalized = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            return playerRecords(maximumEntries);
+        }
+        Comparator<Map.Entry<UUID, PlayerRecord>> order = Comparator
+                .comparing((Map.Entry<UUID, PlayerRecord> entry) -> entry.getValue().displayName().orElse(""),
+                        String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(Map.Entry::getKey);
+        PriorityQueue<Map.Entry<UUID, PlayerRecord>> matches =
+                new PriorityQueue<>(Math.min(maximumEntries, 1_024), order.reversed());
+        for (var entry : playerRecords.entrySet()) {
+            if (!entry.getValue().displayName().orElse("").toLowerCase(Locale.ROOT)
+                    .contains(normalized)) {
+                continue;
+            }
+            var copy = Map.entry(entry.getKey(), entry.getValue());
+            if (matches.size() < maximumEntries) {
+                matches.add(copy);
+            } else if (order.compare(copy, matches.peek()) < 0) {
+                matches.remove();
+                matches.add(copy);
+            }
+        }
+        return matches.stream().sorted(order).toList();
     }
 
     public int playerRecordCount() {

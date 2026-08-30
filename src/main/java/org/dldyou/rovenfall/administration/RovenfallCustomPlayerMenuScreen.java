@@ -34,7 +34,7 @@ final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
             PlayerMenuNetwork.MenuKind kind) {
         super(menu, inventory, title);
         if (kind.isAdministration()) {
-            throw new IllegalArgumentException("Administration menus use RovenfallPlayerMenuScreen");
+            throw new IllegalArgumentException("Administration menus use RovenfallAdministrationMenuScreen");
         }
     }
 

@@ -159,14 +159,14 @@ public final class RovenfallInventoryClient {
         }
         PlayerMenuNetwork.MenuKind resolved = kind.orElseThrow();
         return Optional.of(resolved.isAdministration()
-                ? new RovenfallPlayerMenuScreen(
+                ? new RovenfallAdministrationMenuScreen(
                         screen.getMenu(), player.getInventory(), screen.getTitle(), resolved)
                 : new RovenfallCustomPlayerMenuScreen(
                         screen.getMenu(), player.getInventory(), screen.getTitle(), resolved));
     }
 
     private static boolean isRovenfallPlayerMenuScreen(ContainerScreen screen) {
-        return screen instanceof RovenfallPlayerMenuScreen
+        return screen instanceof RovenfallAdministrationMenuScreen
                 || screen instanceof RovenfallCustomPlayerMenuScreen;
     }
 }
