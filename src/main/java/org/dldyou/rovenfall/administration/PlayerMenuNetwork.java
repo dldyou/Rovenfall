@@ -15,8 +15,10 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.neoforged.neoforge.common.util.FakePlayer;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
+import net.neoforged.neoforge.network.registration.NetworkRegistry;
 import org.dldyou.rovenfall.Rovenfall;
 import org.slf4j.Logger;
 
@@ -26,6 +28,7 @@ public final class PlayerMenuNetwork {
     static final int MIN_OPEN_INTERVAL_TICKS = 5;
     static final int MIN_MUTATION_INTERVAL_TICKS = 20;
     static final int MAX_OPEN_PACKET_BYTES = 10;
+    static final int MAX_IDENTITY_PACKET_BYTES = 20;
     static final int MAX_QUERY_PACKET_BYTES = 8_210;
     private static final String NETWORK_VERSION = "1";
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -41,6 +44,7 @@ public final class PlayerMenuNetwork {
         var registrar = event.registrar(NETWORK_VERSION);
         registrar.playToServer(Open.TYPE, Open.STREAM_CODEC, PlayerMenuNetwork::handleOpen);
         registrar.playToServer(AdminQuery.TYPE, AdminQuery.STREAM_CODEC, PlayerMenuNetwork::handleAdminQuery);
+        registrar.playToClient(MenuIdentity.TYPE, MenuIdentity.STREAM_CODEC, PlayerMenuNetwork::handleMenuIdentity);
     }
 
     public static void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
@@ -75,15 +79,7 @@ public final class PlayerMenuNetwork {
     }
 
     public static boolean isPlayerMenu(AbstractContainerMenu menu) {
-        return menu instanceof PlayerDashboardMenu
-                || menu instanceof PlayerShopMenu
-                || menu instanceof PlayerClaimMenu
-                || menu instanceof PlayerRpgMenu
-                || menu instanceof AdministrationControlCenterMenu
-                || menu instanceof AdministrationEconomyMenu
-                || menu instanceof AdministrationWorldMenu
-                || menu instanceof AdministrationRpgBossMenu
-                || menu instanceof AdministrationOperationsMenu;
+        return MenuKind.fromMenu(menu).isPresent();
     }
 
     public static boolean isCurrentSession(
@@ -99,12 +95,27 @@ public final class PlayerMenuNetwork {
         menu.setItem(0, sessionStateId(nonce), menu.getSlot(0).getItem());
     }
 
+    static void sendMenuIdentity(ServerPlayer player) {
+        Optional<MenuKind> kind = MenuKind.fromMenu(player.containerMenu);
+        if (kind.isEmpty() || player.connection == null
+                || !NetworkRegistry.hasChannel(player.connection, MenuIdentity.TYPE.id())) {
+            return;
+        }
+        AbstractContainerMenu menu = player.containerMenu;
+        PacketDistributor.sendToPlayer(
+                player, new MenuIdentity(menu.containerId, menu.getStateId(), kind.orElseThrow()));
+    }
+
     private static void handleOpen(Open payload, IPayloadContext context) {
         context.enqueueWork(() -> handleOpenOnServer(payload, context));
     }
 
     private static void handleAdminQuery(AdminQuery payload, IPayloadContext context) {
         context.enqueueWork(() -> handleAdminQueryOnServer(payload, context));
+    }
+
+    private static void handleMenuIdentity(MenuIdentity payload, IPayloadContext context) {
+        context.enqueueWork(() -> RovenfallInventoryClient.acceptIdentity(payload));
     }
 
     private static void handleAdminQueryOnServer(AdminQuery payload, IPayloadContext context) {
@@ -193,6 +204,67 @@ public final class PlayerMenuNetwork {
         }
     }
 
+    public enum MenuKind {
+        DASHBOARD(0, false, false),
+        SHOP(1, false, false),
+        CLAIM(2, false, false),
+        RPG(3, false, false),
+        ADMIN_HOME(4, true, false),
+        ADMIN_ECONOMY(5, true, true),
+        ADMIN_WORLD(6, true, true),
+        ADMIN_RPG_BOSS(7, true, true),
+        ADMIN_OPERATIONS(8, true, true);
+
+        private final int wireId;
+        private final boolean administration;
+        private final boolean longTextInput;
+
+        MenuKind(int wireId, boolean administration, boolean longTextInput) {
+            this.wireId = wireId;
+            this.administration = administration;
+            this.longTextInput = longTextInput;
+        }
+
+        public int wireId() {
+            return wireId;
+        }
+
+        boolean isAdministration() {
+            return administration;
+        }
+
+        boolean usesLongTextInput() {
+            return longTextInput;
+        }
+
+        static Optional<MenuKind> fromWireId(int wireId) {
+            for (MenuKind kind : values()) {
+                if (kind.wireId == wireId) {
+                    return Optional.of(kind);
+                }
+            }
+            return Optional.empty();
+        }
+
+        static Optional<MenuKind> fromMenu(AbstractContainerMenu menu) {
+            if (menu == null) {
+                return Optional.empty();
+            }
+            return Optional.ofNullable(switch (menu) {
+                case PlayerDashboardMenu ignored -> DASHBOARD;
+                case PlayerShopMenu ignored -> SHOP;
+                case PlayerClaimMenu ignored -> CLAIM;
+                case PlayerRpgMenu ignored -> RPG;
+                case AdministrationControlCenterMenu ignored -> ADMIN_HOME;
+                case AdministrationEconomyMenu ignored -> ADMIN_ECONOMY;
+                case AdministrationWorldMenu ignored -> ADMIN_WORLD;
+                case AdministrationRpgBossMenu ignored -> ADMIN_RPG_BOSS;
+                case AdministrationOperationsMenu ignored -> ADMIN_OPERATIONS;
+                default -> null;
+            });
+        }
+    }
+
     public record Open(int packetRevision, int target) implements CustomPacketPayload {
         public static final Type<Open> TYPE = new Type<>(
                 Identifier.fromNamespaceAndPath(Rovenfall.MOD_ID, "open_player_menu"));
@@ -207,6 +279,27 @@ public final class PlayerMenuNetwork {
 
         @Override
         public Type<Open> type() {
+            return TYPE;
+        }
+    }
+
+    public record MenuIdentity(
+            int packetRevision, int containerId, int stateId, int kind) implements CustomPacketPayload {
+        public static final Type<MenuIdentity> TYPE = new Type<>(
+                Identifier.fromNamespaceAndPath(Rovenfall.MOD_ID, "player_menu_identity"));
+        public static final StreamCodec<RegistryFriendlyByteBuf, MenuIdentity> STREAM_CODEC = StreamCodec.composite(
+                ByteBufCodecs.VAR_INT, MenuIdentity::packetRevision,
+                ByteBufCodecs.VAR_INT, MenuIdentity::containerId,
+                ByteBufCodecs.VAR_INT, MenuIdentity::stateId,
+                ByteBufCodecs.VAR_INT, MenuIdentity::kind,
+                MenuIdentity::new);
+
+        public MenuIdentity(int containerId, int stateId, MenuKind kind) {
+            this(PACKET_REVISION, containerId, stateId, kind.wireId());
+        }
+
+        @Override
+        public Type<MenuIdentity> type() {
             return TYPE;
         }
     }

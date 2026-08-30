@@ -106,7 +106,8 @@ public final class PlayerClaimMenu extends ChestMenu {
         player.openMenu(new SimpleMenuProvider(
                 (containerId, inventory, viewer) -> new PlayerClaimMenu(
                         containerId, inventory, (ServerPlayer) viewer, new SimpleContainer(MENU_SIZE)),
-                Component.translatable("gui.rovenfall.claim.title")));
+                Component.translatable("gui.rovenfall.claim.title")))
+                .ifPresent(ignored -> PlayerMenuNetwork.sendMenuIdentity(player));
     }
 
     @Override

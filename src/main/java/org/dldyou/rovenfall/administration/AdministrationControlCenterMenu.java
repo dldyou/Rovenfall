@@ -57,7 +57,8 @@ public final class AdministrationControlCenterMenu extends ChestMenu implements 
         player.openMenu(new SimpleMenuProvider(
                 (containerId, inventory, viewer) -> new AdministrationControlCenterMenu(
                         containerId, inventory, (ServerPlayer) viewer, new SimpleContainer(MENU_SIZE)),
-                Component.translatable("gui.rovenfall.admin.title")));
+                Component.translatable("gui.rovenfall.admin.title")))
+                .ifPresent(ignored -> PlayerMenuNetwork.sendMenuIdentity(player));
         return true;
     }
 

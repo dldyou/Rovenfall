@@ -27,6 +27,21 @@ final class PlayerMenuNetworkTest {
     }
 
     @Test
+    void menuIdentityHasABoundedFixedShapeAndRoundTrips() {
+        var payload = new PlayerMenuNetwork.MenuIdentity(
+                41, 9_001, PlayerMenuNetwork.MenuKind.ADMIN_WORLD);
+        var buffer = new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
+        try {
+            PlayerMenuNetwork.MenuIdentity.STREAM_CODEC.encode(buffer, payload);
+            assertTrue(buffer.readableBytes() <= PlayerMenuNetwork.MAX_IDENTITY_PACKET_BYTES);
+            assertEquals(payload, PlayerMenuNetwork.MenuIdentity.STREAM_CODEC.decode(buffer));
+            assertEquals(0, buffer.readableBytes());
+        } finally {
+            buffer.release();
+        }
+    }
+
+    @Test
     void administrationSearchCarriesBoundedQueryAndSessionEvidence() {
         var payload = new PlayerMenuNetwork.AdminQuery(
                 7, 101, "가".repeat(AdministrationTextInputMenu.MAX_INPUT_LENGTH));
@@ -53,6 +68,20 @@ final class PlayerMenuNetworkTest {
         assertFalse(PlayerMenuNetwork.canOpen(100L, 104));
         assertTrue(PlayerMenuNetwork.canOpen(100L, 105));
         assertTrue(PlayerMenuNetwork.canOpen(100L, 90));
+    }
+
+    @Test
+    void menuKindsRejectUnknownWireIdsAndDescribeAdministrationInput() {
+        assertEquals(PlayerMenuNetwork.MenuKind.DASHBOARD,
+                PlayerMenuNetwork.MenuKind.fromWireId(0).orElseThrow());
+        assertEquals(PlayerMenuNetwork.MenuKind.ADMIN_OPERATIONS,
+                PlayerMenuNetwork.MenuKind.fromWireId(8).orElseThrow());
+        assertTrue(PlayerMenuNetwork.MenuKind.fromWireId(99).isEmpty());
+        assertFalse(PlayerMenuNetwork.MenuKind.DASHBOARD.isAdministration());
+        assertTrue(PlayerMenuNetwork.MenuKind.ADMIN_HOME.isAdministration());
+        assertFalse(PlayerMenuNetwork.MenuKind.ADMIN_HOME.usesLongTextInput());
+        assertTrue(PlayerMenuNetwork.MenuKind.ADMIN_ECONOMY.usesLongTextInput());
+        assertFalse(PlayerMenuNetwork.isPlayerMenu(null));
     }
 
     @Test

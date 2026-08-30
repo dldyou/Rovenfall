@@ -79,7 +79,8 @@ public final class PlayerDashboardMenu extends ChestMenu {
                 (containerId, inventory, viewer) -> new PlayerDashboardMenu(
                         containerId, inventory, (ServerPlayer) viewer,
                         new SimpleContainer(MENU_SIZE), initialPage),
-                Component.translatable("gui.rovenfall.player.title")));
+                Component.translatable("gui.rovenfall.player.title")))
+                .ifPresent(ignored -> PlayerMenuNetwork.sendMenuIdentity(player));
     }
 
     @Override
