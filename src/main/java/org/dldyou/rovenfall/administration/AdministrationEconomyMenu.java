@@ -51,6 +51,8 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
     private UUID selectedReceipt;
     private Identifier selectedShop;
     private Identifier selectedOffer;
+    private Identifier selectedTemplate;
+    private Identifier selectedItem;
     private AdministrationEconomyActionService.PendingAction pending;
     private AdministrationEconomyActionService.Result result;
     private long lastHandledGameTime = Long.MIN_VALUE;
@@ -146,6 +148,8 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
             case SHOPS -> clickShops(slotIndex);
             case SHOP_DETAIL -> clickShopDetail(slotIndex);
             case OFFER_DETAIL -> clickOfferDetail(slotIndex);
+            case TEMPLATE_SELECT -> clickTemplateSelect(slotIndex);
+            case ITEM_SELECT -> clickItemSelect(slotIndex);
             case FORM -> {
             }
             case PREVIEW -> {
@@ -177,7 +181,8 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
             }
             return parseForm(input);
         }
-        if (mode != Mode.PLAYERS && mode != Mode.RECEIPTS && mode != Mode.SHOPS) {
+        if (mode != Mode.PLAYERS && mode != Mode.RECEIPTS && mode != Mode.SHOPS
+                && mode != Mode.TEMPLATE_SELECT && mode != Mode.ITEM_SELECT) {
             return false;
         }
         if (input.length() > AdministrationReadViewService.MAX_QUERY_LENGTH) {
@@ -286,7 +291,11 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
 
     private void clickShops(int slot) {
         if (slot == CREATE_SLOT && canManage(viewer)) {
-            enterForm(FormKind.CREATE_SHOP, Mode.SHOPS);
+            selectedTemplate = null;
+            query = "";
+            page = 0;
+            mode = Mode.TEMPLATE_SELECT;
+            render();
             return;
         }
         if (slot == PREVIOUS_SLOT) {
@@ -344,7 +353,12 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
             enterForm(FormKind.ACCESS, Mode.SHOP_DETAIL);
             return;
         } else if (slot == 14) {
-            enterForm(FormKind.UPSERT_OFFER, Mode.SHOP_DETAIL);
+            selectedItem = null;
+            selectedOffer = null;
+            query = "";
+            page = 0;
+            mode = Mode.ITEM_SELECT;
+            render();
             return;
         } else {
             return;
@@ -357,6 +371,9 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
             return;
         }
         if (slot == 20) {
+            ShopInstance shop = selectedShop == null ? null : state().shopInstance(selectedShop).orElse(null);
+            ShopInstance.Offer offer = shop == null || selectedOffer == null ? null : shop.offers().get(selectedOffer);
+            selectedItem = offer == null ? null : BuiltInRegistries.ITEM.getKey(offer.item().getItem());
             enterForm(FormKind.UPSERT_OFFER, Mode.OFFER_DETAIL);
         } else if (slot == 22) {
             enterForm(FormKind.REMOVE_OFFER, Mode.OFFER_DETAIL);
@@ -365,9 +382,65 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
         }
     }
 
+    private void clickTemplateSelect(int slot) {
+        if (slot == PREVIOUS_SLOT) {
+            page = Math.max(0, page - 1);
+        } else if (slot == NEXT_SLOT) {
+            page++;
+        } else if (slot >= CONTENT_START && slot < CONTENT_START + CONTENT_SIZE) {
+            List<Identifier> templates = templateIds();
+            int index = page * CONTENT_SIZE + slot - CONTENT_START;
+            if (index >= templates.size()) {
+                return;
+            }
+            selectedTemplate = templates.get(index);
+            enterForm(FormKind.CREATE_SHOP, Mode.SHOPS);
+            return;
+        } else {
+            return;
+        }
+        render();
+    }
+
+    private void clickItemSelect(int slot) {
+        if (slot == PREVIOUS_SLOT) {
+            page = Math.max(0, page - 1);
+        } else if (slot == NEXT_SLOT) {
+            page++;
+        } else if (slot >= CONTENT_START && slot < CONTENT_START + CONTENT_SIZE) {
+            List<Identifier> items = itemIds();
+            int index = page * CONTENT_SIZE + slot - CONTENT_START;
+            if (index >= items.size()) {
+                return;
+            }
+            selectedItem = items.get(index);
+            enterForm(FormKind.UPSERT_OFFER, Mode.SHOP_DETAIL);
+            return;
+        } else {
+            return;
+        }
+        render();
+    }
+
     private boolean parseForm(String input) {
-        PlatformSavedData state = state();
         UUID transactionId = UUID.randomUUID();
+        String legacy = input;
+        if (input.startsWith("rf-form/")) {
+            Optional<List<String>> decoded = AdministrationStructuredFormCodec.decode(formType(formKind), input);
+            legacy = decoded.flatMap(values -> AdministrationEconomyTypedForm.legacy(
+                    formType(formKind), values, transactionId, selectedTemplate, selectedItem, selectedOffer))
+                    .orElse(null);
+            if (legacy == null) {
+                formError = "invalid_form";
+                render();
+                return false;
+            }
+        }
+        return parseLegacyForm(legacy, transactionId);
+    }
+
+    private boolean parseLegacyForm(String input, UUID transactionId) {
+        PlatformSavedData state = state();
         pending = switch (formKind) {
             case GRANT, DEBIT -> AdministrationEconomyFormParser.parseBalance(input)
                     .map(value -> new AdministrationEconomyActionService.BalanceAction(
@@ -522,6 +595,18 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
     private void back() {
         switch (mode) {
             case PLAYERS, SHOPS -> AdministrationControlCenterMenu.open(viewer);
+            case TEMPLATE_SELECT -> {
+                mode = Mode.SHOPS;
+                query = "";
+                page = 0;
+                render();
+            }
+            case ITEM_SELECT -> {
+                mode = Mode.SHOP_DETAIL;
+                query = "";
+                page = 0;
+                render();
+            }
             case RECEIPTS -> {
                 if (receiptPlayerFilter != null) {
                     selectedPlayer = receiptPlayerFilter;
@@ -575,6 +660,8 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
             case SHOPS -> renderShops();
             case SHOP_DETAIL -> renderShopDetail();
             case OFFER_DETAIL -> renderOfferDetail();
+            case TEMPLATE_SELECT -> renderTemplateSelect();
+            case ITEM_SELECT -> renderItemSelect();
             case FORM -> renderForm();
             case PREVIEW -> renderPreview();
             case RESULT -> renderResult();
@@ -589,11 +676,10 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
         renderListHeader(Items.PLAYER_HEAD, "gui.rovenfall.admin.domain.players", resultPage);
         for (int index = 0; index < resultPage.entries().size(); index++) {
             var row = resultPage.entries().get(index);
-            contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
-                    Items.PLAYER_HEAD,
-                    Component.literal(row.displayName().isBlank() ? row.playerId().toString() : row.displayName()),
-                    Component.translatable("gui.rovenfall.admin.economy.field.uuid", row.playerId().toString()),
-                    Component.translatable("gui.rovenfall.admin.economy.balance_value", optionalLong(row.balance()))));
+            contents.setItem(CONTENT_START + index, AdministrationPlayerHead.create(
+                    row.playerId(), row.displayName(),
+                    Component.translatable("gui.rovenfall.admin.economy.balance_value", optionalLong(row.balance())),
+                    Component.translatable("gui.rovenfall.admin.economy.field.uuid", row.playerId().toString())));
         }
         renderPagination(resultPage.page(), resultPage.totalPages());
     }
@@ -605,13 +691,12 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
             renderPlayers();
             return;
         }
-        String name = record.displayName().orElse(selectedPlayer.toString());
+        String name = record.displayName().orElse("");
         long balance = state().economyBalance(selectedPlayer).orElse(EconomyConfig.initialBalance());
-        contents.setItem(4, PlayerDashboardMenu.icon(
-                Items.PLAYER_HEAD, Component.literal(name),
-                Component.translatable("gui.rovenfall.admin.economy.field.uuid", selectedPlayer.toString()),
+        contents.setItem(4, AdministrationPlayerHead.create(selectedPlayer, name,
                 Component.translatable("gui.rovenfall.admin.economy.balance_value", balance),
-                Component.translatable("gui.rovenfall.admin.economy.last_seen", record.lastSeenEpochMillis())));
+                Component.translatable("gui.rovenfall.admin.economy.last_seen", record.lastSeenEpochMillis()),
+                Component.translatable("gui.rovenfall.admin.economy.field.uuid", selectedPlayer.toString())));
         contents.setItem(22, icon(
                 Items.WRITTEN_BOOK, "gui.rovenfall.admin.economy.receipts", "gui.rovenfall.admin.click"));
         if (canManage(viewer)) {
@@ -633,12 +718,13 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
                     receipt.reversedBy().isPresent() ? Items.BARRIER : Items.WRITTEN_BOOK,
                     receiptKind(receipt),
                     Component.translatable(
-                            "gui.rovenfall.admin.economy.field.transaction", row.transactionId().toString()),
-                    Component.translatable(
                             "gui.rovenfall.admin.economy.field.player_amount",
-                            receipt.playerId().toString(), receipt.amount()),
+                            playerName(receipt.playerId()), receipt.amount()),
                     Component.translatable(
-                            "gui.rovenfall.admin.economy.field.reversed_by", optionalUuid(receipt.reversedBy()))));
+                            "gui.rovenfall.admin.economy.field.reversed_by", optionalUuid(receipt.reversedBy())),
+                    Component.translatable(
+                            "gui.rovenfall.admin.economy.field.transaction", row.transactionId().toString()),
+                    Component.literal(receipt.playerId().toString())));
         }
         renderPagination(resultPage.page(), resultPage.totalPages());
     }
@@ -654,15 +740,16 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
         contents.setItem(4, PlayerDashboardMenu.icon(
                 Items.WRITTEN_BOOK, receiptKind(receipt),
                 Component.translatable(
-                        "gui.rovenfall.admin.economy.field.transaction", selectedReceipt.toString()),
-                Component.translatable(
                         "gui.rovenfall.admin.economy.field.player_actor",
-                        receipt.playerId().toString(), receipt.actorId().toString()),
+                        playerName(receipt.playerId()), playerName(receipt.actorId())),
                 Component.translatable(
                         "gui.rovenfall.admin.economy.field.amount_time",
                         receipt.amount(), receipt.timestampEpochMillis()),
                 Component.translatable(
-                        "gui.rovenfall.admin.economy.field.reversed_by", optionalUuid(receipt.reversedBy()))));
+                        "gui.rovenfall.admin.economy.field.reversed_by", optionalUuid(receipt.reversedBy())),
+                Component.translatable(
+                        "gui.rovenfall.admin.economy.field.transaction", selectedReceipt.toString()),
+                Component.literal(receipt.playerId() + " | " + receipt.actorId())));
         if (canManage(viewer) && canReverse(receipt) && reversalTargetOnline(receipt)) {
             contents.setItem(31, icon(
                     Items.EMERALD, "gui.rovenfall.admin.economy.reverse.strict",
@@ -692,14 +779,15 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
         for (int index = 0; index < resultPage.entries().size(); index++) {
             var row = resultPage.entries().get(index);
             contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
-                    Items.CHEST, Component.literal(row.shopId().toString()),
-                    Component.translatable(
-                            "gui.rovenfall.admin.economy.field.template", row.shop().templateId().toString()),
+                    Items.CHEST, shopName(row.shop()),
                     Component.translatable(
                             "gui.rovenfall.admin.economy.field.offers_access",
                             row.shop().offers().size(), row.shop().accessPolicy().maxDistance()),
                     Component.translatable(
-                            "gui.rovenfall.admin.economy.field.binding", binding(row.shop().binding()))));
+                            "gui.rovenfall.admin.economy.field.binding", binding(row.shop().binding())),
+                    Component.translatable(
+                            "gui.rovenfall.admin.economy.field.template", row.shop().templateId().toString()),
+                    Component.literal(row.shopId().toString())));
         }
         if (canManage(viewer)) {
             contents.setItem(CREATE_SLOT, icon(
@@ -717,13 +805,14 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
             return;
         }
         contents.setItem(4, PlayerDashboardMenu.icon(
-                Items.CHEST, Component.literal(selectedShop.toString()),
-                Component.translatable(
-                        "gui.rovenfall.admin.economy.field.template", shop.templateId().toString()),
+                Items.CHEST, shopName(shop),
                 Component.translatable("gui.rovenfall.admin.economy.field.binding", binding(shop.binding())),
                 Component.translatable(
                         "gui.rovenfall.admin.economy.field.access_offers",
-                        shop.accessPolicy().maxDistance(), shop.offers().size())));
+                        shop.accessPolicy().maxDistance(), shop.offers().size()),
+                Component.translatable(
+                        "gui.rovenfall.admin.economy.field.template", shop.templateId().toString()),
+                Component.literal(selectedShop.toString())));
         if (canManage(viewer)) {
             contents.setItem(10, icon(Items.BARRIER, "gui.rovenfall.admin.economy.shop.delete",
                     "gui.rovenfall.admin.economy.form.reason"));
@@ -745,14 +834,15 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
             ItemStack display = offer.item();
             display.setCount(1);
             contents.setItem(OFFER_CONTENT_START + index - from, PlayerDashboardMenu.icon(
-                    display.getItem(), Component.literal(offerId.toString()),
-                    Component.translatable(
-                            "gui.rovenfall.admin.economy.field.item_count",
-                            BuiltInRegistries.ITEM.getKey(offer.item().getItem()).toString(), offer.item().getCount()),
+                    display.getItem(), display.getHoverName(),
                     Component.translatable(
                             "gui.rovenfall.admin.economy.field.prices",
                             optionalLong(offer.buyPrice()), optionalLong(offer.sellPrice())),
-                    stock(offer.stock())));
+                    stock(offer.stock()),
+                    Component.translatable(
+                            "gui.rovenfall.admin.economy.field.item_count",
+                            BuiltInRegistries.ITEM.getKey(offer.item().getItem()).toString(), offer.item().getCount()),
+                    Component.literal(offerId.toString())));
         }
         int totalPages = offers.isEmpty() ? 0 : (offers.size() + OFFER_PAGE_SIZE - 1) / OFFER_PAGE_SIZE;
         renderPagination(page, totalPages);
@@ -767,14 +857,15 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
             return;
         }
         contents.setItem(4, PlayerDashboardMenu.icon(
-                offer.item().getItem(), Component.literal(selectedOffer.toString()),
-                Component.translatable(
-                        "gui.rovenfall.admin.economy.field.item_count",
-                        BuiltInRegistries.ITEM.getKey(offer.item().getItem()).toString(), offer.item().getCount()),
+                offer.item().getItem(), offer.item().getHoverName(),
                 Component.translatable(
                         "gui.rovenfall.admin.economy.field.prices",
                         optionalLong(offer.buyPrice()), optionalLong(offer.sellPrice())),
-                stock(offer.stock())));
+                stock(offer.stock()),
+                Component.translatable(
+                        "gui.rovenfall.admin.economy.field.item_count",
+                        BuiltInRegistries.ITEM.getKey(offer.item().getItem()).toString(), offer.item().getCount()),
+                Component.literal(selectedOffer.toString())));
         if (canManage(viewer)) {
             contents.setItem(20, icon(Items.EMERALD, "gui.rovenfall.admin.economy.offer.upsert",
                     "gui.rovenfall.admin.economy.form.offer"));
@@ -786,13 +877,56 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
         renderBack();
     }
 
+    private void renderTemplateSelect() {
+        List<Identifier> templates = templateIds();
+        int from = Math.min(templates.size(), page * CONTENT_SIZE);
+        int to = Math.min(templates.size(), from + CONTENT_SIZE);
+        ItemStack header = PlayerDashboardMenu.icon(
+                Items.CHEST, Component.translatable("gui.rovenfall.admin.economy.shop.create"),
+                Component.translatable("gui.rovenfall.admin.click"));
+        AdministrationFormMarker.writeSearch(header);
+        contents.setItem(4, header);
+        for (int index = from; index < to; index++) {
+            Identifier id = templates.get(index);
+            var template = ShopTemplateReloadListener.snapshot(viewer.level().getServer()).get(id).orElseThrow();
+            contents.setItem(CONTENT_START + index - from, PlayerDashboardMenu.icon(
+                    Items.CHEST, Component.translatable(template.translationKey()),
+                    Component.translatable("gui.rovenfall.admin.economy.field.offers_access", template.offers().size(), 0),
+                    Component.literal(id.toString())));
+        }
+        renderPagination(page, pages(templates.size()));
+    }
+
+    private void renderItemSelect() {
+        List<Identifier> items = itemIds();
+        int from = Math.min(items.size(), page * CONTENT_SIZE);
+        int to = Math.min(items.size(), from + CONTENT_SIZE);
+        ItemStack header = PlayerDashboardMenu.icon(
+                Items.EMERALD, Component.translatable("gui.rovenfall.admin.economy.offer.upsert"),
+                Component.translatable("gui.rovenfall.admin.click"));
+        AdministrationFormMarker.writeSearch(header);
+        contents.setItem(4, header);
+        for (int index = from; index < to; index++) {
+            Identifier id = items.get(index);
+            Item item = BuiltInRegistries.ITEM.getValue(id);
+            contents.setItem(CONTENT_START + index - from, PlayerDashboardMenu.icon(
+                    item, item.getDefaultInstance().getHoverName(), Component.literal(id.toString())));
+        }
+        renderPagination(page, pages(items.size()));
+    }
+
     private void renderForm() {
-        contents.setItem(4, PlayerDashboardMenu.icon(
+        ItemStack header = PlayerDashboardMenu.icon(
                 Items.WRITABLE_BOOK, Component.translatable("gui.rovenfall.admin.economy.form.title"),
                 Component.translatable(formHint(formKind)),
                 Component.translatable("gui.rovenfall.admin.economy.form.submit"),
                 formError.isBlank() ? Component.empty()
-                        : Component.translatable("gui.rovenfall.admin.economy.error", formError)));
+                        : Component.translatable("gui.rovenfall.admin.economy.error", formError));
+        AdministrationFormMarker.write(header, new AdministrationFormMarker(formType(formKind), formDefaults(formKind)));
+        if (!formError.isBlank()) {
+            AdministrationFormMarker.writeError(header);
+        }
+        contents.setItem(4, header);
         renderBack();
     }
 
@@ -834,13 +968,15 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
             denyAndClose();
             return;
         }
-        contents.setItem(4, PlayerDashboardMenu.icon(
+        ItemStack header = PlayerDashboardMenu.icon(
                 item, Component.translatable(titleKey),
                 Component.translatable("gui.rovenfall.admin.page", page + 1, Math.max(1, resultPage.totalPages())),
                 Component.translatable("gui.rovenfall.admin.total", resultPage.totalEntries()),
                 Component.translatable(resultPage.truncated()
                         ? "gui.rovenfall.admin.truncated" : "gui.rovenfall.admin.complete"),
-                Component.translatable("gui.rovenfall.admin.query", query.isBlank() ? "*" : query)));
+                Component.translatable("gui.rovenfall.admin.query", query.isBlank() ? "*" : query));
+        AdministrationFormMarker.writeSearch(header);
+        contents.setItem(4, header);
         if (resultPage.entries().isEmpty()) {
             contents.setItem(22, icon(
                     Items.BARRIER, "gui.rovenfall.admin.empty", "gui.rovenfall.admin.search_hint"));
@@ -944,7 +1080,7 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
             lines.add(Component.translatable(
                     value.grant() ? "gui.rovenfall.admin.economy.grant" : "gui.rovenfall.admin.economy.debit"));
             lines.add(Component.translatable(
-                    "gui.rovenfall.admin.economy.preview.player", value.playerId().toString()));
+                    "gui.rovenfall.admin.economy.preview.player", playerName(value.playerId())));
             lines.add(Component.translatable(
                     "gui.rovenfall.admin.economy.preview.amount", value.amount()));
             lines.add(Component.translatable(
@@ -1019,9 +1155,9 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
                             : Component.translatable("gui.rovenfall.admin.economy.preview.legs.balance")));
         }
         lines.add(Component.translatable(
-                "gui.rovenfall.admin.economy.preview.transaction", action.transactionId().toString()));
-        lines.add(Component.translatable(
                 "gui.rovenfall.admin.economy.preview.reason", action.reason()));
+        lines.add(Component.translatable(
+                "gui.rovenfall.admin.economy.preview.transaction", action.transactionId().toString()));
         return lines;
     }
 
@@ -1066,6 +1202,85 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
         return binding.<Component>map(value -> Component.literal(
                         value.dimension().identifier() + " @ " + value.position()))
                 .orElseGet(() -> Component.translatable("gui.rovenfall.admin.economy.none"));
+    }
+
+    private List<Identifier> templateIds() {
+        String normalized = query.strip().toLowerCase(java.util.Locale.ROOT);
+        return ShopTemplateReloadListener.snapshot(viewer.level().getServer()).templates().entrySet().stream()
+                .filter(entry -> normalized.isBlank() || entry.getKey().toString().contains(normalized)
+                        || entry.getValue().translationKey().toLowerCase(java.util.Locale.ROOT).contains(normalized))
+                .map(java.util.Map.Entry::getKey).sorted().toList();
+    }
+
+    private List<Identifier> itemIds() {
+        String normalized = query.strip().toLowerCase(java.util.Locale.ROOT);
+        return BuiltInRegistries.ITEM.keySet().stream()
+                .filter(id -> id != null && !id.equals(BuiltInRegistries.ITEM.getKey(Items.AIR)))
+                .filter(id -> normalized.isBlank() || id.toString().contains(normalized)
+                        || BuiltInRegistries.ITEM.getValue(id).getDefaultInstance().getHoverName().getString()
+                                .toLowerCase(java.util.Locale.ROOT).contains(normalized))
+                .sorted().toList();
+    }
+
+    private static int pages(int entries) {
+        return entries == 0 ? 0 : (entries + CONTENT_SIZE - 1) / CONTENT_SIZE;
+    }
+
+    private Component shopName(ShopInstance shop) {
+        return shop == null ? Component.translatable("gui.rovenfall.admin.economy.none")
+                : Component.translatable(ShopTemplateReloadListener.snapshot(viewer.level().getServer()).get(shop.templateId())
+                        .map(template -> template.translationKey()).orElse("gui.rovenfall.admin.economy.none"));
+    }
+
+    private Component playerName(UUID playerId) {
+        String name = state().playerRecord(playerId).flatMap(PlayerRecord::displayName).orElse("");
+        return name.isBlank()
+                ? Component.translatable("gui.rovenfall.player.unknown_player")
+                : Component.literal(name);
+    }
+
+    private static AdministrationFormType formType(FormKind kind) {
+        return switch (kind) {
+            case GRANT -> AdministrationFormType.ECONOMY_GRANT;
+            case DEBIT -> AdministrationFormType.ECONOMY_DEBIT;
+            case CREATE_SHOP -> AdministrationFormType.ECONOMY_SHOP_CREATE;
+            case DELETE_SHOP -> AdministrationFormType.ECONOMY_SHOP_DELETE;
+            case BIND_HERE -> AdministrationFormType.ECONOMY_SHOP_BIND_HERE;
+            case UNBIND -> AdministrationFormType.ECONOMY_SHOP_UNBIND;
+            case ACCESS -> AdministrationFormType.ECONOMY_SHOP_ACCESS;
+            case UPSERT_OFFER -> AdministrationFormType.ECONOMY_OFFER_UPSERT;
+            case REMOVE_OFFER -> AdministrationFormType.ECONOMY_OFFER_REMOVE;
+            case RESTOCK -> AdministrationFormType.ECONOMY_RESTOCK;
+            case REVERSE_STRICT -> AdministrationFormType.ECONOMY_REVERSE_STRICT;
+            case REVERSE_COMPENSATE -> AdministrationFormType.ECONOMY_REVERSE_COMPENSATE;
+        };
+    }
+
+    private List<String> formDefaults(FormKind kind) {
+        if (kind == FormKind.UPSERT_OFFER) {
+            ShopInstance.Offer offer = selectedShop == null || selectedOffer == null
+                    ? null : state().shopInstance(selectedShop).map(shop -> shop.offers().get(selectedOffer)).orElse(null);
+            if (offer != null) {
+                String direction = offer.buyPrice().isPresent() && offer.sellPrice().isPresent() ? "both"
+                        : offer.buyPrice().isPresent() ? "buy" : "sell";
+                return List.of(direction, offer.buyPrice().map(Object::toString).orElse(""),
+                        offer.sellPrice().map(Object::toString).orElse(""),
+                        offer.stock().unlimited() ? "unlimited" : "finite",
+                        offer.stock().unlimited() ? "" : Long.toString(offer.stock().current()),
+                        offer.stock().unlimited() ? "" : Long.toString(offer.stock().maximum()),
+                        Integer.toString(offer.item().getCount()), "");
+            }
+        }
+        if (kind == FormKind.RESTOCK) {
+            ShopInstance.Offer offer = selectedShop == null || selectedOffer == null
+                    ? null : state().shopInstance(selectedShop).map(shop -> shop.offers().get(selectedOffer)).orElse(null);
+            if (offer != null) {
+                boolean enabled = offer.stock().restockAmount().isPresent() && offer.stock().restockIntervalTicks().isPresent();
+                return List.of(Boolean.toString(enabled), offer.stock().restockAmount().map(Object::toString).orElse("1"),
+                        offer.stock().restockIntervalTicks().map(Object::toString).orElse("1200"), "");
+            }
+        }
+        return formType(kind).defaults();
     }
 
     private static Component optionalUuid(Optional<UUID> value) {
@@ -1119,6 +1334,8 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
         SHOPS,
         SHOP_DETAIL,
         OFFER_DETAIL,
+        TEMPLATE_SELECT,
+        ITEM_SELECT,
         FORM,
         PREVIEW,
         RESULT

@@ -157,7 +157,10 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
             return false;
         }
         if (mode == Mode.FORM) {
-            return parseForm(input);
+            Optional<List<String>> structured = AdministrationStructuredFormCodec.decode(formType(formKind), input);
+            return structured.isPresent()
+                    ? parseForm(legacyFormInput(formKind, structured.orElseThrow()))
+                    : parseForm(input);
         }
         if (mode != Mode.RPG_PLAYERS && mode != Mode.DEFINITIONS && mode != Mode.PROMOTIONS) {
             return false;
@@ -476,6 +479,12 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
                 .map(AdministrationRpgBossFormParser.ReasonForm::reason);
     }
 
+    private static String legacyFormInput(FormKind kind, List<String> values) {
+        return kind == FormKind.XP
+                ? values.get(0) + " | " + values.get(1)
+                : " | " + values.getFirst();
+    }
+
     private void confirm() {
         if (pending == null) {
             return;
@@ -602,19 +611,18 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
         var resultPage = playersPage();
         renderHeader(Items.PLAYER_HEAD, "gui.rovenfall.admin.rpg_boss.players",
                 resultPage.page(), resultPage.totalPages(), resultPage.totalEntries(), resultPage.truncated());
+        markSearchHeader();
         for (int index = 0; index < resultPage.entries().size(); index++) {
             var row = resultPage.entries().get(index);
-            Component name = row.displayName().isBlank()
-                    ? Component.literal(row.playerId().toString()) : Component.literal(row.displayName());
-            contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
-                    Items.PLAYER_HEAD, name,
-                    Component.translatable("gui.rovenfall.admin.rpg_boss.field.uuid", row.playerId().toString()),
+            contents.setItem(CONTENT_START + index, AdministrationPlayerHead.create(
+                    row.playerId(), row.displayName(),
                     Component.translatable("gui.rovenfall.admin.rpg_boss.field.active_career",
                             row.activeCareer().<Component>map(this::definitionName)
                                     .orElseGet(() -> Component.translatable("gui.rovenfall.admin.rpg_boss.none"))),
                     Component.translatable("gui.rovenfall.admin.rpg_boss.field.progress_counts",
                             row.activities(), row.careers(), row.learnedSkills()),
-                    Component.translatable("gui.rovenfall.admin.rpg_boss.field.evidence_count", row.evidenceEntries())));
+                    Component.translatable("gui.rovenfall.admin.rpg_boss.field.evidence_count", row.evidenceEntries()),
+                    Component.translatable("gui.rovenfall.admin.rpg_boss.field.uuid", row.playerId().toString())));
         }
         contents.setItem(CENTER_SLOT, icon(
                 Items.BOOKSHELF, "gui.rovenfall.admin.rpg_boss.definitions", "gui.rovenfall.admin.click"));
@@ -624,8 +632,10 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
     private void renderRpgPlayer() {
         RpgPlayerState state = selectedPlayer == null
                 ? RpgPlayerState.EMPTY : RpgPlayerSavedData.get(server()).state(selectedPlayer);
-        contents.setItem(4, PlayerDashboardMenu.icon(
-                Items.PLAYER_HEAD, Component.literal(selectedPlayer == null ? "?" : selectedPlayer.toString()),
+        String displayName = selectedPlayer == null ? "" : PlatformSavedData.get(server()).playerRecord(selectedPlayer)
+                .flatMap(PlayerRecord::displayName).orElse("");
+        contents.setItem(4, AdministrationPlayerHead.create(
+                selectedPlayer == null ? viewerId : selectedPlayer, displayName,
                 Component.translatable("gui.rovenfall.admin.rpg_boss.field.active_career",
                         state.activeCareer().<Component>map(this::definitionName)
                                 .orElseGet(() -> Component.translatable("gui.rovenfall.admin.rpg_boss.none"))),
@@ -633,7 +643,9 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
                         state.activityXp().size(), state.careers().size(),
                         state.careers().values().stream().mapToInt(value -> value.learnedSkills().size()).sum()),
                 Component.translatable("gui.rovenfall.admin.rpg_boss.field.evidence_count",
-                        state.provenance().size())));
+                        state.provenance().size()),
+                selectedPlayer == null ? Component.empty()
+                        : Component.translatable("gui.rovenfall.admin.rpg_boss.field.uuid", selectedPlayer.toString())));
         contents.setItem(PRIMARY_SLOT, icon(
                 Items.EXPERIENCE_BOTTLE, "gui.rovenfall.admin.rpg_boss.progression", "gui.rovenfall.admin.click"));
         contents.setItem(SECONDARY_SLOT, icon(
@@ -678,10 +690,10 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
                     Component.translatable("gui.rovenfall.admin.rpg_boss.field.award",
                             evidence.amount(), evidence.timestamp()),
                     Component.translatable("gui.rovenfall.admin.rpg_boss.field.source", evidence.source()),
-                    Component.translatable("gui.rovenfall.admin.rpg_boss.field.transaction",
-                            evidence.transactionId().toString()),
                     Component.translatable("gui.rovenfall.admin.rpg_boss.field.suspicion",
-                            suspicion(row.suspicions()))));
+                            suspicion(row.suspicions())),
+                    Component.translatable("gui.rovenfall.admin.rpg_boss.field.transaction",
+                            evidence.transactionId().toString())));
         }
         contents.setItem(CENTER_SLOT, PlayerDashboardMenu.icon(
                 suspiciousOnly ? Items.REDSTONE : Items.PAPER,
@@ -696,12 +708,13 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
         var resultPage = promotionsPage();
         renderHeader(Items.NETHER_STAR, "gui.rovenfall.admin.rpg_boss.promotion",
                 resultPage.page(), resultPage.totalPages(), resultPage.totalEntries(), false);
+        markSearchHeader();
         for (int index = 0; index < resultPage.entries().size(); index++) {
             var row = resultPage.entries().get(index);
             contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
                     Items.NETHER_STAR, definitionName(row.id()),
-                    Component.literal(row.id().toString()),
-                    Component.translatable("gui.rovenfall.admin.rpg_boss.promotion.select")));
+                    Component.translatable("gui.rovenfall.admin.rpg_boss.promotion.select"),
+                    Component.literal(row.id().toString())));
         }
         renderPagination(resultPage.page(), resultPage.totalPages());
     }
@@ -710,10 +723,12 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
         var resultPage = definitionsPage();
         renderHeader(Items.BOOKSHELF, "gui.rovenfall.admin.rpg_boss.definitions",
                 resultPage.page(), resultPage.totalPages(), resultPage.totalEntries(), false);
+        markSearchHeader();
         for (int index = 0; index < resultPage.entries().size(); index++) {
             var row = resultPage.entries().get(index);
             Component title = row.translationKey().isBlank()
-                    ? Component.literal(row.id().toString()) : Component.translatable(row.translationKey());
+                    ? Component.translatable("gui.rovenfall.admin.rpg_boss.unknown_definition")
+                    : Component.translatable(row.translationKey());
             contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
                     definitionItem(row.kind()), title,
                     Component.translatable("gui.rovenfall.admin.rpg_boss.field.kind",
@@ -752,7 +767,7 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
         for (int index = from; index < to; index++) {
             var problem = snapshot.problems().get(index);
             contents.setItem(CONTENT_START + index - from, PlayerDashboardMenu.icon(
-                    Items.REDSTONE, Component.literal(problem.definitionId().toString()),
+                    Items.REDSTONE, Component.translatable("gui.rovenfall.admin.rpg_boss.content_problem"),
                     Component.translatable("gui.rovenfall.admin.rpg_boss.field.problem_source",
                             Component.translatable(problemSourceKey(problem.source()))),
                     Component.translatable("gui.rovenfall.admin.rpg_boss.field.problem_file",
@@ -773,7 +788,8 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
         for (int index = 0; index < resultPage.entries().size(); index++) {
             var row = resultPage.entries().get(index);
             contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
-                    Items.FERMENTED_SPIDER_EYE, Component.literal(row.entityId().toString()),
+                    Items.FERMENTED_SPIDER_EYE,
+                    Component.translatable("gui.rovenfall.admin.rpg_boss.mutation_entry"),
                     Component.translatable("gui.rovenfall.admin.rpg_boss.field.entity", row.entityType().toString()),
                     Component.translatable("gui.rovenfall.admin.rpg_boss.field.location",
                             row.dimension().toString(), row.position().toShortString()),
@@ -791,12 +807,12 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
             var row = resultPage.entries().get(index);
             contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
                     Items.DRAGON_HEAD, definitionName(row.bossId()),
-                    Component.translatable("gui.rovenfall.admin.rpg_boss.field.encounter",
-                            row.encounterId().toString()),
                     Component.translatable("gui.rovenfall.admin.rpg_boss.field.stage",
                             Component.translatable(stageKey(row.stage())), row.phaseIndex()),
                     Component.translatable("gui.rovenfall.admin.rpg_boss.field.participants", row.participantCount()),
-                    Component.translatable("gui.rovenfall.admin.rpg_boss.field.arena", enabled(row.arenaProtected()))));
+                    Component.translatable("gui.rovenfall.admin.rpg_boss.field.arena", enabled(row.arenaProtected())),
+                    Component.translatable("gui.rovenfall.admin.rpg_boss.field.encounter",
+                            row.encounterId().toString())));
         }
         if (canRecoverBoss(currentRole())) {
             contents.setItem(PRIMARY_SLOT, icon(
@@ -818,13 +834,13 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
         }
         contents.setItem(4, PlayerDashboardMenu.icon(
                 Items.DRAGON_HEAD, definitionName(row.bossId()),
-                Component.translatable("gui.rovenfall.admin.rpg_boss.field.encounter", row.encounterId().toString()),
-                Component.translatable("gui.rovenfall.admin.rpg_boss.field.entity", row.entityId().toString()),
                 Component.translatable("gui.rovenfall.admin.rpg_boss.field.location",
                         row.dimension().toString(), row.center().toShortString()),
                 Component.translatable("gui.rovenfall.admin.rpg_boss.field.stage",
                         Component.translatable(stageKey(row.stage())), row.phaseIndex()),
-                Component.translatable("gui.rovenfall.admin.rpg_boss.field.arena", enabled(row.arenaProtected()))));
+                Component.translatable("gui.rovenfall.admin.rpg_boss.field.arena", enabled(row.arenaProtected())),
+                Component.translatable("gui.rovenfall.admin.rpg_boss.field.encounter", row.encounterId().toString()),
+                Component.translatable("gui.rovenfall.admin.rpg_boss.field.entity", row.entityId().toString())));
         contents.setItem(PRIMARY_SLOT, icon(
                 Items.PLAYER_HEAD, "gui.rovenfall.admin.rpg_boss.participants", "gui.rovenfall.admin.click"));
         contents.setItem(SECONDARY_SLOT, icon(
@@ -844,10 +860,11 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
         for (int index = 0; index < resultPage.entries().size(); index++) {
             var row = resultPage.entries().get(index);
             long basisPoints = row.totalPoints() == 0 ? 0 : row.points() * 10_000 / row.totalPoints();
-            contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
-                    Items.PLAYER_HEAD, Component.literal(row.playerId().toString()),
+            contents.setItem(CONTENT_START + index, AdministrationPlayerHead.create(
+                    row.playerId(), playerDisplayName(row.playerId()),
                     Component.translatable("gui.rovenfall.admin.rpg_boss.field.contribution",
-                            row.points(), row.totalPoints(), basisPoints)));
+                            row.points(), row.totalPoints(), basisPoints),
+                    Component.translatable("gui.rovenfall.admin.rpg_boss.field.uuid", row.playerId().toString())));
         }
         renderPagination(resultPage.page(), resultPage.totalPages());
     }
@@ -858,8 +875,11 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
                 resultPage.page(), resultPage.totalPages(), resultPage.totalEntries(), false);
         for (int index = 0; index < resultPage.entries().size(); index++) {
             var row = resultPage.entries().get(index);
+            String displayName = playerDisplayName(row.playerId());
             contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
-                    Items.CHEST, Component.literal(row.playerId().toString()),
+                    Items.CHEST, displayName.isBlank()
+                            ? Component.translatable("gui.rovenfall.player.unknown_player")
+                            : Component.literal(displayName),
                     Component.translatable("gui.rovenfall.admin.rpg_boss.field.transaction",
                             row.transactionId().toString()),
                     Component.translatable("gui.rovenfall.admin.rpg_boss.field.contribution",
@@ -868,18 +888,25 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
                     Component.translatable("gui.rovenfall.admin.rpg_boss.field.reward",
                             row.currency(), row.experience(), row.itemStacks()),
                     Component.translatable("gui.rovenfall.admin.rpg_boss.field.reward_phase",
-                            Component.translatable(rewardPhaseKey(row.phase())), row.cooldownUntilEpochMillis())));
+                            Component.translatable(rewardPhaseKey(row.phase())), row.cooldownUntilEpochMillis()),
+                    Component.translatable("gui.rovenfall.admin.rpg_boss.field.uuid", row.playerId().toString())));
         }
         renderPagination(resultPage.page(), resultPage.totalPages());
     }
 
     private void renderForm() {
-        contents.setItem(4, PlayerDashboardMenu.icon(
+        ItemStack header = PlayerDashboardMenu.icon(
                 Items.WRITABLE_BOOK, Component.translatable("gui.rovenfall.admin.rpg_boss.form.title"),
                 Component.translatable(formHint(formKind)),
                 Component.translatable("gui.rovenfall.admin.rpg_boss.form.submit"),
                 formError.isBlank() ? Component.empty()
-                        : Component.translatable("gui.rovenfall.admin.rpg_boss.error", inputError(formError))));
+                        : Component.translatable("gui.rovenfall.admin.rpg_boss.error", inputError(formError)));
+        AdministrationFormType type = formType(formKind);
+        AdministrationFormMarker.write(header, new AdministrationFormMarker(type, type.defaults()));
+        if (!formError.isBlank()) {
+            AdministrationFormMarker.writeError(header);
+        }
+        contents.setItem(4, header);
         renderBack();
     }
 
@@ -923,13 +950,13 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
         if (action instanceof AdministrationRpgBossActionService.XpAction value) {
             long before = value.expectedPlayerState().activityXp().getOrDefault(value.activityId(), 0L);
             lines.add(Component.translatable("gui.rovenfall.admin.rpg_boss.preview.xp",
-                    value.playerId().toString(), definitionName(value.activityId()), before, before + value.delta()));
+                    playerName(value.playerId()), definitionName(value.activityId()), before, before + value.delta()));
         } else if (action instanceof AdministrationRpgBossActionService.PromotionAction value) {
             lines.add(Component.translatable("gui.rovenfall.admin.rpg_boss.preview.promotion",
-                    value.playerId().toString(), definitionName(value.careerId())));
+                    playerName(value.playerId()), definitionName(value.careerId())));
         } else if (action instanceof AdministrationRpgBossActionService.SkillResetAction value) {
             lines.add(Component.translatable("gui.rovenfall.admin.rpg_boss.preview.skill_reset",
-                    value.playerId().toString(), Component.translatable(resetModeKey(value.mode())),
+                    playerName(value.playerId()), Component.translatable(resetModeKey(value.mode())),
                     definitionName(value.target()), value.expectedPlan().removedSkills().size(),
                     value.expectedPlan().refundedPoints()));
         } else if (action instanceof AdministrationRpgBossActionService.BossResetAction value) {
@@ -945,9 +972,9 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
                     value.expectedRpgRevision(), rpg.activities().size(), rpg.careers().size(),
                     rpg.skills().size(), value.expectedMobSnapshot().size()));
         }
+        lines.add(Component.translatable("gui.rovenfall.admin.rpg_boss.preview.reason", action.reason()));
         lines.add(Component.translatable("gui.rovenfall.admin.rpg_boss.preview.transaction",
                 action.transactionId().toString()));
-        lines.add(Component.translatable("gui.rovenfall.admin.rpg_boss.preview.reason", action.reason()));
         return lines;
     }
 
@@ -1005,6 +1032,12 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
                         : Component.translatable("gui.rovenfall.admin.rpg_boss.error", inputError(formError))));
     }
 
+    private void markSearchHeader() {
+        ItemStack header = contents.getItem(4);
+        AdministrationFormMarker.writeSearch(header);
+        contents.setItem(4, header);
+    }
+
     private void renderPagination(int currentPage, int totalPages) {
         renderBack();
         if (currentPage > 0) {
@@ -1035,7 +1068,23 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
                 .or(() -> mobs.mob(id).<Component>map(value -> Component.translatable(value.translationKey())))
                 .or(() -> mobs.mutation(id).<Component>map(value -> Component.translatable(value.translationKey())))
                 .or(() -> mobs.boss(id).<Component>map(value -> Component.translatable(value.translationKey())))
-                .orElseGet(() -> Component.literal(id.toString()));
+                .orElseGet(() -> Component.translatable("gui.rovenfall.admin.rpg_boss.unknown_definition"));
+    }
+
+    private String playerDisplayName(UUID playerId) {
+        return PlatformSavedData.get(server()).playerRecord(playerId)
+                .flatMap(PlayerRecord::displayName)
+                .orElseGet(() -> {
+                    ServerPlayer online = server().getPlayerList().getPlayer(playerId);
+                    return online == null ? "" : online.getGameProfile().name();
+                });
+    }
+
+    private Component playerName(UUID playerId) {
+        String displayName = playerDisplayName(playerId);
+        return displayName.isBlank()
+                ? Component.translatable("gui.rovenfall.player.unknown_player")
+                : Component.literal(displayName);
     }
 
     private Component progressionAction(RpgAdministrationViewService.ProgressionEntry entry) {
@@ -1137,6 +1186,18 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
         return kind == FormKind.XP
                 ? "gui.rovenfall.admin.rpg_boss.form.xp"
                 : "gui.rovenfall.admin.rpg_boss.form.reason";
+    }
+
+    private static AdministrationFormType formType(FormKind kind) {
+        return switch (kind) {
+            case XP -> AdministrationFormType.RPG_XP;
+            case PROMOTION -> AdministrationFormType.RPG_PROMOTION;
+            case SKILL_FULL -> AdministrationFormType.RPG_SKILL_FULL_RESET;
+            case SKILL_BRANCH -> AdministrationFormType.RPG_SKILL_BRANCH_RESET;
+            case BOSS_RESET -> AdministrationFormType.RPG_BOSS_RESET;
+            case BOSS_RECOVER -> AdministrationFormType.RPG_BOSS_RECOVER;
+            case RELOAD -> AdministrationFormType.RPG_RELOAD;
+        };
     }
 
     private static String kindKey(RpgAdministrationViewService.EntryKind kind) {

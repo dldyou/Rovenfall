@@ -456,41 +456,58 @@ public final class Rovenfall {
                         "Shops domain did not open the typed economy administration menu");
                 helper.assertTrue(player.containerMenu.getSlot(46).hasItem(),
                         "Owner could not see the shop create mutation control");
-                Identifier guiShopId = id("gui_" + UUID.randomUUID());
                 player.containerMenu.clicked(46, 0, ContainerInput.PICKUP, player);
-                helper.assertTrue(((AdministrationEconomyMenu) player.containerMenu).applyTextInput(
-                                player, guiShopId + ",rovenfall:foundation | gametest gui create"),
-                        "The shop create form did not produce a server preview");
                 helper.runAfterDelay(1, () -> {
-                    player.containerMenu.clicked(31, 0, ContainerInput.PICKUP, player);
-                    helper.assertTrue(platform.shopInstance(guiShopId).isPresent(),
-                            "Confirmed GUI shop create did not call the audited shop service");
-                    helper.assertTrue(AdministrationService.changeRole(
-                                    platform, AdministrationService.SYSTEM_ACTOR, true, player.getUUID(),
-                                    AdminRole.VIEWER.getSerializedName(), "gametest read-only demotion",
-                                    System.currentTimeMillis(), UUID.randomUUID()).status()
-                                    == AdministrationService.RoleChangeStatus.SUCCESS,
-                            "Could not demote the GameTest owner to viewer");
-                    helper.assertTrue(AdministrationEconomyMenu.open(
-                                    player, org.dldyou.rovenfall.administration.AdministrationReadViewService.Domain.SHOPS),
-                            "Viewer could not reopen the read-only shops view");
-                    helper.assertTrue(player.containerMenu instanceof AdministrationEconomyMenu
-                                    && !player.containerMenu.getSlot(46).hasItem(),
-                            "Viewer retained a shop mutation control after demotion");
-                    helper.assertTrue(AdministrationService.changeRole(
-                                    platform, AdministrationService.SYSTEM_ACTOR, true, player.getUUID(),
-                                    AdminRole.CONTENT_MANAGER.getSerializedName(), "gametest cross-domain change",
-                                    System.currentTimeMillis(), UUID.randomUUID()).status()
-                                    == AdministrationService.RoleChangeStatus.SUCCESS,
-                            "Could not move the GameTest viewer to content manager");
+                    helper.assertTrue(player.containerMenu.getSlot(9).hasItem(),
+                            "The one-click shop template selector did not render a template");
+                    player.containerMenu.clicked(9, 0, ContainerInput.PICKUP, player);
+                    String structured = org.dldyou.rovenfall.administration.AdministrationStructuredFormCodec.encode(
+                                    org.dldyou.rovenfall.administration.AdministrationFormType.ECONOMY_SHOP_CREATE,
+                                    List.of("gametest gui create"))
+                            .orElseThrow();
+                    helper.assertTrue(((AdministrationEconomyMenu) player.containerMenu)
+                                    .applyTextInput(player, structured),
+                            "The typed shop create form did not produce a server preview");
                     helper.runAfterDelay(1, () -> {
-                        if (player.containerMenu instanceof AdministrationEconomyMenu) {
-                            player.containerMenu.clicked(53, 0, ContainerInput.PICKUP, player);
-                        }
-                        helper.assertTrue(player.containerMenu == player.inventoryMenu,
-                                "A cross-domain role change did not close the shops administration view");
-                        player.discard();
-                        helper.succeed();
+                        player.containerMenu.clicked(31, 0, ContainerInput.PICKUP, player);
+                        var createAudit = platform.recentAuditEntries(20).stream()
+                                .filter(entry -> entry.actionType().getPath().equals("shop_instance_create"))
+                                .filter(entry -> entry.reason().equals("gametest gui create"))
+                                .findFirst().orElseThrow();
+                        String expectedShopId = "rovenfall:managed/shop/"
+                                + createAudit.transactionId().toString().replace("-", "");
+                        helper.assertTrue(createAudit.target().equals(expectedShopId),
+                                "The server-generated shop ID did not derive from the action transaction");
+                        Identifier guiShopId = Identifier.parse(createAudit.target());
+                        helper.assertTrue(platform.shopInstance(guiShopId).isPresent(),
+                                "Confirmed GUI shop create did not call the audited shop service");
+                        helper.assertTrue(AdministrationService.changeRole(
+                                        platform, AdministrationService.SYSTEM_ACTOR, true, player.getUUID(),
+                                        AdminRole.VIEWER.getSerializedName(), "gametest read-only demotion",
+                                        System.currentTimeMillis(), UUID.randomUUID()).status()
+                                        == AdministrationService.RoleChangeStatus.SUCCESS,
+                                "Could not demote the GameTest owner to viewer");
+                        helper.assertTrue(AdministrationEconomyMenu.open(
+                                        player, org.dldyou.rovenfall.administration.AdministrationReadViewService.Domain.SHOPS),
+                                "Viewer could not reopen the read-only shops view");
+                        helper.assertTrue(player.containerMenu instanceof AdministrationEconomyMenu
+                                        && !player.containerMenu.getSlot(46).hasItem(),
+                                "Viewer retained a shop mutation control after demotion");
+                        helper.assertTrue(AdministrationService.changeRole(
+                                        platform, AdministrationService.SYSTEM_ACTOR, true, player.getUUID(),
+                                        AdminRole.CONTENT_MANAGER.getSerializedName(), "gametest cross-domain change",
+                                        System.currentTimeMillis(), UUID.randomUUID()).status()
+                                        == AdministrationService.RoleChangeStatus.SUCCESS,
+                                "Could not move the GameTest viewer to content manager");
+                        helper.runAfterDelay(1, () -> {
+                            if (player.containerMenu instanceof AdministrationEconomyMenu) {
+                                player.containerMenu.clicked(53, 0, ContainerInput.PICKUP, player);
+                            }
+                            helper.assertTrue(player.containerMenu == player.inventoryMenu,
+                                    "A cross-domain role change did not close the shops administration view");
+                            player.discard();
+                            helper.succeed();
+                        });
                     });
                 });
             }
