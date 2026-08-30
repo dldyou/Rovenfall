@@ -1,10 +1,10 @@
 package org.dldyou.rovenfall.administration;
 
+import java.util.Optional;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.ContainerScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
-import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.world.entity.player.Player;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.network.ClientPacketDistributor;
@@ -12,6 +12,8 @@ import net.neoforged.neoforge.common.NeoForge;
 
 /** Replaces only the ordinary survival inventory with the Rovenfall shell. */
 public final class RovenfallInventoryClient {
+    private static final RovenfallMenuIdentityCache MENU_IDENTITIES = new RovenfallMenuIdentityCache();
+
     private RovenfallInventoryClient() {
     }
 
@@ -29,6 +31,12 @@ public final class RovenfallInventoryClient {
         ClientPacketDistributor.sendToServer(new PlayerMenuNetwork.Open(target));
     }
 
+    static void acceptIdentity(PlayerMenuNetwork.MenuIdentity identity) {
+        if (MENU_IDENTITIES.accept(identity)) {
+            replaceCurrentPlayerMenu(Minecraft.getInstance());
+        }
+    }
+
     private static void onScreenOpening(ScreenEvent.Opening event) {
         Minecraft minecraft = Minecraft.getInstance();
         if (shouldReplace(event.getNewScreen(), minecraft.player)) {
@@ -36,45 +44,32 @@ public final class RovenfallInventoryClient {
             return;
         }
         if (event.getNewScreen() instanceof ContainerScreen screen
-                && !(screen instanceof RovenfallPlayerMenuScreen)
-                && minecraft.player != null
-                && isPlayerMenuTitle(screen.getTitle())) {
-            event.setNewScreen(new RovenfallPlayerMenuScreen(
-                    screen.getMenu(), minecraft.player.getInventory(), screen.getTitle()));
+                && !(screen instanceof RovenfallPlayerMenuScreen)) {
+            Optional<Screen> replacement = replacePlayerMenu(screen, minecraft.player);
+            if (replacement.isPresent()) {
+                event.setNewScreen(replacement.orElseThrow());
+                return;
+            }
         }
     }
 
-    static boolean isPlayerMenuTitle(net.minecraft.network.chat.Component title) {
-        if (!(title.getContents() instanceof TranslatableContents contents)) {
-            return false;
+    private static void replaceCurrentPlayerMenu(Minecraft minecraft) {
+        if (minecraft.gui.screen() instanceof ContainerScreen screen
+                && !(screen instanceof RovenfallPlayerMenuScreen)) {
+            replacePlayerMenu(screen, minecraft.player).ifPresent(minecraft.gui::setScreen);
         }
-        return switch (contents.getKey()) {
-            case "gui.rovenfall.player.title", "gui.rovenfall.shop.title",
-                    "gui.rovenfall.claim.title", "gui.rovenfall.rpg.title",
-                    "gui.rovenfall.admin.title", "gui.rovenfall.admin.economy.title",
-                    "gui.rovenfall.admin.world.title", "gui.rovenfall.admin.rpg_boss.title",
-                    "gui.rovenfall.admin.operations.title" -> true;
-            default -> false;
-        };
     }
 
-    static boolean isAdminMenuTitle(net.minecraft.network.chat.Component title) {
-        return title.getContents() instanceof TranslatableContents contents
-                && (contents.getKey().equals("gui.rovenfall.admin.title")
-                        || contents.getKey().equals("gui.rovenfall.admin.economy.title")
-                        || contents.getKey().equals("gui.rovenfall.admin.world.title")
-                        || contents.getKey().equals("gui.rovenfall.admin.rpg_boss.title")
-                        || contents.getKey().equals("gui.rovenfall.admin.operations.title"));
-    }
-
-    static int adminInputLength(net.minecraft.network.chat.Component title) {
-        if (title.getContents() instanceof TranslatableContents contents
-                && (contents.getKey().equals("gui.rovenfall.admin.economy.title")
-                        || contents.getKey().equals("gui.rovenfall.admin.world.title")
-                        || contents.getKey().equals("gui.rovenfall.admin.rpg_boss.title")
-                        || contents.getKey().equals("gui.rovenfall.admin.operations.title"))) {
-            return AdministrationTextInputMenu.MAX_INPUT_LENGTH;
+    private static Optional<Screen> replacePlayerMenu(ContainerScreen screen, Player player) {
+        if (player == null) {
+            return Optional.empty();
         }
-        return AdministrationReadViewService.MAX_QUERY_LENGTH;
+        Optional<PlayerMenuNetwork.MenuKind> kind = MENU_IDENTITIES.consume(
+                screen.getMenu().containerId, screen.getMenu().getStateId());
+        if (kind.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(new RovenfallPlayerMenuScreen(
+                screen.getMenu(), player.getInventory(), screen.getTitle(), kind.orElseThrow()));
     }
 }

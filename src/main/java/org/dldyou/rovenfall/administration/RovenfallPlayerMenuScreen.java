@@ -17,30 +17,79 @@ import org.lwjgl.glfw.GLFW;
 
 /** Adds keyboard slot navigation and narration to Rovenfall's server-authoritative chest menus. */
 final class RovenfallPlayerMenuScreen extends ContainerScreen {
-    private static final int OUTLINE_COLOR = 0xFFFFFFFF;
-    private static final int INNER_OUTLINE_COLOR = 0xFF1A120A;
+    private final PlayerMenuNetwork.MenuKind kind;
     private int focusedMenuSlot = -1;
     private EditBox adminQuery;
 
-    RovenfallPlayerMenuScreen(ChestMenu menu, Inventory inventory, Component title) {
+    RovenfallPlayerMenuScreen(
+            ChestMenu menu,
+            Inventory inventory,
+            Component title,
+            PlayerMenuNetwork.MenuKind kind) {
         super(menu, inventory, title);
+        this.kind = kind;
     }
 
     @Override
     protected void init() {
         super.init();
         focusedMenuSlot = findOccupiedSlot(-1, 1);
-        if (RovenfallInventoryClient.isAdminMenuTitle(title)) {
+        if (kind.isAdministration()) {
             adminQuery = addRenderableWidget(new EditBox(
                     font, leftPos, Math.max(4, topPos - 24), 132, 20,
                     Component.translatable("gui.rovenfall.admin.search")));
-            adminQuery.setMaxLength(RovenfallInventoryClient.adminInputLength(title));
+            adminQuery.setMaxLength(kind.usesLongTextInput()
+                    ? AdministrationTextInputMenu.MAX_INPUT_LENGTH
+                    : AdministrationReadViewService.MAX_QUERY_LENGTH);
+            adminQuery.setBordered(false);
+            adminQuery.setTextColor(RovenfallUiTheme.TEXT_PRIMARY);
+            adminQuery.setTextColorUneditable(RovenfallUiTheme.TEXT_MUTED);
             addRenderableWidget(Button.builder(
                             Component.translatable("gui.rovenfall.admin.search.submit"),
                             ignored -> submitAdminQuery())
                     .bounds(leftPos + 136, Math.max(4, topPos - 24), 40, 20)
-                    .build());
+                    .build(RovenfallButton::new));
         }
+    }
+
+    @Override
+    public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+        RovenfallUiTheme.extractBackdrop(graphics, width, height);
+        RovenfallUiTheme.extractPanel(
+                graphics,
+                RovenfallUiTheme.panelFor(leftPos, topPos, imageWidth, imageHeight, 8));
+        if (adminQuery != null) {
+            RovenfallUiTheme.extractField(
+                    graphics,
+                    adminQuery.getX(),
+                    adminQuery.getY(),
+                    adminQuery.getWidth(),
+                    adminQuery.getHeight(),
+                    adminQuery.isFocused());
+        }
+    }
+
+    @Override
+    protected void extractLabels(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+        graphics.text(font, title, titleLabelX, titleLabelY, RovenfallUiTheme.TEXT_PRIMARY, false);
+        graphics.text(
+                font,
+                playerInventoryTitle,
+                inventoryLabelX,
+                inventoryLabelY,
+                RovenfallUiTheme.TEXT_MUTED,
+                false);
+    }
+
+    @Override
+    protected void extractSlots(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+        int menuSlots = menu.getRowCount() * 9;
+        for (Slot slot : menu.slots) {
+            if (slot.isActive()) {
+                RovenfallUiTheme.extractSlot(graphics, slot, slot.index < menuSlots);
+            }
+        }
+        super.extractSlots(graphics, mouseX, mouseY);
     }
 
     @Override
@@ -114,8 +163,8 @@ final class RovenfallPlayerMenuScreen extends ContainerScreen {
         }
         int x = leftPos + slot.x - 1;
         int y = topPos + slot.y - 1;
-        graphics.outline(x, y, 18, 18, INNER_OUTLINE_COLOR);
-        graphics.outline(x - 1, y - 1, 20, 20, OUTLINE_COLOR);
+        graphics.outline(x, y, 18, 18, RovenfallUiTheme.FOCUS_INNER);
+        graphics.outline(x - 1, y - 1, 20, 20, RovenfallUiTheme.FOCUS_OUTER);
     }
 
     @Override

@@ -118,7 +118,8 @@ public final class PlayerRpgMenu extends ChestMenu {
         player.openMenu(new SimpleMenuProvider(
                 (containerId, inventory, viewer) -> new PlayerRpgMenu(
                         containerId, inventory, (ServerPlayer) viewer, new SimpleContainer(54), initial),
-                Component.translatable("gui.rovenfall.rpg.title")));
+                Component.translatable("gui.rovenfall.rpg.title")))
+                .ifPresent(ignored -> PlayerMenuNetwork.sendMenuIdentity(player));
     }
 
     @Override

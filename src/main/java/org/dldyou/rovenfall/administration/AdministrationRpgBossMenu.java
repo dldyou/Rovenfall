@@ -90,7 +90,8 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
         player.openMenu(new SimpleMenuProvider(
                 (containerId, inventory, viewer) -> new AdministrationRpgBossMenu(
                         containerId, inventory, (ServerPlayer) viewer, new SimpleContainer(MENU_SIZE), domain),
-                Component.translatable("gui.rovenfall.admin.rpg_boss.title")));
+                Component.translatable("gui.rovenfall.admin.rpg_boss.title")))
+                .ifPresent(ignored -> PlayerMenuNetwork.sendMenuIdentity(player));
         return true;
     }
 

@@ -91,7 +91,8 @@ public final class AdministrationWorldMenu extends ChestMenu implements Administ
         player.openMenu(new SimpleMenuProvider(
                 (containerId, inventory, viewer) -> new AdministrationWorldMenu(
                         containerId, inventory, (ServerPlayer) viewer, new SimpleContainer(MENU_SIZE), domain),
-                Component.translatable("gui.rovenfall.admin.world.title")));
+                Component.translatable("gui.rovenfall.admin.world.title")))
+                .ifPresent(ignored -> PlayerMenuNetwork.sendMenuIdentity(player));
         return true;
     }
 

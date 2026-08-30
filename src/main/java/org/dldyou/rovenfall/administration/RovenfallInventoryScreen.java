@@ -6,6 +6,7 @@ import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.Slot;
 
 /** Vanilla inventory behavior with compact RPG navigation layered above it. */
 public final class RovenfallInventoryScreen extends InventoryScreen {
@@ -39,10 +40,47 @@ public final class RovenfallInventoryScreen extends InventoryScreen {
 
     @Override
     public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        super.extractBackground(graphics, mouseX, mouseY, partialTick);
+        RovenfallUiTheme.extractBackdrop(graphics, width, height);
+        RovenfallUiTheme.extractPanel(
+                graphics,
+                RovenfallUiTheme.panelFor(leftPos, topPos, imageWidth, imageHeight, 8));
+        RovenfallUiTheme.extractPortrait(graphics, leftPos + 25, topPos + 7, 51, 72);
+        if (minecraft != null && minecraft.player != null) {
+            InventoryScreen.extractEntityInInventoryFollowsMouse(
+                    graphics,
+                    leftPos + 26,
+                    topPos + 8,
+                    leftPos + 75,
+                    topPos + 78,
+                    30,
+                    0.0625F,
+                    mouseX,
+                    mouseY,
+                    minecraft.player);
+        }
         int totalWidth = tabWidth * TAB_COUNT + TAB_GAP * (TAB_COUNT - 1);
-        graphics.fill(tabX - 3, tabY - 3, tabX + totalWidth + 3, tabY + TAB_HEIGHT + 3, 0xD019120D);
-        graphics.outline(tabX - 3, tabY - 3, totalWidth + 6, TAB_HEIGHT + 6, 0xFFB89445);
+        RovenfallUiTheme.extractField(
+                graphics,
+                tabX - 3,
+                tabY - 3,
+                totalWidth + 6,
+                TAB_HEIGHT + 6,
+                false);
+    }
+
+    @Override
+    protected void extractLabels(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+        graphics.text(font, title, titleLabelX, titleLabelY, RovenfallUiTheme.TEXT_PRIMARY, false);
+    }
+
+    @Override
+    protected void extractSlots(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
+        for (Slot slot : menu.slots) {
+            if (slot.isActive()) {
+                RovenfallUiTheme.extractSlot(graphics, slot, false);
+            }
+        }
+        super.extractSlots(graphics, mouseX, mouseY);
     }
 
     private Button addTab(int index, String translationKey, PlayerMenuNetwork.MenuTarget target) {
@@ -60,6 +98,6 @@ public final class RovenfallInventoryScreen extends InventoryScreen {
                                 : "gui.rovenfall.inventory.open_tab",
                         label)))
                 .bounds(tabX + index * (tabWidth + TAB_GAP), tabY, tabWidth, TAB_HEIGHT)
-                .build());
+                .build(RovenfallButton::new));
     }
 }

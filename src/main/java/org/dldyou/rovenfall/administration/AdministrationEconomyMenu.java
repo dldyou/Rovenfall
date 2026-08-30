@@ -87,7 +87,8 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
         player.openMenu(new SimpleMenuProvider(
                 (containerId, inventory, viewer) -> new AdministrationEconomyMenu(
                         containerId, inventory, (ServerPlayer) viewer, new SimpleContainer(MENU_SIZE), domain),
-                Component.translatable("gui.rovenfall.admin.economy.title")));
+                Component.translatable("gui.rovenfall.admin.economy.title")))
+                .ifPresent(ignored -> PlayerMenuNetwork.sendMenuIdentity(player));
         return true;
     }
 
@@ -107,7 +108,8 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
                     menu.render();
                     return menu;
                 },
-                Component.translatable("gui.rovenfall.admin.economy.title")));
+                Component.translatable("gui.rovenfall.admin.economy.title")))
+                .ifPresent(ignored -> PlayerMenuNetwork.sendMenuIdentity(player));
         return true;
     }
 

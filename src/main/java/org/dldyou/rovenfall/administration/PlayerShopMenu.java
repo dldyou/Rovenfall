@@ -65,7 +65,8 @@ public final class PlayerShopMenu extends ChestMenu {
         player.openMenu(new SimpleMenuProvider(
                 (containerId, inventory, viewer) -> new PlayerShopMenu(
                         containerId, inventory, (ServerPlayer) viewer, new SimpleContainer(MENU_SIZE)),
-                Component.translatable("gui.rovenfall.shop.title")));
+                Component.translatable("gui.rovenfall.shop.title")))
+                .ifPresent(ignored -> PlayerMenuNetwork.sendMenuIdentity(player));
     }
 
     @Override
