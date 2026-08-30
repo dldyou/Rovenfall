@@ -12,7 +12,6 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.ContainerInput;
-import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -66,7 +65,7 @@ public final class AdministrationOperationsMenu extends ChestMenu implements Adm
             ServerPlayer viewer,
             SimpleContainer contents,
             AdministrationReadViewService.Domain entryDomain) {
-        super(MenuType.GENERIC_9x6, containerId, inventory, contents, 6);
+        super(RovenfallAdministrationMenus.OPERATIONS.get(), containerId, inventory, contents, 6);
         this.viewer = viewer;
         this.viewerId = viewer.getUUID();
         this.contents = contents;
@@ -255,6 +254,19 @@ public final class AdministrationOperationsMenu extends ChestMenu implements Adm
             page = Math.max(0, page - 1);
         } else if (slot == NEXT_SLOT) {
             page++;
+        } else if (contentIndex(slot) >= 0) {
+            var resultPage = alertsPage();
+            int index = contentIndex(slot);
+            if (index >= resultPage.entries().size()) {
+                return;
+            }
+            EconomyAlert alert = resultPage.entries().get(index).alert();
+            auditQuery = AdministrationOperationsViewService.alertEvidenceQuery(alert);
+            attentionOnly = false;
+            page = 0;
+            var evidence = auditPage();
+            selectedAudit = evidence.entries().isEmpty() ? null : evidence.entries().getFirst().entry();
+            mode = selectedAudit == null ? Mode.AUDIT : Mode.AUDIT_DETAIL;
         } else {
             return;
         }
@@ -559,7 +571,8 @@ public final class AdministrationOperationsMenu extends ChestMenu implements Adm
                             alert.timestampEpochMillis()),
                     Component.translatable("gui.rovenfall.admin.operations.field.player", alert.playerId().toString()),
                     Component.translatable("gui.rovenfall.admin.operations.field.transaction",
-                            alert.transactionId().toString())));
+                            alert.transactionId().toString()),
+                    Component.translatable("gui.rovenfall.admin.click")));
         }
         contents.setItem(CENTER_SLOT, PlayerDashboardMenu.icon(
                 Items.HOPPER, Component.translatable(alertFilterKey(alertFilter)),

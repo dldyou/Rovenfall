@@ -13,7 +13,6 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.ContainerInput;
-import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -41,7 +40,7 @@ public final class AdministrationControlCenterMenu extends ChestMenu implements 
 
     private AdministrationControlCenterMenu(
             int containerId, Inventory inventory, ServerPlayer viewer, SimpleContainer contents) {
-        super(MenuType.GENERIC_9x6, containerId, inventory, contents, 6);
+        super(RovenfallAdministrationMenus.HOME.get(), containerId, inventory, contents, 6);
         this.viewer = viewer;
         this.viewerId = viewer.getUUID();
         this.contents = contents;

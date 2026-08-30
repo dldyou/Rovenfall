@@ -39,10 +39,10 @@ final class AdministrationWorldViewService {
         if (!authorized(state, actorId, authorizationOverride, AdministrationReadViewService.Domain.CLAIMS)) {
             return Page.denied(page);
         }
-        List<RegionRow> source = state.protectedRegions().stream()
+        List<RegionRow> source = state.protectedRegions(MAX_SCANNED_ROWS).stream()
                 .map(entry -> new RegionRow(entry.getKey(), entry.getValue()))
                 .toList();
-        return filterAndPage(source, query, page, false,
+        return filterAndPage(source, query, page, state.protectedRegionCount() > MAX_SCANNED_ROWS,
                 row -> row.regionId() + " " + row.region().auditSummary());
     }
 
@@ -63,12 +63,12 @@ final class AdministrationWorldViewService {
         if (!authorized(state, actorId, authorizationOverride, AdministrationReadViewService.Domain.PORTALS)) {
             return Page.denied(page);
         }
-        List<EvidenceRow> source = state.wildernessResetState().evidence().stream()
+        WildernessResetState resetState = state.wildernessResetState();
+        int evidenceScanLimit = Math.min(MAX_SCANNED_ROWS, WildernessResetState.MAX_EVIDENCE);
+        List<EvidenceRow> source = resetState.recentEvidence(evidenceScanLimit).stream()
                 .map(EvidenceRow::new)
-                .sorted(java.util.Comparator.comparingLong(
-                        (EvidenceRow row) -> row.evidence().completedAtEpochMillis()).reversed())
                 .toList();
-        return filterAndPage(source, query, page, false, row -> {
+        return filterAndPage(source, query, page, resetState.evidenceCount() > evidenceScanLimit, row -> {
             WildernessResetState.Operation operation = row.evidence().operation();
             return operation.transactionId() + " " + operation.snapshotId() + " "
                     + operation.recoverySnapshotId() + " " + operation.kind().getSerializedName() + " "

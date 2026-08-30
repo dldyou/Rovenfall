@@ -124,7 +124,7 @@ public final class PlayerMenuNetwork {
 
     static void sendMenuIdentity(ServerPlayer player) {
         Optional<MenuKind> kind = MenuKind.fromMenu(player.containerMenu);
-        if (kind.isEmpty() || player.connection == null
+        if (kind.isEmpty() || kind.orElseThrow().isAdministration() || player.connection == null
                 || !NetworkRegistry.hasChannel(player.connection, MenuIdentity.TYPE.id())) {
             return;
         }

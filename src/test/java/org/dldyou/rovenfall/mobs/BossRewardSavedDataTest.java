@@ -3,6 +3,7 @@ package org.dldyou.rovenfall.mobs;
 import static org.dldyou.rovenfall.PersistenceTestHarness.roundTrip;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -88,6 +89,29 @@ final class BossRewardSavedDataTest {
         assertEquals(1, loaded.operationCount());
         assertEquals(BossRewardSavedData.BatchStatus.INVALID,
                 loaded.putBatch(Map.of(id(5), operation(BossRewardOperation.Phase.PENDING, 3_000)), 2_000));
+    }
+
+    @Test
+    void operationCursorBatchesAreBoundedAndDeterministic() {
+        BossRewardSavedData state = new BossRewardSavedData();
+        Map<UUID, BossRewardOperation> operations = new java.util.LinkedHashMap<>();
+        for (int value = 9; value >= 1; value--) {
+            operations.put(id(value), operation(BossRewardOperation.Phase.PENDING, 2_000 + value));
+        }
+        assertEquals(BossRewardSavedData.BatchStatus.SUCCESS, state.putBatch(operations, 1_000));
+
+        var first = state.operationsAfter(null, 4);
+        var second = state.operationsAfter(first.nextCursor().orElseThrow(), 4);
+        var last = state.operationsAfter(second.nextCursor().orElseThrow(), 4);
+
+        assertEquals(List.of(id(1), id(2), id(3), id(4)),
+                first.entries().stream().map(Map.Entry::getKey).toList());
+        assertTrue(first.hasMore());
+        assertEquals(List.of(id(5), id(6), id(7), id(8)),
+                second.entries().stream().map(Map.Entry::getKey).toList());
+        assertEquals(List.of(id(9)), last.entries().stream().map(Map.Entry::getKey).toList());
+        assertFalse(last.hasMore());
+        assertThrows(IllegalArgumentException.class, () -> state.operationsAfter(null, 0));
     }
 
     private static BossRewardOperation operation(BossRewardOperation.Phase phase, long cooldownUntil) {

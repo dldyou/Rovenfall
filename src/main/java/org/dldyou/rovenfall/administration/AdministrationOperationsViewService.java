@@ -93,6 +93,15 @@ final class AdministrationOperationsViewService {
         return result.status() == OperationsMetricsService.Status.SUCCESS ? Optional.of(result) : Optional.empty();
     }
 
+    static AuditQuery alertEvidenceQuery(EconomyAlert alert) {
+        if (alert == null) {
+            throw new IllegalArgumentException("Alert is required");
+        }
+        long until = alert.timestampEpochMillis();
+        return new AuditQuery(Math.max(0L, until - AuditQuery.MAX_WINDOW_MILLIS), until,
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.of(alert.transactionId()));
+    }
+
     static Page<SnapshotRow> snapshots(
             MinecraftServer server,
             UUID actorId,

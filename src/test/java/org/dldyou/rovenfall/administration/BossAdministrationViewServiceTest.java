@@ -3,6 +3,7 @@ package org.dldyou.rovenfall.administration;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -23,5 +24,21 @@ final class BossAdministrationViewServiceTest {
         assertThrows(IllegalArgumentException.class,
                 () -> BossAdministrationViewService.page(values, 0,
                         BossAdministrationViewService.MAX_PAGE_SIZE + 1));
+    }
+
+    @Test
+    void searchFiltersBeforePagingSoLaterEntriesRemainReachable() {
+        List<String> values = new ArrayList<>();
+        for (int index = 0; index < 80; index++) {
+            values.add(index == 72 ? "late Dragon Reward" : "ordinary-" + index);
+        }
+
+        var result = BossAdministrationViewService.searchPage(
+                values, "dragon", 0, 10, value -> value);
+
+        assertEquals(List.of("late Dragon Reward"), result.entries());
+        assertEquals(1, result.totalEntries());
+        assertThrows(IllegalArgumentException.class, () -> BossAdministrationViewService.searchPage(
+                values, "x".repeat(AdministrationReadViewService.MAX_QUERY_LENGTH + 1), 0, 10, value -> value));
     }
 }

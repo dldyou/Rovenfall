@@ -6,14 +6,17 @@ import java.util.UUID;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.MenuScreens;
 import net.minecraft.client.gui.screens.inventory.ContainerScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.inventory.ChestMenu;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
+import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.network.ClientPacketDistributor;
 import net.neoforged.neoforge.common.NeoForge;
@@ -37,6 +40,7 @@ public final class RovenfallInventoryClient {
 
     public static void register(IEventBus modBus) {
         modBus.addListener(RovenfallInventoryClient::registerKeyMappings);
+        modBus.addListener(RovenfallInventoryClient::registerMenuScreens);
         NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, RovenfallInventoryClient::onScreenOpening);
         NeoForge.EVENT_BUS.addListener(RovenfallInventoryClient::onClientTick);
     }
@@ -94,6 +98,25 @@ public final class RovenfallInventoryClient {
     private static void registerKeyMappings(RegisterKeyMappingsEvent event) {
         event.registerCategory(CHARACTER_CATEGORY);
         event.register(CHARACTER_SCREEN_KEY);
+    }
+
+    private static void registerMenuScreens(RegisterMenuScreensEvent event) {
+        event.register(RovenfallAdministrationMenus.HOME.get(),
+                administrationScreen(PlayerMenuNetwork.MenuKind.ADMIN_HOME));
+        event.register(RovenfallAdministrationMenus.ECONOMY.get(),
+                administrationScreen(PlayerMenuNetwork.MenuKind.ADMIN_ECONOMY));
+        event.register(RovenfallAdministrationMenus.WORLD.get(),
+                administrationScreen(PlayerMenuNetwork.MenuKind.ADMIN_WORLD));
+        event.register(RovenfallAdministrationMenus.RPG_BOSS.get(),
+                administrationScreen(PlayerMenuNetwork.MenuKind.ADMIN_RPG_BOSS));
+        event.register(RovenfallAdministrationMenus.OPERATIONS.get(),
+                administrationScreen(PlayerMenuNetwork.MenuKind.ADMIN_OPERATIONS));
+    }
+
+    private static MenuScreens.ScreenConstructor<ChestMenu, RovenfallAdministrationMenuScreen>
+            administrationScreen(PlayerMenuNetwork.MenuKind kind) {
+        return (menu, inventory, title) -> new RovenfallAdministrationMenuScreen(
+                menu, inventory, title, kind);
     }
 
     private static void onClientTick(ClientTickEvent.Post event) {

@@ -82,6 +82,7 @@ import org.dldyou.rovenfall.administration.AdministrationService;
 import org.dldyou.rovenfall.administration.AdministrationControlCenterMenu;
 import org.dldyou.rovenfall.administration.AdministrationEconomyMenu;
 import org.dldyou.rovenfall.administration.AdministrationOperationsMenu;
+import org.dldyou.rovenfall.administration.AdministrationReadViewService;
 import org.dldyou.rovenfall.administration.AdministrationRpgBossMenu;
 import org.dldyou.rovenfall.administration.AdministrationWorldMenu;
 import org.dldyou.rovenfall.administration.AdminRole;
@@ -96,6 +97,7 @@ import org.dldyou.rovenfall.administration.PlayerDashboardMenu;
 import org.dldyou.rovenfall.administration.PlayerRpgMenu;
 import org.dldyou.rovenfall.administration.PlayerShopMenu;
 import org.dldyou.rovenfall.administration.RovenfallInventoryClient;
+import org.dldyou.rovenfall.administration.RovenfallAdministrationMenus;
 import org.dldyou.rovenfall.administration.RpgAdministrationService;
 import org.dldyou.rovenfall.administration.RovenfallCommands;
 import org.dldyou.rovenfall.administration.ShopInstanceService;
@@ -159,6 +161,7 @@ public final class Rovenfall {
 
     public Rovenfall(IEventBus modBus, ModContainer modContainer) {
         RovenfallMobEntities.register(modBus);
+        RovenfallAdministrationMenus.register(modBus);
         modContainer.registerConfig(ModConfig.Type.SERVER, EconomyConfig.SPEC);
         modContainer.registerConfig(ModConfig.Type.SERVER, ActivityXpConfig.SPEC, "rovenfall-rpg-server.toml");
         modContainer.registerConfig(ModConfig.Type.SERVER, ClaimConfig.SPEC, "rovenfall-claims-server.toml");
@@ -275,6 +278,26 @@ public final class Rovenfall {
                 helper.assertTrue(AdministrationControlCenterMenu.open(player)
                                 && player.containerMenu instanceof AdministrationControlCenterMenu,
                         "Authorized owner could not open the administration control center");
+                helper.assertTrue(player.containerMenu.getType() == RovenfallAdministrationMenus.HOME.get(),
+                        "Administration home still used the vanilla chest menu type");
+                helper.assertTrue(AdministrationEconomyMenu.open(
+                                player, AdministrationReadViewService.Domain.PLAYERS)
+                                && player.containerMenu.getType() == RovenfallAdministrationMenus.ECONOMY.get(),
+                        "Economy administration did not use its custom menu type");
+                helper.assertTrue(AdministrationWorldMenu.open(
+                                player, AdministrationReadViewService.Domain.CLAIMS)
+                                && player.containerMenu.getType() == RovenfallAdministrationMenus.WORLD.get(),
+                        "World administration did not use its custom menu type");
+                helper.assertTrue(AdministrationRpgBossMenu.open(
+                                player, AdministrationReadViewService.Domain.RPG)
+                                && player.containerMenu.getType() == RovenfallAdministrationMenus.RPG_BOSS.get(),
+                        "RPG administration did not use its custom menu type");
+                helper.assertTrue(AdministrationOperationsMenu.open(
+                                player, AdministrationReadViewService.Domain.AUDIT)
+                                && player.containerMenu.getType() == RovenfallAdministrationMenus.OPERATIONS.get(),
+                        "Operations administration did not use its custom menu type");
+                helper.assertTrue(AdministrationControlCenterMenu.open(player),
+                        "Could not return to the administration control center");
                 player.containerMenu.clicked(10, 0, ContainerInput.PICKUP, player);
                 helper.assertTrue(player.containerMenu instanceof AdministrationWorldMenu,
                         "Owner could not open the typed claims administration view");

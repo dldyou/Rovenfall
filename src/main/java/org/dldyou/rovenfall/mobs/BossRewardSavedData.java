@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.PriorityQueue;
 import java.util.UUID;
 import java.util.function.UnaryOperator;
 import net.minecraft.core.UUIDUtil;
@@ -22,6 +23,7 @@ import org.dldyou.rovenfall.Rovenfall;
 public final class BossRewardSavedData extends SavedData {
     public static final int CURRENT_SCHEMA_VERSION = 1;
     public static final int MAX_OPERATIONS = 10_000;
+    public static final int MAX_OPERATION_BATCH_SIZE = 256;
     private static final long COMPLETED_RETENTION_MILLIS = Duration.ofDays(30).toMillis();
     private static final Codec<Map<UUID, BossRewardOperation>> OPERATIONS_CODEC =
             OperationEntry.CODEC.listOf(0, MAX_OPERATIONS)
@@ -103,6 +105,35 @@ public final class BossRewardSavedData extends SavedData {
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
                 .toList();
+    }
+
+    /** Deterministic cursor batch without copying the complete reward ledger. */
+    public OperationBatch operationsAfter(UUID afterExclusive, int limit) {
+        if (limit < 1 || limit > MAX_OPERATION_BATCH_SIZE) {
+            throw new IllegalArgumentException("Invalid boss reward operation batch size");
+        }
+        PriorityQueue<Map.Entry<UUID, BossRewardOperation>> nearest =
+                new PriorityQueue<>(Map.Entry.<UUID, BossRewardOperation>comparingByKey().reversed());
+        int eligible = 0;
+        for (var entry : operations.entrySet()) {
+            if (afterExclusive != null && entry.getKey().compareTo(afterExclusive) <= 0) {
+                continue;
+            }
+            eligible++;
+            Map.Entry<UUID, BossRewardOperation> copy = Map.entry(entry.getKey(), entry.getValue());
+            if (nearest.size() < limit) {
+                nearest.add(copy);
+            } else if (entry.getKey().compareTo(nearest.peek().getKey()) < 0) {
+                nearest.poll();
+                nearest.add(copy);
+            }
+        }
+        List<Map.Entry<UUID, BossRewardOperation>> entries = nearest.stream()
+                .sorted(Map.Entry.comparingByKey())
+                .toList();
+        return new OperationBatch(entries,
+                entries.isEmpty() ? Optional.empty() : Optional.of(entries.getLast().getKey()),
+                eligible > entries.size());
     }
 
     public List<Map.Entry<UUID, BossRewardOperation>> pendingOperations() {
@@ -250,6 +281,16 @@ public final class BossRewardSavedData extends SavedData {
 
     public enum BatchStatus {
         SUCCESS, DUPLICATE, INVALID, CONFLICT, FULL
+    }
+
+    public record OperationBatch(
+            List<Map.Entry<UUID, BossRewardOperation>> entries,
+            Optional<UUID> nextCursor,
+            boolean hasMore) {
+        public OperationBatch {
+            entries = List.copyOf(entries);
+            nextCursor = nextCursor == null ? Optional.empty() : nextCursor;
+        }
     }
 
     private record OperationEntry(UUID id, BossRewardOperation operation) {
