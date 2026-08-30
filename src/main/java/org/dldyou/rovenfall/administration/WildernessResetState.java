@@ -44,6 +44,22 @@ public record WildernessResetState(
                 && evidenceValid;
     }
 
+    List<Evidence> recentEvidence(int maximumEntries) {
+        if (maximumEntries < 1) {
+            throw new IllegalArgumentException("Wilderness evidence query must be bounded");
+        }
+        return evidence.stream()
+                .limit(MAX_EVIDENCE)
+                .sorted(java.util.Comparator.comparingLong(Evidence::completedAtEpochMillis).reversed()
+                        .thenComparing(entry -> entry.operation().transactionId()))
+                .limit(maximumEntries)
+                .toList();
+    }
+
+    int evidenceCount() {
+        return evidence.size();
+    }
+
     WildernessResetState withWarning(Warning value) {
         return new WildernessResetState(Optional.of(value), activeOperation, evidence);
     }

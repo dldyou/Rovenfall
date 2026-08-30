@@ -13,7 +13,6 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.ContainerInput;
-import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -69,7 +68,7 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
             ServerPlayer viewer,
             SimpleContainer contents,
             AdministrationReadViewService.Domain entryDomain) {
-        super(MenuType.GENERIC_9x6, containerId, inventory, contents, 6);
+        super(RovenfallAdministrationMenus.RPG_BOSS.get(), containerId, inventory, contents, 6);
         this.viewer = viewer;
         this.viewerId = viewer.getUUID();
         this.contents = contents;
@@ -162,7 +161,7 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
                     ? parseForm(legacyFormInput(formKind, structured.orElseThrow()))
                     : parseForm(input);
         }
-        if (mode != Mode.RPG_PLAYERS && mode != Mode.DEFINITIONS && mode != Mode.PROMOTIONS) {
+        if (!searchable(mode)) {
             return false;
         }
         if (input.length() > AdministrationReadViewService.MAX_QUERY_LENGTH) {
@@ -239,6 +238,7 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
             page = 0;
         } else if (slot == SECONDARY_SLOT) {
             mode = Mode.HISTORY;
+            query = "";
             page = 0;
             suspiciousOnly = false;
         } else if (slot == CENTER_SLOT && canManageContent(currentRole())) {
@@ -366,6 +366,7 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
         }
         if (slot == CENTER_SLOT) {
             mode = Mode.MUTATIONS;
+            query = "";
             page = 0;
         } else if (slot == PREVIOUS_SLOT) {
             page = Math.max(0, page - 1);
@@ -391,9 +392,11 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
             mode = Mode.ENCOUNTERS;
         } else if (slot == PRIMARY_SLOT) {
             mode = Mode.PARTICIPANTS;
+            query = "";
             page = 0;
         } else if (slot == SECONDARY_SLOT) {
             mode = Mode.REWARDS;
+            query = "";
             page = 0;
         } else if (slot == DANGER_SLOT && canRecoverBoss(currentRole())) {
             enterForm(FormKind.BOSS_RESET, Mode.ENCOUNTER_DETAIL);
@@ -560,6 +563,7 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
                 render();
             }
             case MUTATIONS -> {
+                query = "";
                 page = 0;
                 mode = Mode.ENCOUNTERS;
                 render();
@@ -570,6 +574,7 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
                 render();
             }
             case PARTICIPANTS, REWARDS -> {
+                query = "";
                 page = 0;
                 mode = Mode.ENCOUNTER_DETAIL;
                 render();
@@ -681,6 +686,7 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
         var resultPage = historyPage();
         renderHeader(Items.WRITABLE_BOOK, "gui.rovenfall.admin.rpg_boss.history",
                 resultPage.page(), resultPage.totalPages(), resultPage.totalEntries(), false);
+        markSearchHeader();
         for (int index = 0; index < resultPage.entries().size(); index++) {
             var row = resultPage.entries().get(index);
             var evidence = row.evidence();
@@ -785,6 +791,7 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
         var resultPage = mutationsPage();
         renderHeader(Items.FERMENTED_SPIDER_EYE, "gui.rovenfall.admin.rpg_boss.mutations",
                 resultPage.page(), resultPage.totalPages(), resultPage.totalEntries(), resultPage.truncated());
+        markSearchHeader();
         for (int index = 0; index < resultPage.entries().size(); index++) {
             var row = resultPage.entries().get(index);
             contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
@@ -803,6 +810,7 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
         var resultPage = encountersPage();
         renderHeader(Items.DRAGON_HEAD, "gui.rovenfall.admin.rpg_boss.encounters",
                 resultPage.page(), resultPage.totalPages(), resultPage.totalEntries(), resultPage.truncated());
+        markSearchHeader();
         for (int index = 0; index < resultPage.entries().size(); index++) {
             var row = resultPage.entries().get(index);
             contents.setItem(CONTENT_START + index, PlayerDashboardMenu.icon(
@@ -856,7 +864,8 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
     private void renderParticipants() {
         var resultPage = participantsPage();
         renderHeader(Items.PLAYER_HEAD, "gui.rovenfall.admin.rpg_boss.participants",
-                resultPage.page(), resultPage.totalPages(), resultPage.totalEntries(), false);
+                resultPage.page(), resultPage.totalPages(), resultPage.totalEntries(), resultPage.truncated());
+        markSearchHeader();
         for (int index = 0; index < resultPage.entries().size(); index++) {
             var row = resultPage.entries().get(index);
             long basisPoints = row.totalPoints() == 0 ? 0 : row.points() * 10_000 / row.totalPoints();
@@ -872,7 +881,8 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
     private void renderRewards() {
         var resultPage = rewardsPage();
         renderHeader(Items.CHEST, "gui.rovenfall.admin.rpg_boss.rewards",
-                resultPage.page(), resultPage.totalPages(), resultPage.totalEntries(), false);
+                resultPage.page(), resultPage.totalPages(), resultPage.totalEntries(), resultPage.truncated());
+        markSearchHeader();
         for (int index = 0; index < resultPage.entries().size(); index++) {
             var row = resultPage.entries().get(index);
             String displayName = playerDisplayName(row.playerId());
@@ -999,24 +1009,49 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
     }
 
     private RpgAdministrationViewService.AwardPage historyPage() {
-        return AdministrationRpgBossViewService.history(
-                server(), viewerId, authorizationOverride(), selectedPlayer, suspiciousOnly, page);
+        if (query.isBlank()) {
+            return AdministrationRpgBossViewService.history(
+                    server(), viewerId, authorizationOverride(), selectedPlayer, suspiciousOnly, page);
+        }
+        List<RpgAdministrationViewService.AwardEvidence> matches = new ArrayList<>();
+        for (int sourcePage = 0; sourcePage * AdministrationRpgBossViewService.PAGE_SIZE
+                < RpgPlayerState.MAX_PROVENANCE; sourcePage++) {
+            var source = AdministrationRpgBossViewService.history(
+                    server(), viewerId, authorizationOverride(), selectedPlayer, suspiciousOnly, sourcePage);
+            source.entries().stream()
+                    .filter(entry -> historySearchText(entry).contains(query.strip().toLowerCase(java.util.Locale.ROOT)))
+                    .forEach(matches::add);
+            if (sourcePage + 1 >= source.totalPages()) {
+                break;
+            }
+        }
+        int totalPages = matches.isEmpty() ? 0 : pages(matches.size());
+        int from = Math.min(page * CONTENT_SIZE, matches.size());
+        int to = Math.min(from + CONTENT_SIZE, matches.size());
+        return new RpgAdministrationViewService.AwardPage(
+                page, totalPages, matches.size(), matches.subList(from, to));
     }
 
     private BossAdministrationViewService.Page<BossAdministrationViewService.MutationRow> mutationsPage() {
-        return BossAdministrationViewService.activeMutations(server(), page, CONTENT_SIZE);
+        return BossAdministrationViewService.activeMutations(server(), query, page, CONTENT_SIZE);
     }
 
     private BossAdministrationViewService.Page<BossAdministrationViewService.EncounterRow> encountersPage() {
-        return BossAdministrationViewService.encounters(server(), page, CONTENT_SIZE);
+        return BossAdministrationViewService.encounters(server(), query, page, CONTENT_SIZE);
     }
 
     private BossAdministrationViewService.Page<BossAdministrationViewService.ParticipantRow> participantsPage() {
-        return BossAdministrationViewService.participants(server(), selectedEncounter, page, CONTENT_SIZE);
+        return BossAdministrationViewService.participants(server(), selectedEncounter, query, page, CONTENT_SIZE);
     }
 
     private BossAdministrationViewService.Page<BossAdministrationViewService.RewardRow> rewardsPage() {
-        return BossAdministrationViewService.rewards(server(), selectedEncounter, page, CONTENT_SIZE);
+        return BossAdministrationViewService.rewards(server(), selectedEncounter, query, page, CONTENT_SIZE);
+    }
+
+    private static String historySearchText(RpgAdministrationViewService.AwardEvidence entry) {
+        var evidence = entry.evidence();
+        return (evidence.target() + " " + evidence.source() + " " + evidence.transactionId() + " "
+                + evidence.amount() + " " + entry.suspicions()).toLowerCase(java.util.Locale.ROOT);
     }
 
     private void renderHeader(
@@ -1123,6 +1158,12 @@ public final class AdministrationRpgBossMenu extends ChestMenu implements Admini
 
     private static int pages(int entries) {
         return entries == 0 ? 0 : (entries + CONTENT_SIZE - 1) / CONTENT_SIZE;
+    }
+
+    static boolean searchable(Mode mode) {
+        return mode == Mode.RPG_PLAYERS || mode == Mode.HISTORY || mode == Mode.PROMOTIONS
+                || mode == Mode.DEFINITIONS || mode == Mode.MUTATIONS || mode == Mode.ENCOUNTERS
+                || mode == Mode.PARTICIPANTS || mode == Mode.REWARDS;
     }
 
     private static ItemStack icon(Item item, String title, String lore) {

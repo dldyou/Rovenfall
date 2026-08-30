@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.resources.Identifier;
@@ -190,10 +191,13 @@ public final class PlatformSavedData extends SavedData {
         this.shopInstances = new HashMap<>(shopInstances);
         this.economyReceipts = new HashMap<>(economyReceipts);
         this.economyAlerts = new ArrayList<>(economyAlerts);
-        this.claims = new HashMap<>(claims);
+        this.claims = new TreeMap<>(Comparator.comparing(ClaimKey::auditTarget));
+        this.claims.putAll(claims);
         this.claimReceipts = new HashMap<>(claimReceipts);
-        this.protectedRegions = new HashMap<>(protectedRegions);
-        this.portalDefinitions = new HashMap<>(portalState.definitions());
+        this.protectedRegions = new TreeMap<>();
+        this.protectedRegions.putAll(protectedRegions);
+        this.portalDefinitions = new TreeMap<>();
+        this.portalDefinitions.putAll(portalState.definitions());
         this.portalCooldowns = new HashMap<>();
         portalState.cooldowns().forEach((player, cooldowns) ->
                 this.portalCooldowns.put(player, new HashMap<>(cooldowns)));
@@ -397,11 +401,7 @@ public final class PlatformSavedData extends SavedData {
         if (maximumEntries < 1) {
             throw new IllegalArgumentException("Claim query must be bounded");
         }
-        return claims.entrySet().stream()
-                .sorted(Comparator.comparing(entry -> entry.getKey().auditTarget()))
-                .limit(maximumEntries)
-                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
-                .toList();
+        return firstEntries(claims, maximumEntries);
     }
 
     public Optional<ClaimMutationReceipt> claimReceipt(UUID transactionId) {
@@ -426,10 +426,14 @@ public final class PlatformSavedData extends SavedData {
     }
 
     public List<Map.Entry<Identifier, ProtectedRegion>> protectedRegions() {
-        return protectedRegions.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
-                .toList();
+        return protectedRegions(Integer.MAX_VALUE);
+    }
+
+    public List<Map.Entry<Identifier, ProtectedRegion>> protectedRegions(int maximumEntries) {
+        if (maximumEntries < 1) {
+            throw new IllegalArgumentException("Protected region query must be bounded");
+        }
+        return firstEntries(protectedRegions, maximumEntries);
     }
 
     public Optional<PortalDefinition> portalDefinition(Identifier portalId) {
@@ -448,11 +452,7 @@ public final class PlatformSavedData extends SavedData {
         if (maximumEntries < 1) {
             throw new IllegalArgumentException("Portal query must be bounded");
         }
-        return portalDefinitions.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .limit(maximumEntries)
-                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
-                .toList();
+        return firstEntries(portalDefinitions, maximumEntries);
     }
 
     public int portalDefinitionCount() {
@@ -473,6 +473,17 @@ public final class PlatformSavedData extends SavedData {
 
     public WildernessResetState wildernessResetState() {
         return wildernessResetState;
+    }
+
+    private static <K, V> List<Map.Entry<K, V>> firstEntries(Map<K, V> source, int maximumEntries) {
+        List<Map.Entry<K, V>> entries = new ArrayList<>(Math.min(maximumEntries, source.size()));
+        for (var entry : source.entrySet()) {
+            if (entries.size() == maximumEntries) {
+                break;
+            }
+            entries.add(Map.entry(entry.getKey(), entry.getValue()));
+        }
+        return List.copyOf(entries);
     }
 
     public Optional<RpgSkillOperation> rpgSkillOperation(UUID transactionId) {

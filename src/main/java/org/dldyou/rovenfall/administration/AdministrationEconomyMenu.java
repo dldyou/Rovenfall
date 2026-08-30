@@ -14,7 +14,6 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.ContainerInput;
-import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -63,7 +62,7 @@ public final class AdministrationEconomyMenu extends ChestMenu implements Admini
             ServerPlayer viewer,
             SimpleContainer contents,
             AdministrationReadViewService.Domain entryDomain) {
-        super(MenuType.GENERIC_9x6, containerId, inventory, contents, 6);
+        super(RovenfallAdministrationMenus.ECONOMY.get(), containerId, inventory, contents, 6);
         this.viewer = viewer;
         this.viewerId = viewer.getUUID();
         this.contents = contents;
