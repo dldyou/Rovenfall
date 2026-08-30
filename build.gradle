@@ -33,6 +33,9 @@ neoForge {
 
             // Comma-separated list of namespaces to load gametests from. Empty = all namespaces.
             systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+            if (project.hasProperty('quickPlayMultiplayer')) {
+                programArguments.addAll '--quickPlayMultiplayer', project.property('quickPlayMultiplayer').toString()
+            }
         }
 
         server {
@@ -162,6 +165,10 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
 
+tasks.named('runServer') {
+    standardInput = System.in
+}
+
 tasks.named('test', Test).configure {
     useJUnitPlatform()
     def performanceReport = layout.buildDirectory.file('reports/performance-budget.md')
@@ -179,6 +186,63 @@ tasks.register('recoveryRehearsal') {
     group = 'verification'
     description = 'Runs unit recovery fixtures, the performance budget, and the server GameTests.'
     dependsOn tasks.named('test'), tasks.named('performanceBudget'), tasks.named('runGameTestServer')
+}
+
+def distributableJar = tasks.named('jar', Jar).flatMap { it.archiveFile }
+def inspectReleaseJar = tasks.register('inspectReleaseJar') {
+    group = 'verification'
+    description = 'Inspects the distributable mod JAR for required runtime content and development-file leaks.'
+    dependsOn tasks.named('jar')
+    inputs.file(distributableJar)
+
+    doLast {
+        def archive = distributableJar.get().asFile
+        if (!archive.isFile() || archive.length() == 0) {
+            throw new GradleException("Distributable JAR is missing or empty: ${archive}")
+        }
+        new java.util.zip.ZipFile(archive).withCloseable { zip ->
+            def entries = new LinkedHashSet<String>()
+            zip.entries().each { entries.add(it.name) }
+            def required = [
+                    'META-INF/MANIFEST.MF',
+                    'META-INF/neoforge.mods.toml',
+                    'rovenfall.mixins.json',
+                    'org/dldyou/rovenfall/Rovenfall.class',
+                    'org/dldyou/rovenfall/administration/RovenfallInventoryScreen.class',
+                    'org/dldyou/rovenfall/administration/RovenfallAdministrationMenuScreen.class',
+                    'org/dldyou/rovenfall/administration/RovenfallAdministrationMenus.class',
+                    'assets/rovenfall/lang/en_us.json',
+                    'assets/rovenfall/lang/ja_jp.json',
+                    'assets/rovenfall/lang/ko_kr.json'
+            ]
+            def missing = required.findAll { !entries.contains(it) }
+            if (!missing.isEmpty()) {
+                throw new GradleException("Distributable JAR is missing runtime entries: ${missing}")
+            }
+            def forbidden = entries.findAll { entry ->
+                entry.endsWith('.java')
+                        || entry.startsWith('.git/')
+                        || entry.startsWith('.gradle/')
+                        || entry.startsWith('build/')
+                        || entry.startsWith('run/')
+                        || entry.startsWith('src/')
+                        || entry.startsWith('TEST-')
+            }
+            if (!forbidden.isEmpty()) {
+                throw new GradleException("Distributable JAR contains development entries: ${forbidden.take(20)}")
+            }
+            def metadataEntry = zip.getEntry('META-INF/neoforge.mods.toml')
+            def metadata = zip.getInputStream(metadataEntry).withCloseable { it.getText('UTF-8') }
+            if (!metadata.contains('modId = "rovenfall"') || metadata.contains('${mod_version}')) {
+                throw new GradleException('Distributable JAR contains invalid or unexpanded mod metadata')
+            }
+        }
+        logger.lifecycle("Inspected distributable JAR: ${archive.name} (${archive.length()} bytes)")
+    }
+}
+
+tasks.named('check') {
+    dependsOn inspectReleaseJar
 }
 
 tasks.named('jacocoTestReport', JacocoReport).configure {

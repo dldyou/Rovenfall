@@ -7,11 +7,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.google.gson.JsonParser;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 final class LocalizationCatalogTest {
+    private static final Set<String> SUPPORTED_LOCALES = Set.of("en_us", "ko_kr", "ja_jp");
+    private static final Pattern PLACEHOLDER = Pattern.compile("%(?:\\d+\\$)?[a-zA-Z]");
     private static final Set<String> REQUIRED_KEYS = Set.of(
             "admin_role.rovenfall.viewer",
             "admin_role.rovenfall.moderator",
@@ -205,6 +210,23 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.player.next",
             "gui.rovenfall.player.confirm",
             "gui.rovenfall.player.cancel");
+    private static final Set<String> TECHNICAL_GUI_KEYS = Set.of(
+            "gui.rovenfall.admin.audit.transaction",
+            "gui.rovenfall.admin.economy.field.transaction",
+            "gui.rovenfall.admin.economy.field.uuid",
+            "gui.rovenfall.admin.economy.preview.transaction",
+            "gui.rovenfall.admin.operations.evidence",
+            "gui.rovenfall.admin.rpg_boss.field.definition_id",
+            "gui.rovenfall.admin.rpg_boss.field.encounter",
+            "gui.rovenfall.admin.rpg_boss.field.transaction",
+            "gui.rovenfall.admin.rpg_boss.field.uuid",
+            "gui.rovenfall.admin.rpg_boss.preview.transaction",
+            "gui.rovenfall.admin.world.field.area",
+            "gui.rovenfall.admin.world.field.bounds",
+            "gui.rovenfall.admin.world.field.radius",
+            "gui.rovenfall.admin.world.field.transaction",
+            "gui.rovenfall.admin.world.field.warning_value",
+            "gui.rovenfall.admin.world.preview.transaction");
 
     @Test
     void supportedLanguageCatalogsHaveEqualKeySets() {
@@ -215,8 +237,22 @@ final class LocalizationCatalogTest {
     }
 
     @Test
+    void supportedLanguageCatalogsHaveEqualPlaceholderSets() {
+        var english = catalog("en_us");
+        for (String locale : Set.of("ko_kr", "ja_jp")) {
+            var localized = catalog(locale);
+            for (String key : english.keySet()) {
+                assertEquals(
+                        placeholders(english.get(key).getAsString()),
+                        placeholders(localized.get(key).getAsString()),
+                        locale + " has different placeholders for " + key);
+            }
+        }
+    }
+
+    @Test
     void supportedLanguageCatalogsDoNotDeclareDuplicateKeys() {
-        for (String locale : Set.of("en_us", "ko_kr", "ja_jp")) {
+        for (String locale : SUPPORTED_LOCALES) {
             String path = "/assets/rovenfall/lang/" + locale + ".json";
             var stream = LocalizationCatalogTest.class.getResourceAsStream(path);
             assertNotNull(stream, path);
@@ -247,7 +283,7 @@ final class LocalizationCatalogTest {
             }
         }
         assertTrue(!definitionKeys.isEmpty(), "No shipped translation keys were discovered");
-        for (String locale : Set.of("en_us", "ko_kr", "ja_jp")) {
+        for (String locale : SUPPORTED_LOCALES) {
             Set<String> missing = new HashSet<>(definitionKeys);
             missing.removeAll(keys(locale));
             assertTrue(missing.isEmpty(), locale + " is missing shipped definition keys: " + missing);
@@ -256,7 +292,7 @@ final class LocalizationCatalogTest {
 
     @Test
     void playerGuiLabelsArePresentAndCompactInEveryCatalog() {
-        for (String locale : Set.of("en_us", "ko_kr", "ja_jp")) {
+        for (String locale : SUPPORTED_LOCALES) {
             var catalog = catalog(locale);
             catalog.entrySet().stream()
                     .filter(entry -> entry.getKey().startsWith("gui.rovenfall."))
@@ -273,7 +309,7 @@ final class LocalizationCatalogTest {
     }
 
     @Test
-    void playerGuiCatalogsUseNaturalLandTermsWithoutInternalIdentityLabels() {
+    void ordinaryGuiCatalogsUseNaturalTermsWithoutInternalJargon() {
         Set<String> removedIdentityKeys = Set.of(
                 "gui.rovenfall.player.current_chunk",
                 "gui.rovenfall.player.claim_location",
@@ -282,7 +318,7 @@ final class LocalizationCatalogTest {
                 "gui.rovenfall.shop.binding",
                 "gui.rovenfall.rpg.definition_revision",
                 "gui.rovenfall.rpg.unresolved");
-        for (String locale : Set.of("en_us", "ko_kr", "ja_jp")) {
+        for (String locale : SUPPORTED_LOCALES) {
             var catalog = catalog(locale);
             for (String key : removedIdentityKeys) {
                 assertTrue(!catalog.has(key), locale + " still exposes internal player-GUI data: " + key);
@@ -291,15 +327,52 @@ final class LocalizationCatalogTest {
 
         var korean = catalog("ko_kr");
         assertEquals("토지", korean.get("gui.rovenfall.player.claims").getAsString());
-        korean.entrySet().stream()
-                .filter(entry -> entry.getKey().startsWith("gui.rovenfall.player.")
-                        || entry.getKey().startsWith("gui.rovenfall.claim.")
-                        || entry.getKey().startsWith("gui.rovenfall.shop.")
-                        || entry.getKey().startsWith("gui.rovenfall.rpg."))
+        assertEquals("토지", korean.get("gui.rovenfall.admin.domain.claims").getAsString());
+        assertEquals("야생 관리", korean.get("gui.rovenfall.admin.world.wilderness").getAsString());
+        assertEquals("처리 기록", korean.get("gui.rovenfall.admin.domain.audit").getAsString());
+        assertEquals("운영 상태", korean.get("gui.rovenfall.admin.domain.metrics").getAsString());
+        assertEquals("기술 정보", korean.get("gui.rovenfall.admin.advanced").getAsString());
+
+        var english = catalog("en_us");
+        assertEquals("Land", english.get("gui.rovenfall.player.claims").getAsString());
+        assertEquals("Wilderness Management", english.get("gui.rovenfall.admin.world.wilderness").getAsString());
+        assertEquals("Technical information", english.get("gui.rovenfall.admin.advanced").getAsString());
+
+        var japanese = catalog("ja_jp");
+        assertEquals("土地", japanese.get("gui.rovenfall.player.claims").getAsString());
+        assertEquals("荒野の管理", japanese.get("gui.rovenfall.admin.world.wilderness").getAsString());
+        assertEquals("技術情報", japanese.get("gui.rovenfall.admin.advanced").getAsString());
+
+        assertOrdinaryGuiAvoids(
+                "ko_kr",
+                Pattern.compile("영지|클레임|황무지|청크|UUID|(?<![A-Za-z_])ID(?![A-Za-z_])|리비전|수명 주기"));
+        assertOrdinaryGuiAvoids(
+                "en_us",
+                Pattern.compile("(?i)\\bclaims?\\b|\\bchunk\\b|\\bUUID\\b|\\bID\\b|\\brevision\\b|\\blifecycle\\b"));
+        assertOrdinaryGuiAvoids(
+                "ja_jp",
+                Pattern.compile("クレーム|チャンク|Wilderness|UUID|(?<![A-Za-z_])ID(?![A-Za-z_])|リビジョン|ライフサイクル"));
+    }
+
+    private static void assertOrdinaryGuiAvoids(String locale, Pattern rejectedTerms) {
+        catalog(locale).entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("gui.rovenfall."))
+                .filter(entry -> !entry.getKey().contains(".form."))
+                .filter(entry -> !TECHNICAL_GUI_KEYS.contains(entry.getKey()))
                 .forEach(entry -> assertTrue(
-                        !entry.getValue().getAsString().matches(".*(영지|청크|UUID|ID|리비전).*"),
-                        "Korean player GUI uses an internal or rejected term: "
+                        !rejectedTerms.matcher(entry.getValue().getAsString()).find(),
+                        locale + " GUI uses an internal or rejected term: "
                                 + entry.getKey() + " = " + entry.getValue().getAsString()));
+    }
+
+    private static List<String> placeholders(String value) {
+        var placeholders = new ArrayList<String>();
+        var matcher = PLACEHOLDER.matcher(value);
+        while (matcher.find()) {
+            placeholders.add(matcher.group());
+        }
+        placeholders.sort(String::compareTo);
+        return placeholders;
     }
 
     private static void collectTranslationKeys(com.google.gson.JsonElement element, Set<String> keys) {

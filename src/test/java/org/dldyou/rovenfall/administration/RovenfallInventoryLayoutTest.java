@@ -43,4 +43,24 @@ final class RovenfallInventoryLayoutTest {
         assertTrue(compact.right() <= 248);
         assertTrue(compact.bottom() <= 203);
     }
+
+    @Test
+    void supportedGuiScaleMatrixKeepsTabsAndSummaryOnScreen() {
+        for (int[] size : java.util.List.of(
+                new int[]{320, 240}, new int[]{426, 240}, new int[]{640, 360},
+                new int[]{854, 480}, new int[]{1_920, 1_080})) {
+            int inventoryLeft = (size[0] - 176) / 2;
+            int inventoryTop = (size[1] - 166) / 2;
+            var tabs = RovenfallInventoryLayout.tabs(size[0], inventoryTop);
+            var summary = RovenfallInventoryLayout.summary(size[0], inventoryLeft, inventoryTop, 176);
+            assertTrue(tabs.x() >= 0);
+            assertTrue(tabs.right() <= size[0]);
+            assertTrue(tabs.y() >= 0);
+            assertTrue(tabs.bottom() <= size[1]);
+            assertTrue(summary.x() >= 0);
+            assertTrue(summary.right() <= size[0]);
+            assertTrue(summary.y() >= 0);
+            assertTrue(summary.bottom() <= size[1]);
+        }
+    }
 }

@@ -39,7 +39,7 @@ final class RovenfallMenuCardButton extends Button {
     @Override
     protected void extractContents(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         RovenfallUiTheme.extractButton(
-                graphics, getX(), getY(), getWidth(), getHeight(), active, isHoveredOrFocused());
+                graphics, getX(), getY(), getWidth(), getHeight(), active, isHovered(), isFocused());
         int iconY = getY() + Math.max(4, (getHeight() - 16) / 2);
         graphics.item(item, getX() + 6, iconY);
         graphics.itemDecorations(font, item, getX() + 6, iconY);

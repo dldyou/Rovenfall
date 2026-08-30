@@ -19,6 +19,21 @@ Changing or removing an operator role while the menu is open invalidates the cur
 view immediately. Every click and search submission rechecks the server-owned role,
 container identity, and session state.
 
+## Keyboard, narration, and technical information
+
+All cards, paging controls, filters, selectors, position helpers, confirmation actions, and
+the Advanced details control participate in native focus traversal. Use `Tab` or the arrow keys
+to move focus, `Enter` or `Space` to activate a button, either Enter key to submit a focused
+search or typed form, and `Page Up`/`Page Down` to page. The focused widget has a two-tone
+high-contrast ring that is visually distinct from hover. Narration includes card position,
+public detail, usage hints, and form validation errors.
+
+Normal cards and details omit UUIDs, namespaced identifiers, and long evidence hashes. Advanced
+details is the explicit technical view and supports `Ctrl+C` while a card is keyboard-focused.
+This changes only presentation: selected targets, raw evidence, authorization, and mutations
+remain server-owned. The supported resolution/GUI-scale and inventory-mod fallback matrix is in
+[Custom UI release validation](ui-release-validation.md).
+
 ## Search and bounds
 
 Each domain has a text search field, an `All`/`Attention required` filter, refresh,

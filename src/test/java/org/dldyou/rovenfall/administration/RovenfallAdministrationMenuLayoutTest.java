@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import net.minecraft.network.chat.Component;
 import org.junit.jupiter.api.Test;
+import org.lwjgl.glfw.GLFW;
 
 final class RovenfallAdministrationMenuLayoutTest {
     @Test
@@ -14,6 +15,22 @@ final class RovenfallAdministrationMenuLayoutTest {
         assertLayout(320, 240, false, 1);
         assertLayout(640, 480, true, 2);
         assertLayout(1_280, 720, true, 2);
+    }
+
+    @Test
+    void supportedGuiScaleMatrixKeepsAdministrationRegionsOnScreen() {
+        for (int[] size : List.of(
+                new int[]{320, 240}, new int[]{426, 240}, new int[]{640, 360},
+                new int[]{854, 480}, new int[]{1_920, 1_080})) {
+            assertLayout(size[0], size[1], size[0] >= 640, size[0] >= 640 ? 2 : 1);
+        }
+    }
+
+    @Test
+    void eitherEnterKeySubmitsAKeyboardFocusedField() {
+        assertTrue(RovenfallAdministrationMenuScreen.isSubmitKey(GLFW.GLFW_KEY_ENTER));
+        assertTrue(RovenfallAdministrationMenuScreen.isSubmitKey(GLFW.GLFW_KEY_KP_ENTER));
+        assertFalse(RovenfallAdministrationMenuScreen.isSubmitKey(GLFW.GLFW_KEY_SPACE));
     }
 
     @Test

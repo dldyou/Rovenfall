@@ -46,9 +46,21 @@ public final class RovenfallInventoryClient {
     }
 
     static boolean shouldReplace(Screen screen, Player player) {
-        return screen != null && screen.getClass() == InventoryScreen.class
+        return screen != null && supportsInventoryReplacement(screen.getClass())
                 && player != null && player.isAlive() && !player.isSpectator()
                 && !player.hasInfiniteMaterials() && player.containerMenu == player.inventoryMenu;
+    }
+
+    static boolean supportsInventoryReplacement(Class<?> screenType) {
+        return screenType == InventoryScreen.class;
+    }
+
+    static boolean supportsCharacterShortcut(Class<?> screenType) {
+        return screenType == null
+                || supportsInventoryReplacement(screenType)
+                || screenType == RovenfallInventoryScreen.class
+                || screenType == RovenfallAdministrationMenuScreen.class
+                || screenType == RovenfallCustomPlayerMenuScreen.class;
     }
 
     static void request(PlayerMenuNetwork.MenuTarget target) {
@@ -128,6 +140,7 @@ public final class RovenfallInventoryClient {
         while (CHARACTER_SCREEN_KEY.consumeClick()) {
             Screen screen = minecraft.gui.screen();
             if (!canUseCharacterScreen(minecraft.player)
+                    || !supportsCharacterShortcut(screen == null ? null : screen.getClass())
                     || screen instanceof RovenfallInventoryScreen) {
                 continue;
             }

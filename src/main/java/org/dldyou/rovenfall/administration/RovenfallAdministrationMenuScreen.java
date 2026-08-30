@@ -50,6 +50,7 @@ final class RovenfallAdministrationMenuScreen extends ContainerScreen {
     private final List<FormFieldVisual> formFieldVisuals = new ArrayList<>();
     private RovenfallAdministrationMenuLayout.Layout layout;
     private EditBox query;
+    private Button advancedButton;
     private final Map<Integer, EditBox> formInputs = new HashMap<>();
     private boolean advanced;
     private int page;
@@ -166,9 +167,11 @@ final class RovenfallAdministrationMenuScreen extends ContainerScreen {
         int controlsRight = previous.x() - 5;
         int toggleX = controlsRight - toggleWidth;
         int submitX = toggleX - 5 - submitWidth;
-        addRenderableWidget(Button.builder(Component.literal("⋮"), ignored -> toggleAdvanced())
+        Component advancedNarration = Component.translatable("gui.rovenfall.admin.advanced");
+        advancedButton = addRenderableWidget(Button.builder(Component.literal("⋮"), ignored -> toggleAdvanced())
+                .createNarration(ignored -> advancedNarration.copy())
                 .tooltip(Tooltip.create(joinLines(List.of(
-                        Component.translatable("gui.rovenfall.admin.advanced"),
+                        advancedNarration,
                         Component.translatable("gui.rovenfall.admin.advanced_info_hint")))))
                 .bounds(toggleX, header.y(), toggleWidth, header.height())
                 .build(RovenfallButton::new));
@@ -361,10 +364,12 @@ final class RovenfallAdministrationMenuScreen extends ContainerScreen {
         if (query != null) {
             if (formMarker != null && query.getValue().isBlank()) {
                 formError = Component.translatable("gui.rovenfall.admin.form.error.invalid");
+                afterKeyboardAction();
                 return;
             }
             ClientPacketDistributor.sendToServer(new PlayerMenuNetwork.AdminQuery(
                     menu.containerId, menu.getStateId(), query.getValue()));
+            afterKeyboardAction();
         }
     }
 
@@ -372,16 +377,19 @@ final class RovenfallAdministrationMenuScreen extends ContainerScreen {
         captureFormInputs();
         if (!validFormValues()) {
             formError = Component.translatable("gui.rovenfall.admin.form.error.invalid");
+            afterKeyboardAction();
             return;
         }
         Optional<String> encoded = AdministrationStructuredFormCodec.encode(formMarker.type(), formValues);
         if (encoded.isEmpty()) {
             formError = Component.translatable("gui.rovenfall.admin.form.error.invalid");
+            afterKeyboardAction();
             return;
         }
         formError = Component.empty();
         ClientPacketDistributor.sendToServer(new PlayerMenuNetwork.AdminQuery(
                 menu.containerId, menu.getStateId(), encoded.orElseThrow()));
+        afterKeyboardAction();
     }
 
     private boolean validFormValues() {
@@ -403,6 +411,9 @@ final class RovenfallAdministrationMenuScreen extends ContainerScreen {
     private void toggleAdvanced() {
         advanced = !advanced;
         rebuildWidgets(false);
+        setFocused(advancedButton);
+        advancedButton.setFocused(true);
+        afterKeyboardAction();
     }
 
     private static String shorten(String value) {
@@ -509,9 +520,13 @@ final class RovenfallAdministrationMenuScreen extends ContainerScreen {
             copyAdvancedDetails();
             return true;
         }
-        if (query != null && query.isFocused()
-                && (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER)) {
+        if (query != null && query.isFocused() && isSubmitKey(key)) {
             submitQuery();
+            return true;
+        }
+        if (formInputs.values().stream().anyMatch(EditBox::isFocused)
+                && isSubmitKey(key)) {
+            submitForm();
             return true;
         }
         if (key == GLFW.GLFW_KEY_PAGE_UP && changePage(-1)) {
@@ -523,13 +538,19 @@ final class RovenfallAdministrationMenuScreen extends ContainerScreen {
         return super.keyPressed(event);
     }
 
+    static boolean isSubmitKey(int key) {
+        return key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER;
+    }
+
     private boolean textInputFocused() {
         return query != null && query.isFocused()
                 || formInputs.values().stream().anyMatch(EditBox::isFocused);
     }
 
     private void copyAdvancedDetails() {
-        RovenfallMenuCardButton selected = cards.stream().filter(RovenfallMenuCardButton::isHovered).findFirst()
+        RovenfallMenuCardButton selected = cards.stream()
+                .filter(card -> card.isHovered() || card.isFocused())
+                .findFirst()
                 .orElse(null);
         List<Component> lines = selected == null ? headerLines : selected.detailLines();
         minecraft.keyboardHandler.setClipboard(lines.stream()
@@ -543,8 +564,13 @@ final class RovenfallAdministrationMenuScreen extends ContainerScreen {
         super.updateNarrationState(output);
         RovenfallMenuCardButton selected = cards.stream().filter(RovenfallMenuCardButton::isHovered).findFirst()
                 .orElseGet(() -> getFocused() instanceof RovenfallMenuCardButton card ? card : null);
+        if (!formError.getString().isBlank()) {
+            output.add(NarratedElementType.HINT, formError);
+        }
         if (selected == null) {
-            output.add(NarratedElementType.HINT, Component.translatable("gui.rovenfall.menu.no_actions"));
+            if (cards.isEmpty()) {
+                output.add(NarratedElementType.HINT, Component.translatable("gui.rovenfall.menu.no_actions"));
+            }
             return;
         }
         output.add(NarratedElementType.POSITION, Component.translatable(
