@@ -131,7 +131,6 @@ import org.dldyou.rovenfall.mobs.MobMutationRuntime;
 import org.dldyou.rovenfall.mobs.RovenfallMobClient;
 import org.dldyou.rovenfall.mobs.RovenfallMobEntities;
 import org.dldyou.rovenfall.mobs.RovenfallMobRuntime;
-import org.dldyou.rovenfall.rpg.RpgDefinitionReloadListener;
 import org.dldyou.rovenfall.rpg.ActivityXpConfig;
 import org.dldyou.rovenfall.rpg.ActivityXpAwardService;
 import org.dldyou.rovenfall.rpg.ActivityWorldSavedData;
@@ -147,7 +146,9 @@ import org.dldyou.rovenfall.rpg.RpgSkillClient;
 import org.dldyou.rovenfall.rpg.RpgSkillNetwork;
 import org.dldyou.rovenfall.rpg.RpgSkillResetCoordinator;
 import org.dldyou.rovenfall.rpg.PlayerCareerPromotionService;
+import org.dldyou.rovenfall.rpg.RpgDefinitionReloadListener;
 import org.dldyou.rovenfall.rpg.RpgItemPaymentGameTestScenario;
+import org.dldyou.rovenfall.quest.QuestDefinitionReloadListener;
 import org.dldyou.rovenfall.world.ProtectedRegion;
 import org.dldyou.rovenfall.world.PortalDefinition;
 import org.dldyou.rovenfall.world.WorldTopology;
@@ -158,6 +159,7 @@ public final class Rovenfall {
     private final ShopTemplateReloadListener shopTemplates = new ShopTemplateReloadListener();
     private final MobContentReloadListener mobContent = new MobContentReloadListener();
     private final RpgDefinitionReloadListener rpgDefinitions = new RpgDefinitionReloadListener();
+    private final QuestDefinitionReloadListener questDefinitions = new QuestDefinitionReloadListener();
 
     public Rovenfall(IEventBus modBus, ModContainer modContainer) {
         RovenfallMobEntities.register(modBus);
@@ -2863,6 +2865,7 @@ public final class Rovenfall {
         event.addRetainedListener(ShopTemplateReloadListener.KEY, shopTemplates);
         event.addRetainedListener(MobContentReloadListener.KEY, mobContent);
         event.addRetainedListener(RpgDefinitionReloadListener.KEY, rpgDefinitions);
+        event.addRetainedListener(QuestDefinitionReloadListener.KEY, questDefinitions);
     }
 
     private static Identifier id(String path) {

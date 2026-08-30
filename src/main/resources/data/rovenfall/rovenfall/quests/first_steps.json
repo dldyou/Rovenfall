@@ -1,0 +1,23 @@
+{
+  "translation_key": "quest.rovenfall.first_steps",
+  "description_translation_key": "quest.rovenfall.first_steps.description",
+  "version": 1,
+  "objectives": [
+    {
+      "id": "rovenfall:first_steps/activity",
+      "kind": "activity",
+      "target": "rovenfall:mining",
+      "required_count": 1
+    },
+    {
+      "id": "rovenfall:first_steps/shop_trade",
+      "kind": "shop_trade",
+      "required_count": 1
+    },
+    {
+      "id": "rovenfall:first_steps/claim_purchase",
+      "kind": "claim_purchase",
+      "required_count": 1
+    }
+  ]
+}
