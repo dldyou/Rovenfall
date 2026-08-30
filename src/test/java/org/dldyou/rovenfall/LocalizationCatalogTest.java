@@ -54,6 +54,8 @@ final class LocalizationCatalogTest {
             "skill.rovenfall.power_strike",
             "skill.rovenfall.shield_wall",
             "skill.rovenfall.battle_fury",
+            "quest.rovenfall.first_steps",
+            "quest.rovenfall.first_steps.description",
             "message.rovenfall.claim.denied.build",
             "message.rovenfall.claim.denied.interact",
             "message.rovenfall.claim.denied.entity",
@@ -195,7 +197,8 @@ final class LocalizationCatalogTest {
             "/data/rovenfall/rovenfall/skills/shield_wall.json",
             "/data/rovenfall/rovenfall/skills/sturdy_body.json",
             "/data/rovenfall/rovenfall/shop_templates/foundation.json",
-            "/data/rovenfall/rovenfall/mob_content/foundation.json"
+            "/data/rovenfall/rovenfall/mob_content/foundation.json",
+            "/data/rovenfall/rovenfall/quests/first_steps.json"
     );
     private static final Set<String> COMPACT_PLAYER_GUI_KEYS = Set.of(
             "gui.rovenfall.inventory.inventory",
