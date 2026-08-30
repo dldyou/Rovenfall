@@ -138,7 +138,14 @@ final class PlayerMenuNetworkTest {
                 PlayerMenuNetwork.MenuKind.fromWireId(8).orElseThrow());
         assertTrue(PlayerMenuNetwork.MenuKind.fromWireId(99).isEmpty());
         assertFalse(PlayerMenuNetwork.MenuKind.DASHBOARD.isAdministration());
+        assertFalse(PlayerMenuNetwork.MenuKind.SHOP.isAdministration());
+        assertFalse(PlayerMenuNetwork.MenuKind.CLAIM.isAdministration());
+        assertFalse(PlayerMenuNetwork.MenuKind.RPG.isAdministration());
         assertTrue(PlayerMenuNetwork.MenuKind.ADMIN_HOME.isAdministration());
+        assertTrue(PlayerMenuNetwork.MenuKind.ADMIN_ECONOMY.isAdministration());
+        assertTrue(PlayerMenuNetwork.MenuKind.ADMIN_WORLD.isAdministration());
+        assertTrue(PlayerMenuNetwork.MenuKind.ADMIN_RPG_BOSS.isAdministration());
+        assertTrue(PlayerMenuNetwork.MenuKind.ADMIN_OPERATIONS.isAdministration());
         assertFalse(PlayerMenuNetwork.MenuKind.ADMIN_HOME.usesLongTextInput());
         assertTrue(PlayerMenuNetwork.MenuKind.ADMIN_ECONOMY.usesLongTextInput());
         assertFalse(PlayerMenuNetwork.isPlayerMenu(null));

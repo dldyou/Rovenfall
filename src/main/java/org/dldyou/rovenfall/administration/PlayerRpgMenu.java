@@ -7,6 +7,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
@@ -464,7 +465,7 @@ public final class PlayerRpgMenu extends ChestMenu {
         content.setItem(4, PlayerDashboardMenu.icon(
                 Items.EXPERIENCE_BOTTLE, Component.translatable("gui.rovenfall.rpg.title"),
                 Component.translatable("gui.rovenfall.player.balance", view.balance()),
-                Component.translatable("gui.rovenfall.rpg.definition_revision", view.definitionRevision())));
+                Component.translatable("gui.rovenfall.rpg.summary")));
         content.setItem(11, PlayerDashboardMenu.icon(
                 Items.COMPASS, Component.translatable("gui.rovenfall.rpg.activities"),
                 Component.translatable("gui.rovenfall.rpg.count", view.activities().size()),
@@ -576,7 +577,8 @@ public final class PlayerRpgMenu extends ChestMenu {
         List<Component> consequences = new java.util.ArrayList<>();
         consequences.add(Component.translatable("gui.rovenfall.rpg.confirm.action." +
                 confirmation.mutation().name().toLowerCase(Locale.ROOT)));
-        consequences.add(Component.literal(confirmation.target().toString()));
+        consequences.add(Component.translatable(
+                "gui.rovenfall.rpg.confirm.target", confirmationTargetName(confirmation)));
         if (confirmation.mutation() == Mutation.PROMOTE || confirmation.mutation() == Mutation.SWITCH) {
             consequences.add(Component.translatable(
                     "gui.rovenfall.rpg.confirm.career_change",
@@ -595,7 +597,7 @@ public final class PlayerRpgMenu extends ChestMenu {
         for (int index = 0; index < confirmation.itemCosts().size(); index++) {
             RpgItemCost item = confirmation.itemCosts().get(index);
             consequences.add(Component.translatable(
-                    "gui.rovenfall.rpg.confirm.item_cost", item.item().toString(), item.count(),
+                    "gui.rovenfall.rpg.confirm.item_cost", itemName(item.item()), item.count(),
                     confirmation.ownedItems().get(index)));
         }
         content.setItem(4, PlayerDashboardMenu.icon(
@@ -629,12 +631,12 @@ public final class PlayerRpgMenu extends ChestMenu {
     private net.minecraft.world.item.ItemStack activityIcon(PlayerRpgView.ActivityRow row) {
         return PlayerDashboardMenu.icon(
                 row.unresolved() ? Items.BARRIER : Items.EXPERIENCE_BOTTLE,
-                name(row.translationKey(), row.id()),
+                name(row.translationKey()),
                 Component.translatable("gui.rovenfall.rpg.activity.level", row.level()),
                 Component.translatable("gui.rovenfall.rpg.xp", row.experience()),
                 row.nextLevelXp() == 0 ? Component.translatable("gui.rovenfall.rpg.max_level")
                         : Component.translatable("gui.rovenfall.rpg.next_xp", row.nextLevelXp()),
-                unresolved(row.unresolved(), row.id()));
+                unresolved(row.unresolved()));
     }
 
     private net.minecraft.world.item.ItemStack careerIcon(PlayerRpgView.CareerRow row, boolean clickable) {
@@ -653,7 +655,7 @@ public final class PlayerRpgMenu extends ChestMenu {
             lore.add(Component.translatable("gui.rovenfall.rpg.career.lineage"));
         }
         if (row.unresolved()) {
-            lore.add(unresolved(true, row.id()));
+            lore.add(unresolved(true));
         } else if (row.lock().locked()) {
             lore.add(lockLine(row.lock()));
         }
@@ -663,7 +665,7 @@ public final class PlayerRpgMenu extends ChestMenu {
         return PlayerDashboardMenu.icon(
                 row.unresolved() || row.lock().locked() ? Items.BARRIER
                         : row.active() ? Items.DIAMOND_SWORD : Items.IRON_SWORD,
-                name(row.translationKey(), row.id()), lore.toArray(Component[]::new));
+                name(row.translationKey()), lore.toArray(Component[]::new));
     }
 
     private net.minecraft.world.item.ItemStack skillIcon(PlayerRpgView.SkillRow row, boolean clickable) {
@@ -679,10 +681,10 @@ public final class PlayerRpgMenu extends ChestMenu {
         }
         row.requirements().stream().limit(8).forEach(requirement -> lore.add(requirementLine(requirement)));
         if (row.cooldownTicks() > 0) {
-            lore.add(Component.translatable("gui.rovenfall.rpg.skill.cooldown", row.cooldownTicks()));
+            lore.add(cooldownLine(row.cooldownTicks()));
         }
         if (row.unresolved()) {
-            lore.add(unresolved(true, row.id()));
+            lore.add(unresolved(true));
         } else if (row.lock().locked()) {
             lore.add(lockLine(row.lock()));
         }
@@ -692,7 +694,7 @@ public final class PlayerRpgMenu extends ChestMenu {
         return PlayerDashboardMenu.icon(
                 row.unresolved() || (row.rank() == 0 && row.lock().locked()) ? Items.BARRIER
                         : row.rank() > 0 ? Items.ENCHANTED_BOOK : Items.BOOK,
-                name(row.translationKey(), row.id()), lore.toArray(Component[]::new));
+                name(row.translationKey()), lore.toArray(Component[]::new));
     }
 
     private net.minecraft.world.item.ItemStack slotIcon(PlayerRpgView.SlotRow row) {
@@ -701,9 +703,8 @@ public final class PlayerRpgMenu extends ChestMenu {
                 Component.translatable("gui.rovenfall.rpg.slot", row.slot() + 1),
                 row.skill().map(this::skillName)
                         .orElseGet(() -> Component.translatable("gui.rovenfall.player.empty")),
-                Component.translatable("gui.rovenfall.rpg.skill.cooldown", row.cooldownTicks()),
-                row.unresolved() ? Component.translatable(
-                        "gui.rovenfall.rpg.unresolved", row.skill().orElseThrow().toString()) : Component.empty());
+                cooldownLine(row.cooldownTicks()),
+                unresolved(row.unresolved()));
     }
 
     private net.minecraft.world.item.ItemStack resetIcon(SkillResetPlan.Mode mode, Identifier target) {
@@ -819,7 +820,27 @@ public final class PlayerRpgMenu extends ChestMenu {
 
     private Component itemCostLine(RpgItemCost item) {
         return Component.translatable("gui.rovenfall.rpg.confirm.item_cost",
-                item.item().toString(), item.count(), RpgItemPayment.owned(viewer, item.item()));
+                itemName(item.item()), item.count(), RpgItemPayment.owned(viewer, item.item()));
+    }
+
+    private static Component cooldownLine(long ticks) {
+        return ticks <= 0
+                ? Component.translatable("gui.rovenfall.rpg.skill.ready")
+                : Component.translatable("gui.rovenfall.rpg.skill.cooldown", Math.ceilDiv(ticks, 20L));
+    }
+
+    private Component itemName(Identifier id) {
+        Item item = BuiltInRegistries.ITEM.getValue(id);
+        return item == null || item == Items.AIR
+                ? Component.translatable("gui.rovenfall.player.unknown_item")
+                : item.getDefaultInstance().getHoverName();
+    }
+
+    private Component confirmationTargetName(Confirmation action) {
+        return switch (action.mutation()) {
+            case PROMOTE, SWITCH, RESET_FULL -> careerName(action.target());
+            case RESET_BRANCH -> skillName(action.target());
+        };
     }
 
     private long currentCost(Confirmation action) {
@@ -884,7 +905,8 @@ public final class PlayerRpgMenu extends ChestMenu {
 
     private Component activityName(Identifier id) {
         return definitions().activity(id).<Component>map(definition ->
-                Component.translatable(definition.translationKey())).orElseGet(() -> Component.literal(id.toString()));
+                Component.translatable(definition.translationKey()))
+                .orElseGet(() -> Component.translatable("gui.rovenfall.player.unknown_activity"));
     }
 
     private long affectedSlots(RpgPlayerState state, Identifier targetCareer) {
@@ -911,17 +933,19 @@ public final class PlayerRpgMenu extends ChestMenu {
 
     private Component careerName(Identifier id) {
         return definitions().career(id).<Component>map(definition ->
-                Component.translatable(definition.translationKey())).orElseGet(() -> Component.literal(id.toString()));
+                Component.translatable(definition.translationKey()))
+                .orElseGet(() -> Component.translatable("gui.rovenfall.player.unknown_career"));
     }
 
     private Component skillName(Identifier id) {
         return definitions().skill(id).<Component>map(definition ->
-                Component.translatable(definition.translationKey())).orElseGet(() -> Component.literal(id.toString()));
+                Component.translatable(definition.translationKey()))
+                .orElseGet(() -> Component.translatable("gui.rovenfall.player.unknown_skill"));
     }
 
-    private Component name(Optional<String> translationKey, Identifier id) {
+    private Component name(Optional<String> translationKey) {
         return translationKey.<Component>map(Component::translatable)
-                .orElseGet(() -> Component.literal(id.toString()));
+                .orElseGet(() -> Component.translatable("gui.rovenfall.rpg.unavailable_content"));
     }
 
     private Component requirementLine(PlayerRpgView.Requirement requirement) {
@@ -948,8 +972,8 @@ public final class PlayerRpgMenu extends ChestMenu {
         return "gui.rovenfall.rpg.lock." + lock.reason().name().toLowerCase(Locale.ROOT);
     }
 
-    private static Component unresolved(boolean unresolved, Identifier id) {
-        return unresolved ? Component.translatable("gui.rovenfall.rpg.unresolved", id.toString()) : Component.empty();
+    private static Component unresolved(boolean unresolved) {
+        return unresolved ? Component.translatable("gui.rovenfall.rpg.unavailable_content") : Component.empty();
     }
 
     private record PageEntry<T>(int offset, T value) {

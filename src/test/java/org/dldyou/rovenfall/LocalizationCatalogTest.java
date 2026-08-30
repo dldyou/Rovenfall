@@ -91,6 +91,12 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.player.confirm",
             "gui.rovenfall.player.cancel",
             "gui.rovenfall.player.rate_limit",
+            "gui.rovenfall.player.unknown_player",
+            "gui.rovenfall.player.unknown_shop",
+            "gui.rovenfall.player.unknown_activity",
+            "gui.rovenfall.player.unknown_career",
+            "gui.rovenfall.player.unknown_skill",
+            "gui.rovenfall.player.unknown_item",
             "gui.rovenfall.inventory.inventory",
             "gui.rovenfall.inventory.overview",
             "gui.rovenfall.inventory.claims",
@@ -101,15 +107,30 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.inventory.open_tab",
             "gui.rovenfall.menu.slot_position",
             "gui.rovenfall.menu.keyboard_usage",
+            "gui.rovenfall.menu.card_position",
+            "gui.rovenfall.menu.custom_keyboard_usage",
             "gui.rovenfall.claim.actions_locked",
             "gui.rovenfall.claim.owner_or_manager_required",
+            "gui.rovenfall.claim.current_land",
+            "gui.rovenfall.claim.current_location",
+            "gui.rovenfall.claim.purchase_complete",
+            "gui.rovenfall.claim.purchase_duplicate",
+            "gui.rovenfall.claim.action_duplicate",
             "gui.rovenfall.shop.title",
             "gui.rovenfall.shop.confirm_title",
             "gui.rovenfall.shop.stock.unlimited",
+            "gui.rovenfall.shop.binding.nearby",
+            "gui.rovenfall.shop.result.buy",
+            "gui.rovenfall.shop.result.sell",
+            "gui.rovenfall.shop.result.duplicate",
             "gui.rovenfall.claim.title",
             "gui.rovenfall.claim.error.stale",
             "gui.rovenfall.claim.error.rate_limit",
             "gui.rovenfall.rpg.title",
+            "gui.rovenfall.rpg.summary",
+            "gui.rovenfall.rpg.unavailable_content",
+            "gui.rovenfall.rpg.skill.ready",
+            "gui.rovenfall.rpg.confirm.target",
             "gui.rovenfall.rpg.result.stale",
             "gui.rovenfall.rpg.result.rate_limit",
             "gui.rovenfall.rpg.result.pending",
@@ -249,6 +270,36 @@ final class LocalizationCatalogTest {
                         locale + " player GUI label is too long: " + key + " = " + label);
             }
         }
+    }
+
+    @Test
+    void playerGuiCatalogsUseNaturalLandTermsWithoutInternalIdentityLabels() {
+        Set<String> removedIdentityKeys = Set.of(
+                "gui.rovenfall.player.current_chunk",
+                "gui.rovenfall.player.claim_location",
+                "gui.rovenfall.claim.player_uuid",
+                "gui.rovenfall.shop.offer_id",
+                "gui.rovenfall.shop.binding",
+                "gui.rovenfall.rpg.definition_revision",
+                "gui.rovenfall.rpg.unresolved");
+        for (String locale : Set.of("en_us", "ko_kr", "ja_jp")) {
+            var catalog = catalog(locale);
+            for (String key : removedIdentityKeys) {
+                assertTrue(!catalog.has(key), locale + " still exposes internal player-GUI data: " + key);
+            }
+        }
+
+        var korean = catalog("ko_kr");
+        assertEquals("토지", korean.get("gui.rovenfall.player.claims").getAsString());
+        korean.entrySet().stream()
+                .filter(entry -> entry.getKey().startsWith("gui.rovenfall.player.")
+                        || entry.getKey().startsWith("gui.rovenfall.claim.")
+                        || entry.getKey().startsWith("gui.rovenfall.shop.")
+                        || entry.getKey().startsWith("gui.rovenfall.rpg."))
+                .forEach(entry -> assertTrue(
+                        !entry.getValue().getAsString().matches(".*(영지|청크|UUID|ID|리비전).*"),
+                        "Korean player GUI uses an internal or rejected term: "
+                                + entry.getKey() + " = " + entry.getValue().getAsString()));
     }
 
     private static void collectTranslationKeys(com.google.gson.JsonElement element, Set<String> keys) {

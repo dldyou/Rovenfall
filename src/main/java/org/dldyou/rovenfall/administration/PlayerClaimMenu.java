@@ -486,11 +486,9 @@ public final class PlayerClaimMenu extends ChestMenu {
                 ClaimConfig.basePrice(), ClaimConfig.priceIncrease(), ClaimConfig.ownershipCap(),
                 now(), UUID.randomUUID());
         if (result.status() == ClaimPurchaseService.Status.SUCCESS) {
-            message("command.rovenfall.claim.buy.success",
-                    result.claim().orElseThrow().chunkX(), result.claim().orElseThrow().chunkZ(),
-                    result.price(), result.balance());
+            message("gui.rovenfall.claim.purchase_complete", result.price(), result.balance());
         } else if (result.status() == ClaimPurchaseService.Status.DUPLICATE_TRANSACTION) {
-            message("command.rovenfall.claim.buy.duplicate", result.transactionId().toString());
+            message("gui.rovenfall.claim.purchase_duplicate");
         } else {
             message(purchaseErrorTranslationKey(result.status()), result.price(), result.balance());
         }
@@ -499,8 +497,7 @@ public final class PlayerClaimMenu extends ChestMenu {
     private void showMutationResult(ClaimManagementService.Result result) {
         switch (result.status()) {
             case SUCCESS -> message("gui.rovenfall.claim.updated");
-            case DUPLICATE_TRANSACTION -> message(
-                    "command.rovenfall.claim.duplicate", result.transactionId().toString());
+            case DUPLICATE_TRANSACTION -> message("gui.rovenfall.claim.action_duplicate");
             case NO_CHANGE -> message("command.rovenfall.claim.no_change");
             default -> message(mutationErrorTranslationKey(result.status()));
         }
@@ -595,9 +592,8 @@ public final class PlayerClaimMenu extends ChestMenu {
         Claim claim = state.claim(viewedKey).orElse(null);
         contents.setItem(4, PlayerDashboardMenu.icon(
                 Items.GRASS_BLOCK,
-                Component.translatable("gui.rovenfall.player.current_chunk"),
-                Component.translatable("gui.rovenfall.player.claim_location",
-                        viewedKey.dimension().identifier().toString(), viewedKey.chunkX(), viewedKey.chunkZ()),
+                Component.translatable("gui.rovenfall.claim.current_land"),
+                Component.translatable("gui.rovenfall.claim.current_location"),
                 Component.translatable("gui.rovenfall.player.owned_claims", state.claimCount(viewerId)),
                 Component.translatable("gui.rovenfall.player.balance", state.economyBalance(viewerId).orElse(0L))));
         addBack();
@@ -630,7 +626,7 @@ public final class PlayerClaimMenu extends ChestMenu {
         contents.setItem(10, PlayerDashboardMenu.icon(
                 Items.PLAYER_HEAD,
                 Component.translatable("gui.rovenfall.claim.owner"),
-                Component.translatable("gui.rovenfall.claim.player_uuid", claim.ownerId().toString()),
+                playerName(claim.ownerId()),
                 Component.translatable("gui.rovenfall.player.role",
                         Component.translatable(claim.roleOf(viewerId).translationKey()))));
         contents.setItem(12, PlayerDashboardMenu.icon(
@@ -648,7 +644,7 @@ public final class PlayerClaimMenu extends ChestMenu {
                 Component.translatable("gui.rovenfall.claim.transfer"),
                 claim.pendingTransferTo()
                         .<Component>map(id -> Component.translatable(
-                                "gui.rovenfall.claim.transfer_pending", id.toString()))
+                                "gui.rovenfall.claim.transfer_pending", playerName(id)))
                         .orElseGet(() -> Component.translatable("gui.rovenfall.claim.transfer_none"))));
 
         if (actions.contains(PermissionAction.VIEW_TRUSTED)) {
@@ -829,7 +825,7 @@ public final class PlayerClaimMenu extends ChestMenu {
                         ? Component.translatable("gui.rovenfall.claim.amount", confirmation.amount())
                         : Component.empty(),
                 confirmation.targetId() != null
-                        ? Component.translatable("gui.rovenfall.claim.player_uuid", confirmation.targetId().toString())
+                        ? playerName(confirmation.targetId())
                         : Component.empty()));
         contents.setItem(29, PlayerDashboardMenu.icon(
                 Items.BARRIER,
@@ -843,14 +839,18 @@ public final class PlayerClaimMenu extends ChestMenu {
     }
 
     private ItemStack playerIcon(UUID playerId, Component... lore) {
+        return PlayerDashboardMenu.icon(Items.PLAYER_HEAD, playerName(playerId), lore);
+    }
+
+    private Component playerName(UUID playerId) {
         ServerPlayer player = viewer.level().getServer().getPlayerList().getPlayer(playerId);
-        Component name = player == null
-                ? Component.literal(playerId.toString())
-                : player.getDisplayName();
-        Component[] completeLore = new Component[lore.length + 1];
-        completeLore[0] = Component.translatable("gui.rovenfall.claim.player_uuid", playerId.toString());
-        System.arraycopy(lore, 0, completeLore, 1, lore.length);
-        return PlayerDashboardMenu.icon(Items.PLAYER_HEAD, name, completeLore);
+        if (player != null) {
+            return player.getDisplayName();
+        }
+        return platform().playerRecord(playerId)
+                .flatMap(PlayerRecord::displayName)
+                .<Component>map(Component::literal)
+                .orElseGet(() -> Component.translatable("gui.rovenfall.player.unknown_player"));
     }
 
     private ItemStack settingsIcon(ClaimSettings settings) {

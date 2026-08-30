@@ -132,7 +132,7 @@ public final class RovenfallInventoryClient {
             return;
         }
         if (event.getNewScreen() instanceof ContainerScreen screen
-                && !(screen instanceof RovenfallPlayerMenuScreen)) {
+                && !isRovenfallPlayerMenuScreen(screen)) {
             Optional<Screen> replacement = replacePlayerMenu(screen, minecraft.player);
             if (replacement.isPresent()) {
                 event.setNewScreen(replacement.orElseThrow());
@@ -143,7 +143,7 @@ public final class RovenfallInventoryClient {
 
     private static void replaceCurrentPlayerMenu(Minecraft minecraft) {
         if (minecraft.gui.screen() instanceof ContainerScreen screen
-                && !(screen instanceof RovenfallPlayerMenuScreen)) {
+                && !isRovenfallPlayerMenuScreen(screen)) {
             replacePlayerMenu(screen, minecraft.player).ifPresent(minecraft.gui::setScreen);
         }
     }
@@ -157,7 +157,16 @@ public final class RovenfallInventoryClient {
         if (kind.isEmpty()) {
             return Optional.empty();
         }
-        return Optional.of(new RovenfallPlayerMenuScreen(
-                screen.getMenu(), player.getInventory(), screen.getTitle(), kind.orElseThrow()));
+        PlayerMenuNetwork.MenuKind resolved = kind.orElseThrow();
+        return Optional.of(resolved.isAdministration()
+                ? new RovenfallPlayerMenuScreen(
+                        screen.getMenu(), player.getInventory(), screen.getTitle(), resolved)
+                : new RovenfallCustomPlayerMenuScreen(
+                        screen.getMenu(), player.getInventory(), screen.getTitle(), resolved));
+    }
+
+    private static boolean isRovenfallPlayerMenuScreen(ContainerScreen screen) {
+        return screen instanceof RovenfallPlayerMenuScreen
+                || screen instanceof RovenfallCustomPlayerMenuScreen;
     }
 }
