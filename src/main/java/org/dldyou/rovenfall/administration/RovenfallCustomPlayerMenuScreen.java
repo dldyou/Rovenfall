@@ -23,6 +23,8 @@ import org.lwjgl.glfw.GLFW;
 final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
     private final List<RovenfallMenuCardButton> cards = new ArrayList<>();
     private RovenfallPlayerMenuLayout.Layout layout;
+    private Button technicalButton;
+    private boolean advanced;
     private int page;
     private int contentCount;
     private int observedStateId;
@@ -79,6 +81,7 @@ final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
         for (int index = 0; index < toolbarSlots.size(); index++) {
             addCard(toolbarSlots.get(index), layout.toolbarButton(index, toolbarSlots.size()));
         }
+        addTechnicalButton();
         if (pages > 1) {
             addPageButton(-1, layout.previousPageButton(), "gui.rovenfall.player.previous").active = page > 0;
             addPageButton(1, layout.nextPageButton(), "gui.rovenfall.player.next").active = page + 1 < pages;
@@ -107,13 +110,34 @@ final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
         List<Component> tooltip = slot.getItem().getTooltipLines(
                 tooltipContext, minecraft.player, TooltipFlag.NORMAL);
         Component title = tooltip.isEmpty() ? slot.getItem().getHoverName() : tooltip.getFirst();
-        Component summary = tooltip.size() > 1 ? tooltip.get(1) : Component.empty();
+        List<Component> exposed = exposedLines(tooltip, advanced);
+        Component summary = exposed.size() > 1 ? exposed.get(1) : Component.empty();
         Button.Builder builder = Button.builder(title, ignored -> activate(slotId))
-                .tooltip(Tooltip.create(joinLines(tooltip)))
+                .tooltip(Tooltip.create(joinLines(exposed)))
                 .bounds(bounds.x(), bounds.y(), bounds.width(), bounds.height());
         RovenfallMenuCardButton card = new RovenfallMenuCardButton(
-                builder, font, slot.getItem(), summary, tooltip);
+                builder, font, slot.getItem(), summary, exposed);
         cards.add(addRenderableWidget(card));
+    }
+
+    private void addTechnicalButton() {
+        Component narration = Component.translatable("gui.rovenfall.admin.advanced");
+        var bounds = layout.technicalButton();
+        technicalButton = addRenderableWidget(Button.builder(Component.literal("⋮"), ignored -> toggleAdvanced())
+                .createNarration(ignored -> narration.copy())
+                .tooltip(Tooltip.create(joinLines(List.of(
+                        narration,
+                        Component.translatable("gui.rovenfall.admin.advanced_info_hint")))))
+                .bounds(bounds.x(), bounds.y(), bounds.width(), bounds.height())
+                .build(RovenfallButton::new));
+    }
+
+    private void toggleAdvanced() {
+        advanced = !advanced;
+        rebuildCards(false);
+        setFocused(technicalButton);
+        technicalButton.setFocused(true);
+        afterKeyboardAction();
     }
 
     private Button addPageButton(int delta, RovenfallPlayerMenuLayout.Bounds bounds, String translationKey) {
@@ -242,6 +266,11 @@ final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
+        if (advanced && event.key() == GLFW.GLFW_KEY_C
+                && (event.modifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
+            copyAdvancedDetails();
+            return true;
+        }
         if (event.key() == GLFW.GLFW_KEY_PAGE_UP && changePage(-1)) {
             return true;
         }
@@ -249,6 +278,17 @@ final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
             return true;
         }
         return super.keyPressed(event);
+    }
+
+    private void copyAdvancedDetails() {
+        RovenfallMenuCardButton selected = selectedCard();
+        if (selected == null) {
+            return;
+        }
+        minecraft.keyboardHandler.setClipboard(selected.detailLines().stream()
+                .map(Component::getString)
+                .filter(value -> !value.isBlank())
+                .collect(java.util.stream.Collectors.joining(System.lineSeparator())));
     }
 
     private boolean changePage(int delta) {
@@ -288,6 +328,10 @@ final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
         return Component.translatable(
                 "gui.rovenfall.player.page", contentCount == 0 ? 0 : page + 1,
                 contentCount == 0 ? 0 : pageCount(), contentCount);
+    }
+
+    static List<Component> exposedLines(List<Component> lines, boolean advanced) {
+        return advanced ? List.copyOf(lines) : RovenfallAdministrationMenuScreen.publicLines(lines);
     }
 
     private static Component joinLines(List<Component> lines) {

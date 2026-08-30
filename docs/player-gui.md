@@ -12,11 +12,23 @@ Rovenfall turns the ordinary survival inventory into the primary player entry po
 - Destructive or paid actions show a confirmation page. A changed permission, price, definition, claim, balance, or RPG state makes that confirmation stale and prevents the mutation.
 - Unavailable management controls are represented by a barrier with a written permission explanation; meaning never relies on item color alone.
 
+Keyboard focus uses a bright outer ring with a dark inner edge, distinct from mouse hover.
+Every visible action is a native focusable button. Both main Enter and keypad Enter submit a
+focused administration search or typed form. Player cards hide UUIDs, namespaced identifiers,
+and long evidence hashes by default; the focusable **Advanced details** button reveals and can
+narrate that technical information when it is needed.
+
 The server remains authoritative. The client sends only an open-tab request or a vanilla container click. Menu identity, session state, button type, permissions, prices, inventory contents, balances, definitions, and transaction results are validated on the server.
 
 ## Recovery and command fallbacks
 
 The inventory tabs are the normal player path. `/rovenfall menu` reopens the Overview if a resource pack, another mod, or a screen transition prevents entry through the inventory. The following command roots remain emergency or automation fallbacks and execute the same server-owned services:
+
+Rovenfall replaces only the exact vanilla survival `InventoryScreen`. Creative, spectator, and
+subclassed inventory screens supplied by another mod remain untouched. Unknown container menus
+also remain on their original screen unless the server sends an exact Rovenfall menu identity.
+See [Custom UI release validation](ui-release-validation.md) for the supported GUI-scale matrix,
+compatibility checks, and manual capture procedure.
 
 - `/rovenfall shop buy|sell ...`
 - `/rovenfall claim buy|info|trust|untrust|settings|transfer|sell ...`

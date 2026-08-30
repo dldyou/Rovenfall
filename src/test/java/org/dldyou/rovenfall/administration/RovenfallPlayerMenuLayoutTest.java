@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+import net.minecraft.network.chat.Component;
 import org.junit.jupiter.api.Test;
 
 final class RovenfallPlayerMenuLayoutTest {
@@ -62,5 +64,36 @@ final class RovenfallPlayerMenuLayoutTest {
         assertTrue(previous.x() >= layout.panel().x());
         assertTrue(next.right() <= layout.panel().right());
         assertFalse(layout.pageLabel().overlaps(previous));
+        assertFalse(next.overlaps(layout.technicalButton()));
+    }
+
+    @Test
+    void supportedGuiScaleMatrixKeepsEveryControlOnScreen() {
+        for (int[] size : List.of(
+                new int[]{320, 240}, new int[]{426, 240}, new int[]{640, 360},
+                new int[]{854, 480}, new int[]{1_920, 1_080})) {
+            var layout = RovenfallPlayerMenuLayout.fit(size[0], size[1]);
+            assertTrue(layout.panel().x() >= 0);
+            assertTrue(layout.panel().right() <= size[0]);
+            assertTrue(layout.panel().bottom() <= size[1]);
+            assertTrue(layout.previousPageButton().x() >= layout.panel().x());
+            assertTrue(layout.technicalButton().right() <= layout.panel().right());
+            assertFalse(layout.previousPageButton().overlaps(layout.nextPageButton()));
+            assertFalse(layout.nextPageButton().overlaps(layout.technicalButton()));
+        }
+    }
+
+    @Test
+    void technicalIdentifiersAreHiddenUntilAdvancedDetailsAreEnabled() {
+        List<Component> lines = List.of(
+                Component.literal("토지 정보"),
+                Component.literal("소유자: 모험가"),
+                Component.literal("UUID: 00000000-0000-0000-0000-000000000001"),
+                Component.literal("rovenfall:warrior"));
+
+        assertEquals(List.of("토지 정보", "소유자: 모험가"),
+                RovenfallCustomPlayerMenuScreen.exposedLines(lines, false).stream()
+                        .map(Component::getString).toList());
+        assertEquals(lines, RovenfallCustomPlayerMenuScreen.exposedLines(lines, true));
     }
 }

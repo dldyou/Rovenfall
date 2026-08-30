@@ -74,6 +74,9 @@ jobs:
       - name: Build and run required tests
         run: ./gradlew clean build recoveryRehearsal --warning-mode all -Pmod_version="${{ steps.version.outputs.version }}"
 
+      - name: Inspect distributable JAR
+        run: ./gradlew inspectReleaseJar --warning-mode all -Pmod_version="${{ steps.version.outputs.version }}"
+
       - name: Prepare release assets
         id: assets
         shell: bash

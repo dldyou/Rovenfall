@@ -86,12 +86,17 @@ final class RovenfallUiTheme {
             int width,
             int height,
             boolean active,
-            boolean hoveredOrFocused) {
-        int background = !active ? BUTTON_DISABLED : hoveredOrFocused ? BUTTON_HOVERED : BUTTON;
-        int border = active && hoveredOrFocused ? GOLD_BRIGHT : active ? GOLD : GOLD_DARK;
+            boolean hovered,
+            boolean focused) {
+        int background = !active ? BUTTON_DISABLED : hovered || focused ? BUTTON_HOVERED : BUTTON;
+        int border = active && (hovered || focused) ? GOLD_BRIGHT : active ? GOLD : GOLD_DARK;
         graphics.fill(x, y, x + width, y + height, background);
         graphics.outline(x, y, width, height, border);
         graphics.fill(x + 2, y + 2, x + width - 2, y + 3, active ? 0x665B3D1D : 0x332B2118);
+        if (focused) {
+            graphics.outline(x, y, width, height, FOCUS_INNER);
+            graphics.outline(x - 1, y - 1, width + 2, height + 2, FOCUS_OUTER);
+        }
     }
 
     private static void extractCornerOrnaments(GuiGraphicsExtractor graphics, PanelBounds panel) {

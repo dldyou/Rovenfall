@@ -24,6 +24,10 @@ final class ReleaseWorkflowTest {
         assertTrue(workflow.contains("workflow_dispatch:"));
         assertTrue(step(steps, "Build and run required tests").run()
                 .startsWith("./gradlew clean build recoveryRehearsal"));
+        assertTrue(step(steps, "Inspect distributable JAR").run()
+                .startsWith("./gradlew inspectReleaseJar --warning-mode all"));
+        assertTrue(workflow.indexOf("- name: Inspect distributable JAR")
+                < workflow.indexOf("- name: Prepare release assets"));
         assertEquals("github.event_name == 'workflow_dispatch'", upload.condition());
         assertEquals("actions/upload-artifact@v7", upload.uses());
         assertEquals("github.event_name == 'push'", publish.condition());

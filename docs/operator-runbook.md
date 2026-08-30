@@ -141,6 +141,12 @@ back by restoring the prior config file, not by partially editing live SavedData
 
 ## Release-candidate gate
 
+Before the automated gate, complete the manual client matrix and attach real captures according
+to [Custom UI release validation](ui-release-validation.md). Do not approve an RC with a clipped
+action, unreachable keyboard control, missing narration, raw identifier in the normal view, or an
+inventory-mod compatibility regression. The capture manifest must name the tested commit and may
+not claim evidence that was not captured from a running client.
+
 Use JDK 25. From a clean checkout of the intended `main` commit run:
 
 ```powershell

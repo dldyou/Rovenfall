@@ -6,6 +6,7 @@ final class RovenfallPlayerMenuLayout {
     static final int CARD_HEIGHT = 42;
     static final int TOOLBAR_HEIGHT = 24;
     static final int PAGE_BUTTON_WIDTH = 52;
+    static final int TECHNICAL_BUTTON_WIDTH = 20;
     private static final int EDGE = 8;
     private static final int HEADER_HEIGHT = 30;
     private static final int MAX_WIDTH = 760;
@@ -74,7 +75,7 @@ final class RovenfallPlayerMenuLayout {
 
         Bounds previousPageButton() {
             return new Bounds(
-                    panel.right() - PAGE_BUTTON_WIDTH * 2 - GAP - 7,
+                    panel.right() - TECHNICAL_BUTTON_WIDTH - GAP - PAGE_BUTTON_WIDTH * 2 - GAP - 7,
                     panel.y() + 3,
                     PAGE_BUTTON_WIDTH,
                     20);
@@ -82,9 +83,17 @@ final class RovenfallPlayerMenuLayout {
 
         Bounds nextPageButton() {
             return new Bounds(
-                    panel.right() - PAGE_BUTTON_WIDTH - 7,
+                    panel.right() - TECHNICAL_BUTTON_WIDTH - GAP - PAGE_BUTTON_WIDTH - 7,
                     panel.y() + 3,
                     PAGE_BUTTON_WIDTH,
+                    20);
+        }
+
+        Bounds technicalButton() {
+            return new Bounds(
+                    panel.right() - TECHNICAL_BUTTON_WIDTH - 7,
+                    panel.y() + 3,
+                    TECHNICAL_BUTTON_WIDTH,
                     20);
         }
 

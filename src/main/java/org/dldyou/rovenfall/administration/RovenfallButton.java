@@ -18,7 +18,8 @@ final class RovenfallButton extends Button {
                 getWidth(),
                 getHeight(),
                 active,
-                isHoveredOrFocused());
+                isHovered(),
+                isFocused());
         extractDefaultLabel(graphics.textRendererForWidget(this, GuiGraphicsExtractor.HoveredTextEffects.NONE));
     }
 }
