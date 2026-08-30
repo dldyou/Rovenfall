@@ -11,11 +11,7 @@ import net.minecraft.world.inventory.Slot;
 /** Vanilla inventory behavior with compact RPG navigation layered above it. */
 public final class RovenfallInventoryScreen extends InventoryScreen {
     private static final int TAB_COUNT = 6;
-    private static final int TAB_GAP = 2;
-    private static final int TAB_HEIGHT = 20;
-    private int tabX;
-    private int tabY;
-    private int tabWidth;
+    private RovenfallInventoryLayout.TabLayout tabLayout;
 
     public RovenfallInventoryScreen(Player player) {
         super(player);
@@ -24,10 +20,7 @@ public final class RovenfallInventoryScreen extends InventoryScreen {
     @Override
     protected void init() {
         super.init();
-        tabWidth = Math.clamp((width - 16 - TAB_GAP * (TAB_COUNT - 1)) / TAB_COUNT, 40, 72);
-        int totalWidth = tabWidth * TAB_COUNT + TAB_GAP * (TAB_COUNT - 1);
-        tabX = (width - totalWidth) / 2;
-        tabY = Math.max(4, topPos - TAB_HEIGHT - 4);
+        tabLayout = RovenfallInventoryLayout.tabs(width, topPos);
 
         Button inventory = addTab(0, "gui.rovenfall.inventory.inventory", null);
         inventory.active = false;
@@ -36,6 +29,7 @@ public final class RovenfallInventoryScreen extends InventoryScreen {
         addTab(3, "gui.rovenfall.inventory.skills", PlayerMenuNetwork.MenuTarget.SKILLS);
         addTab(4, "gui.rovenfall.inventory.shops", PlayerMenuNetwork.MenuTarget.SHOPS);
         addTab(5, "gui.rovenfall.inventory.admin", PlayerMenuNetwork.MenuTarget.ADMIN);
+        RovenfallInventoryClient.requestSummary();
     }
 
     @Override
@@ -44,6 +38,9 @@ public final class RovenfallInventoryScreen extends InventoryScreen {
         RovenfallUiTheme.extractPanel(
                 graphics,
                 RovenfallUiTheme.panelFor(leftPos, topPos, imageWidth, imageHeight, 8));
+        RovenfallUiTheme.extractField(graphics, leftPos + 7, topPos + 5, 88, 75, false);
+        RovenfallUiTheme.extractField(graphics, leftPos + 95, topPos + 5, 77, 51, false);
+        RovenfallUiTheme.extractField(graphics, leftPos + 7, topPos + 82, 165, 77, false);
         RovenfallUiTheme.extractPortrait(graphics, leftPos + 25, topPos + 7, 51, 72);
         if (minecraft != null && minecraft.player != null) {
             InventoryScreen.extractEntityInInventoryFollowsMouse(
@@ -58,19 +55,25 @@ public final class RovenfallInventoryScreen extends InventoryScreen {
                     mouseY,
                     minecraft.player);
         }
-        int totalWidth = tabWidth * TAB_COUNT + TAB_GAP * (TAB_COUNT - 1);
+        extractCharacterSummary(graphics);
         RovenfallUiTheme.extractField(
                 graphics,
-                tabX - 3,
-                tabY - 3,
-                totalWidth + 6,
-                TAB_HEIGHT + 6,
+                tabLayout.x() - 3,
+                tabLayout.y() - 3,
+                tabLayout.right() - tabLayout.x() + 6,
+                tabLayout.bottom() - tabLayout.y() + 6,
                 false);
     }
 
     @Override
     protected void extractLabels(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-        graphics.text(font, title, titleLabelX, titleLabelY, RovenfallUiTheme.TEXT_PRIMARY, false);
+        graphics.text(
+                font,
+                Component.translatable("gui.rovenfall.inventory.title"),
+                titleLabelX,
+                titleLabelY,
+                RovenfallUiTheme.TEXT_PRIMARY,
+                false);
     }
 
     @Override
@@ -97,7 +100,54 @@ public final class RovenfallInventoryScreen extends InventoryScreen {
                                 ? "gui.rovenfall.inventory.current_tab"
                                 : "gui.rovenfall.inventory.open_tab",
                         label)))
-                .bounds(tabX + index * (tabWidth + TAB_GAP), tabY, tabWidth, TAB_HEIGHT)
+                .bounds(
+                        tabLayout.xFor(index),
+                        tabLayout.yFor(index),
+                        tabLayout.tabWidth(),
+                        RovenfallInventoryLayout.TAB_HEIGHT)
                 .build(RovenfallButton::new));
+    }
+
+    private void extractCharacterSummary(GuiGraphicsExtractor graphics) {
+        var bounds = RovenfallInventoryLayout.summary(width, leftPos, topPos, imageWidth);
+        if (bounds.compact()) {
+            RovenfallUiTheme.extractField(
+                    graphics, bounds.x(), bounds.y(), bounds.width(), bounds.height(), false);
+        } else {
+            RovenfallUiTheme.extractPanel(graphics, new RovenfallUiTheme.PanelBounds(
+                    bounds.x(), bounds.y(), bounds.width(), bounds.height()));
+        }
+
+        var summary = RovenfallInventoryClient.summary(minecraft == null ? null : minecraft.player);
+        Component balance = summary.<Component>map(value -> Component.translatable(
+                        "gui.rovenfall.inventory.balance", value.balance()))
+                .orElseGet(() -> Component.translatable("gui.rovenfall.inventory.summary_loading"));
+        Component career = summary.<Component>map(value -> Component.translatable(
+                        "gui.rovenfall.inventory.active_career",
+                        value.careerTranslationKey().isEmpty()
+                                ? Component.translatable("gui.rovenfall.inventory.career_none")
+                                : Component.translatable(value.careerTranslationKey())))
+                .orElseGet(() -> Component.translatable("gui.rovenfall.inventory.summary_loading"));
+
+        int textX = bounds.x() + 5;
+        int textWidth = bounds.width() - 10;
+        int balanceY = bounds.compact() ? bounds.y() + 3 : bounds.y() + 27;
+        int careerY = balanceY + 11;
+        if (!bounds.compact()) {
+            drawClipped(graphics, Component.translatable("gui.rovenfall.inventory.character_summary"),
+                    textX, bounds.y() + 7, textWidth, RovenfallUiTheme.TEXT_PRIMARY);
+        }
+        drawClipped(graphics, balance, textX, balanceY, textWidth, RovenfallUiTheme.TEXT_PRIMARY);
+        drawClipped(graphics, career, textX, careerY, textWidth, RovenfallUiTheme.TEXT_MUTED);
+    }
+
+    private void drawClipped(
+            GuiGraphicsExtractor graphics, Component text, int x, int y, int width, int color) {
+        graphics.enableScissor(x, y, x + width, y + font.lineHeight);
+        try {
+            graphics.text(font, text, x, y, color, false);
+        } finally {
+            graphics.disableScissor();
+        }
     }
 }

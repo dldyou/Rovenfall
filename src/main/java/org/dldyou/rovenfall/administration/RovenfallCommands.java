@@ -466,6 +466,8 @@ public final class RovenfallCommands {
         event.getDispatcher().register(Commands.literal("rovenfall")
                 .then(Commands.literal("menu")
                         .executes(context -> openPlayerMenu(context.getSource())))
+                .then(Commands.literal("inventory")
+                        .executes(context -> openCharacterInventory(context.getSource())))
                 .then(playerShopCommand)
                 .then(playerClaimCommand)
                 .then(RpgCommands.careerCommand())
@@ -491,6 +493,10 @@ public final class RovenfallCommands {
     private static int openPlayerMenu(CommandSourceStack source) throws CommandSyntaxException {
         PlayerDashboardMenu.open(source.getPlayerOrException());
         return 1;
+    }
+
+    private static int openCharacterInventory(CommandSourceStack source) throws CommandSyntaxException {
+        return PlayerMenuNetwork.sendInventorySummary(source.getPlayerOrException(), true) ? 1 : 0;
     }
 
     private static int openAdministrationGui(CommandSourceStack source) throws CommandSyntaxException {

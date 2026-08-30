@@ -2,6 +2,7 @@ package org.dldyou.rovenfall.administration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.netty.buffer.Unpooled;
@@ -57,6 +58,43 @@ final class PlayerMenuNetworkTest {
     }
 
     @Test
+    void inventorySummaryPayloadsAreBoundedAndDoNotCarryTechnicalPlayerIdentity() {
+        var request = new PlayerMenuNetwork.InventorySummaryRequest(true);
+        var requestBuffer = new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
+        try {
+            PlayerMenuNetwork.InventorySummaryRequest.STREAM_CODEC.encode(requestBuffer, request);
+            assertTrue(requestBuffer.readableBytes() <= PlayerMenuNetwork.MAX_INVENTORY_SUMMARY_REQUEST_PACKET_BYTES);
+            assertEquals(request, PlayerMenuNetwork.InventorySummaryRequest.STREAM_CODEC.decode(requestBuffer));
+            assertEquals(0, requestBuffer.readableBytes());
+        } finally {
+            requestBuffer.release();
+        }
+
+        var response = new PlayerMenuNetwork.InventorySummary(125L, "career.rovenfall.novice", true);
+        var responseBuffer = new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
+        try {
+            PlayerMenuNetwork.InventorySummary.STREAM_CODEC.encode(responseBuffer, response);
+            assertTrue(responseBuffer.readableBytes() <= PlayerMenuNetwork.MAX_INVENTORY_SUMMARY_PACKET_BYTES);
+            assertEquals(response, PlayerMenuNetwork.InventorySummary.STREAM_CODEC.decode(responseBuffer));
+            assertEquals(0, responseBuffer.readableBytes());
+        } finally {
+            responseBuffer.release();
+        }
+        assertFalse(new PlayerMenuNetwork.InventorySummary(125L,
+                "x".repeat(PlayerMenuNetwork.MAX_CAREER_TRANSLATION_KEY_LENGTH + 1), false).isValid());
+        assertThrows(RuntimeException.class, () -> {
+            var buffer = new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
+            try {
+                PlayerMenuNetwork.InventorySummary.STREAM_CODEC.encode(buffer,
+                        new PlayerMenuNetwork.InventorySummary(125L,
+                                "x".repeat(PlayerMenuNetwork.MAX_CAREER_TRANSLATION_KEY_LENGTH + 1), false));
+            } finally {
+                buffer.release();
+            }
+        });
+    }
+
+    @Test
     void rejectsUnknownTargetsAndBoundsRepeatedOpenRequests() {
         assertTrue(PlayerMenuNetwork.MenuTarget.fromWireId(0).isPresent());
         assertTrue(PlayerMenuNetwork.MenuTarget.fromWireId(3).isPresent());
@@ -68,6 +106,28 @@ final class PlayerMenuNetworkTest {
         assertFalse(PlayerMenuNetwork.canOpen(100L, 104));
         assertTrue(PlayerMenuNetwork.canOpen(100L, 105));
         assertTrue(PlayerMenuNetwork.canOpen(100L, 90));
+
+        assertTrue(PlayerMenuNetwork.canRequestInventorySummary(null, 100));
+        assertFalse(PlayerMenuNetwork.canRequestInventorySummary(100L, 104));
+        assertTrue(PlayerMenuNetwork.canRequestInventorySummary(100L, 105));
+    }
+
+    @Test
+    void inventorySummaryRequiresTheCurrentSurvivalInventoryContext() {
+        assertTrue(PlayerMenuNetwork.isValidInventorySummaryContext(
+                PlayerMenuNetwork.PACKET_REVISION, true, false, false, true, false));
+        assertFalse(PlayerMenuNetwork.isValidInventorySummaryContext(
+                PlayerMenuNetwork.PACKET_REVISION + 1, true, false, false, true, false));
+        assertFalse(PlayerMenuNetwork.isValidInventorySummaryContext(
+                PlayerMenuNetwork.PACKET_REVISION, false, false, false, true, false));
+        assertFalse(PlayerMenuNetwork.isValidInventorySummaryContext(
+                PlayerMenuNetwork.PACKET_REVISION, true, true, false, true, false));
+        assertFalse(PlayerMenuNetwork.isValidInventorySummaryContext(
+                PlayerMenuNetwork.PACKET_REVISION, true, false, true, true, false));
+        assertFalse(PlayerMenuNetwork.isValidInventorySummaryContext(
+                PlayerMenuNetwork.PACKET_REVISION, true, false, false, false, false));
+        assertTrue(PlayerMenuNetwork.isValidInventorySummaryContext(
+                PlayerMenuNetwork.PACKET_REVISION, true, false, false, false, true));
     }
 
     @Test
