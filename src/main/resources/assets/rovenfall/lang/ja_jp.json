@@ -159,6 +159,8 @@
   "economy_transaction_kind.rovenfall.career_promotion_payment": "キャリア昇格費用",
   "economy_transaction_kind.rovenfall.rpg_skill_payment": "RPG スキル費用",
   "economy_transaction_kind.rovenfall.boss_reward": "ボス報酬",
+  "economy_transaction_kind.rovenfall.quest_reward": "クエスト報酬",
+  "economy_transaction_kind.rovenfall.quest_completion": "クエスト完了",
   "claim_role.rovenfall.owner": "所有者",
   "claim_role.rovenfall.manager": "管理者",
   "claim_role.rovenfall.builder": "建築者",

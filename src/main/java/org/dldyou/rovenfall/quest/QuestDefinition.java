@@ -1,6 +1,7 @@
 package org.dldyou.rovenfall.quest;
 
 import com.mojang.serialization.Codec;
+import com.mojang.serialization.DataResult;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import java.util.List;
 import java.util.Optional;
@@ -12,11 +13,14 @@ public record QuestDefinition(
         String descriptionTranslationKey,
         int version,
         List<Identifier> prerequisites,
-        List<Objective> objectives) {
+        List<Objective> objectives,
+        Rewards rewards) {
     public static final int MAX_VERSION = 1_000_000;
     public static final int MAX_PREREQUISITES = 32;
     public static final int MAX_OBJECTIVES = 32;
     public static final int MAX_REQUIRED_COUNT = 1_000_000_000;
+    public static final long MAX_CURRENCY_REWARD = 1_000_000_000L;
+    public static final long MAX_ACTIVITY_XP_REWARD = 1_000_000_000L;
 
     public static final Codec<QuestDefinition> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.string(1, 160).fieldOf("translation_key").forGetter(QuestDefinition::translationKey),
@@ -26,12 +30,59 @@ public record QuestDefinition(
             Identifier.CODEC.listOf(0, MAX_PREREQUISITES).optionalFieldOf("prerequisites", List.of())
                     .forGetter(QuestDefinition::prerequisites),
             Objective.CODEC.listOf(1, MAX_OBJECTIVES).fieldOf("objectives")
-                    .forGetter(QuestDefinition::objectives)
+                    .forGetter(QuestDefinition::objectives),
+            Rewards.CODEC.optionalFieldOf("rewards", Rewards.NONE).forGetter(QuestDefinition::rewards)
     ).apply(instance, QuestDefinition::new));
 
     public QuestDefinition {
         prerequisites = List.copyOf(prerequisites);
         objectives = List.copyOf(objectives);
+        rewards = rewards == null ? Rewards.NONE : rewards;
+    }
+
+    public QuestDefinition(
+            String translationKey,
+            String descriptionTranslationKey,
+            int version,
+            List<Identifier> prerequisites,
+            List<Objective> objectives) {
+        this(translationKey, descriptionTranslationKey, version, prerequisites, objectives, Rewards.NONE);
+    }
+
+    public record Rewards(long currency, Optional<ActivityXpReward> activityXp) {
+        private static final Codec<Long> CURRENCY_CODEC = Codec.LONG.validate(value ->
+                value >= 0 && value <= MAX_CURRENCY_REWARD ? DataResult.success(value)
+                        : DataResult.error(() -> "Quest currency reward exceeds its bound"));
+        public static final Rewards NONE = new Rewards(0, Optional.empty());
+        public static final Codec<Rewards> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                CURRENCY_CODEC.optionalFieldOf("currency", 0L)
+                        .forGetter(Rewards::currency),
+                ActivityXpReward.CODEC.optionalFieldOf("activity_xp").forGetter(Rewards::activityXp)
+        ).apply(instance, Rewards::new));
+
+        public Rewards {
+            activityXp = activityXp == null ? Optional.empty() : activityXp;
+        }
+
+        public boolean isValid() {
+            return currency >= 0 && currency <= MAX_CURRENCY_REWARD
+                    && activityXp.map(ActivityXpReward::isValid).orElse(true);
+        }
+    }
+
+    public record ActivityXpReward(Identifier activity, long amount) {
+        private static final Codec<Long> AMOUNT_CODEC = Codec.LONG.validate(value ->
+                value >= 1 && value <= MAX_ACTIVITY_XP_REWARD ? DataResult.success(value)
+                        : DataResult.error(() -> "Quest activity XP reward exceeds its bound"));
+        public static final Codec<ActivityXpReward> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                Identifier.CODEC.fieldOf("activity").forGetter(ActivityXpReward::activity),
+                AMOUNT_CODEC.fieldOf("amount")
+                        .forGetter(ActivityXpReward::amount)
+        ).apply(instance, ActivityXpReward::new));
+
+        public boolean isValid() {
+            return activity != null && amount >= 1 && amount <= MAX_ACTIVITY_XP_REWARD;
+        }
     }
 
     public record Objective(Identifier id, Kind kind, Optional<Identifier> target, int requiredCount) {

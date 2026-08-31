@@ -75,6 +75,24 @@ final class RpgPlayerStateTest {
         assertTrue(migratedFromOne.isWritable());
         assertEquals(0L, migratedFromOne.state(player).lastActiveSkillRequestId());
 
+        CompoundTag schemaThree = (CompoundTag) RpgPlayerSavedData.CODEC
+                .encodeStart(NbtOps.INSTANCE, root).getOrThrow();
+        schemaThree.putInt("schema_version", 3);
+        schemaThree.remove("quest_activity_evidence");
+        var migratedFromThree = RpgPlayerSavedData.CODEC.parse(NbtOps.INSTANCE, schemaThree).getOrThrow();
+        assertEquals(RpgPlayerSavedData.CURRENT_SCHEMA_VERSION, migratedFromThree.schemaVersion());
+        assertTrue(migratedFromThree.isWritable());
+        assertEquals(0, migratedFromThree.questActivityEvidenceCount());
+
+        CompoundTag schemaFour = (CompoundTag) RpgPlayerSavedData.CODEC
+                .encodeStart(NbtOps.INSTANCE, root).getOrThrow();
+        schemaFour.putInt("schema_version", 4);
+        schemaFour.remove("quest_reward_receipts");
+        var migratedFromFour = RpgPlayerSavedData.CODEC.parse(NbtOps.INSTANCE, schemaFour).getOrThrow();
+        assertEquals(RpgPlayerSavedData.CURRENT_SCHEMA_VERSION, migratedFromFour.schemaVersion());
+        assertTrue(migratedFromFour.isWritable());
+        assertEquals(0, migratedFromFour.questRewardReceiptCount());
+
         CompoundTag future = (CompoundTag) RpgPlayerSavedData.CODEC.encodeStart(NbtOps.INSTANCE, root).getOrThrow();
         future.putInt("schema_version", RpgPlayerSavedData.CURRENT_SCHEMA_VERSION + 1);
         var readOnly = RpgPlayerSavedData.CODEC.parse(NbtOps.INSTANCE, future).getOrThrow();

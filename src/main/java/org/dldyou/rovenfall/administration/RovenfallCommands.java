@@ -33,6 +33,7 @@ import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimRegionPolicy;
 import org.dldyou.rovenfall.claims.ClaimRole;
 import org.dldyou.rovenfall.claims.ClaimSettings;
+import org.dldyou.rovenfall.quest.QuestProgressRuntime;
 import org.dldyou.rovenfall.rpg.RpgCommands;
 import org.dldyou.rovenfall.world.ProtectedRegion;
 import org.dldyou.rovenfall.world.PortalDefinition;
@@ -1193,6 +1194,7 @@ public final class RovenfallCommands {
                 transactionId);
         return switch (result.status()) {
             case SUCCESS -> {
+                QuestProgressRuntime.acceptEconomyEvidence(source.getServer(), transactionId);
                 var claim = result.claim().orElseThrow();
                 source.sendSuccess(() -> Component.translatable(
                         "command.rovenfall.claim.buy.success",

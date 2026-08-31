@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Set;
@@ -34,7 +35,9 @@ import org.dldyou.rovenfall.world.WorldTopology;
 
 public final class PlatformSavedData extends SavedData {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
-    public static final int CURRENT_SCHEMA_VERSION = 14;
+    private static final Identifier QUEST_COMPLETED_AUDIT =
+            Identifier.fromNamespaceAndPath(Rovenfall.MOD_ID, "quest_completed");
+    public static final int CURRENT_SCHEMA_VERSION = 15;
     public static final int MAX_PROTECTED_REGIONS = 128;
     public static final int MAX_INDEXED_PROTECTED_CHUNKS = 131_072;
     public static final int MAX_AUDIT_PAGE_SIZE = 50;
@@ -42,6 +45,7 @@ public final class PlatformSavedData extends SavedData {
     static final int MAX_ECONOMY_ALERTS = 10_000;
     static final int MAX_RPG_SKILL_OPERATIONS = 10_000;
     static final int MAX_RPG_ADMIN_OPERATIONS = 10_000;
+    static final int MAX_QUEST_REWARD_RECEIPTS = 50_000;
     static final int MAX_RATE_INDEX_PER_PLAYER = 10_000;
     static final long ECONOMY_TRANSACTION_RETENTION_MILLIS = Duration.ofDays(30).toMillis();
     private static final long NON_EXPIRING_RECEIPT = -1L;
@@ -123,7 +127,7 @@ public final class PlatformSavedData extends SavedData {
     private final Map<UUID, Long> economyBalances;
     private final Map<UUID, Long> economyTransactions;
     private final Map<Identifier, ShopInstance> shopInstances;
-    private final Map<UUID, EconomyTransactionReceipt> economyReceipts;
+    private final NavigableMap<UUID, EconomyTransactionReceipt> economyReceipts;
     private final List<EconomyAlert> economyAlerts;
     private final Map<ClaimKey, Claim> claims;
     private final Map<UUID, ClaimMutationReceipt> claimReceipts;
@@ -152,6 +156,7 @@ public final class PlatformSavedData extends SavedData {
                     .thenComparing(PortalCooldownExpiry::playerId)
                     .thenComparing(PortalCooldownExpiry::portalId));
     private int activePortalCooldownCount;
+    private int questRewardReceiptCount;
     private final java.util.Set<Identifier> shopDependencyLocks = new HashSet<>();
     private final Map<UUID, Long> lastDeniedAuditByActor = new LinkedHashMap<>(16, 0.75F, true);
 
@@ -189,7 +194,7 @@ public final class PlatformSavedData extends SavedData {
         this.economyBalances = new HashMap<>(economyBalances);
         this.economyTransactions = new HashMap<>(economyTransactions);
         this.shopInstances = new HashMap<>(shopInstances);
-        this.economyReceipts = new HashMap<>(economyReceipts);
+        this.economyReceipts = new TreeMap<>(economyReceipts);
         this.economyAlerts = new ArrayList<>(economyAlerts);
         this.claims = new TreeMap<>(Comparator.comparing(ClaimKey::auditTarget));
         this.claims.putAll(claims);
@@ -254,6 +259,10 @@ public final class PlatformSavedData extends SavedData {
         var state = migration.state();
         boolean rpgSkillEvidenceValid = rpgSkillEvidenceValid(
                 state.rpgSkillOperations(), state.economyReceipts(), state.economyTransactions());
+        boolean questRewardEvidenceValid = state.economyReceipts().values().stream()
+                .filter(receipt -> isPermanentQuestReceiptKind(receipt.kind()))
+                .limit(MAX_QUEST_REWARD_RECEIPTS + 1L)
+                .count() <= MAX_QUEST_REWARD_RECEIPTS;
         return new PlatformSavedData(
                 state.schemaVersion(),
                 state.adminRoles(),
@@ -271,7 +280,7 @@ public final class PlatformSavedData extends SavedData {
                 state.wildernessResetState(),
                 state.rpgSkillOperations(),
                 state.rpgAdminOperations(),
-                migration.writable() && rpgSkillEvidenceValid
+                migration.writable() && rpgSkillEvidenceValid && questRewardEvidenceValid
         );
     }
 
@@ -705,6 +714,140 @@ public final class PlatformSavedData extends SavedData {
                 .findFirst();
     }
 
+    /** Stable cursor batch used by bounded quest source recovery. */
+    public EconomyReceiptBatch economyReceiptsAfter(UUID afterExclusive, int maximumEntries) {
+        if (maximumEntries < 1 || maximumEntries > 256) {
+            throw new IllegalArgumentException("Economy receipt recovery batch must be between 1 and 256");
+        }
+        NavigableMap<UUID, EconomyTransactionReceipt> tail = afterExclusive == null
+                ? economyReceipts : economyReceipts.tailMap(afterExclusive, false);
+        List<Map.Entry<UUID, EconomyTransactionReceipt>> entries = tail.entrySet().stream()
+                .limit(maximumEntries)
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
+                .toList();
+        return new EconomyReceiptBatch(entries,
+                entries.isEmpty() ? Optional.empty() : Optional.of(entries.getLast().getKey()),
+                !entries.isEmpty() && economyReceipts.higherKey(entries.getLast().getKey()) != null);
+    }
+
+    /** Owning-root boundary for idempotent quest completion audit evidence. */
+    public boolean recordQuestAudit(AuditEntry auditEntry) {
+        if (!writable || auditEntry == null || auditEntry.actorId() == null
+                || !AdministrationService.SYSTEM_ACTOR.equals(auditEntry.actorId())
+                || auditEntry.actionType() == null
+                || !Rovenfall.MOD_ID.equals(auditEntry.actionType().getNamespace())
+                || !auditEntry.actionType().getPath().startsWith("quest_")
+                || auditEntry.transactionId() == null || ZERO_UUID.equals(auditEntry.transactionId())
+                || auditEntry.timestampEpochMillis() < 0) {
+            return false;
+        }
+        Optional<AuditEntry> retained = auditTransaction(auditEntry.transactionId());
+        if (retained.isPresent()) {
+            return retained.orElseThrow().equals(auditEntry);
+        }
+        commitAudit(auditEntry);
+        return true;
+    }
+
+    /** Reserves the single permanent Platform slot before a zero-currency quest pays an RPG reward. */
+    public boolean reserveQuestCompletionReceipt(
+            UUID playerId, UUID completionTransactionId, long timestampEpochMillis) {
+        if (!writable || playerId == null || ZERO_UUID.equals(playerId)
+                || completionTransactionId == null || ZERO_UUID.equals(completionTransactionId)
+                || timestampEpochMillis < 0) {
+            return false;
+        }
+        EconomyTransactionReceipt reservation = new EconomyTransactionReceipt(
+                timestampEpochMillis, AdministrationService.SYSTEM_ACTOR, playerId,
+                EconomyTransactionReceipt.Kind.QUEST_REWARD, 0,
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), 0,
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                EconomyTransactionReceipt.CompensationDecision.NONE);
+        EconomyTransactionReceipt retained = economyReceipts.get(completionTransactionId);
+        if (retained != null) {
+            boolean finalized = retained.kind() == EconomyTransactionReceipt.Kind.QUEST_COMPLETION
+                    && retained.amount() == 0;
+            return (sameReceiptEvidence(retained, reservation) || finalized
+                            && retained.timestampEpochMillis() == timestampEpochMillis
+                            && retained.actorId().equals(AdministrationService.SYSTEM_ACTOR)
+                            && retained.playerId().equals(playerId))
+                    && retained.reversedBy().isEmpty()
+                    && retained.invalidatedByRestore().isEmpty();
+        }
+        if (!canCommitQuestRewardTransaction(completionTransactionId, timestampEpochMillis)) {
+            return false;
+        }
+        prepareLedgerForCommit(timestampEpochMillis);
+        economyTransactions.put(completionTransactionId, timestampEpochMillis);
+        commitReceiptEvidence(completionTransactionId, reservation, List.of());
+        setDirty();
+        return true;
+    }
+
+    /** Finalizes one non-expiring quest receipt and its rotating audit entry in one owner root. */
+    public boolean recordQuestCompletionAudit(
+            UUID playerId,
+            UUID completionTransactionId,
+            long currencyAmount,
+            AuditEntry auditEntry) {
+        if (!writable || playerId == null || ZERO_UUID.equals(playerId)
+                || completionTransactionId == null || ZERO_UUID.equals(completionTransactionId)
+                || currencyAmount < 0
+                || auditEntry == null || !AdministrationService.SYSTEM_ACTOR.equals(auditEntry.actorId())
+                || !QUEST_COMPLETED_AUDIT.equals(auditEntry.actionType())
+                || !auditEntry.target().startsWith(playerId + "/")
+                || auditEntry.transactionId() == null || ZERO_UUID.equals(auditEntry.transactionId())
+                || auditEntry.timestampEpochMillis() < 0) {
+            return false;
+        }
+        EconomyTransactionReceipt marker = new EconomyTransactionReceipt(
+                auditEntry.timestampEpochMillis(), AdministrationService.SYSTEM_ACTOR, playerId,
+                EconomyTransactionReceipt.Kind.QUEST_COMPLETION, currencyAmount,
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), 0,
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                EconomyTransactionReceipt.CompensationDecision.NONE);
+        Optional<AuditEntry> retainedAudit = auditTransaction(auditEntry.transactionId());
+        if (retainedAudit.isPresent() && !retainedAudit.orElseThrow().equals(auditEntry)) {
+            return false;
+        }
+        EconomyTransactionReceipt retained = economyReceipts.get(completionTransactionId);
+        if (retained != null) {
+            if (sameReceiptEvidence(retained, marker)
+                    && retained.reversedBy().isEmpty()
+                    && retained.invalidatedByRestore().isEmpty()) {
+                return retainedAudit.isEmpty() || retainedAudit.filter(auditEntry::equals).isPresent();
+            }
+            EconomyTransactionReceipt pendingCurrency = new EconomyTransactionReceipt(
+                    auditEntry.timestampEpochMillis(), AdministrationService.SYSTEM_ACTOR, playerId,
+                    EconomyTransactionReceipt.Kind.QUEST_REWARD, currencyAmount,
+                    Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), 0,
+                    Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+                    EconomyTransactionReceipt.CompensationDecision.NONE);
+            if (!sameReceiptEvidence(retained, pendingCurrency)
+                    || retained.reversedBy().isPresent() || retained.invalidatedByRestore().isPresent()) {
+                return false;
+            }
+            economyReceipts.put(completionTransactionId, marker);
+            if (retainedAudit.isEmpty()) {
+                commitAudit(auditEntry);
+            } else {
+                setDirty();
+            }
+            return true;
+        }
+        if (currencyAmount != 0 || !canCommitQuestRewardTransaction(
+                completionTransactionId, auditEntry.timestampEpochMillis())) {
+            return false;
+        }
+        prepareLedgerForCommit(auditEntry.timestampEpochMillis());
+        economyTransactions.put(completionTransactionId, auditEntry.timestampEpochMillis());
+        commitReceiptEvidence(completionTransactionId, marker, List.of());
+        if (retainedAudit.isEmpty()) {
+            commitAudit(auditEntry);
+        }
+        return true;
+    }
+
     public AuditPage auditPage(int page, int pageSize) {
         if (page < 0 || pageSize < 1 || pageSize > MAX_AUDIT_PAGE_SIZE) {
             throw new IllegalArgumentException("Invalid audit page request");
@@ -788,14 +931,32 @@ public final class PlatformSavedData extends SavedData {
                 continue;
             }
             EconomyTransactionReceipt authoritative = receipts.get(entry.getKey());
-            if (authoritative != null && !sameReceiptEvidence(authoritative, entry.getValue())) {
+            if (authoritative != null) {
+                if (sameReceiptEvidence(authoritative, entry.getValue())) {
+                    continue;
+                }
+                if (sameQuestCompletionFinalization(authoritative, entry.getValue())) {
+                    receipts.put(entry.getKey(), entry.getValue());
+                    continue;
+                }
                 return new RestorePreparation(RestorePreparationStatus.EVIDENCE_CONFLICT, Optional.empty());
             }
             if (authoritative == null) {
-                receipts.put(entry.getKey(), entry.getValue().invalidatedByRestore(transactionId));
+                if (isPermanentQuestReceiptKind(entry.getValue().kind())
+                        && entry.getValue().amount() == 0) {
+                    receipts.put(entry.getKey(), entry.getValue());
+                } else if (isPermanentQuestReceiptKind(entry.getValue().kind())) {
+                    return new RestorePreparation(RestorePreparationStatus.EVIDENCE_CONFLICT, Optional.empty());
+                } else {
+                    receipts.put(entry.getKey(), entry.getValue().invalidatedByRestore(transactionId));
+                }
             }
         }
-        if (receipts.size() > MAX_ECONOMY_TRANSACTIONS) {
+        long questRewardReceipts = receipts.values().stream()
+                .filter(receipt -> isPermanentQuestReceiptKind(receipt.kind()))
+                .count();
+        if (receipts.size() > MAX_ECONOMY_TRANSACTIONS
+                || questRewardReceipts > MAX_QUEST_REWARD_RECEIPTS) {
             return new RestorePreparation(RestorePreparationStatus.LEDGER_FULL, Optional.empty());
         }
         if (receiptLinkError(receipts).isPresent()) {
@@ -939,6 +1100,11 @@ public final class PlatformSavedData extends SavedData {
         return canCommitReceiptTransaction(transactionId, timestampEpochMillis);
     }
 
+    boolean canCommitQuestRewardTransaction(UUID transactionId, long timestampEpochMillis) {
+        return questRewardReceiptCount < MAX_QUEST_REWARD_RECEIPTS
+                && canCommitReceiptTransaction(transactionId, timestampEpochMillis);
+    }
+
     boolean canCommitRpgSkillPayment(UUID transactionId, long timestampEpochMillis) {
         if (rpgSkillOperations.containsKey(transactionId)
                 || !canCommitReceiptTransaction(transactionId, timestampEpochMillis)) {
@@ -1001,8 +1167,10 @@ public final class PlatformSavedData extends SavedData {
             List<EconomyAlert> alerts,
             AuditEntry auditEntry) {
         validateEvidence(playerId, transactionId, timestampEpochMillis, receipt, alerts);
-        if (economyReceipts.containsKey(transactionId)
-                || !canCommitReceiptTransaction(transactionId, timestampEpochMillis)) {
+        boolean canCommit = receipt.kind() == EconomyTransactionReceipt.Kind.QUEST_REWARD
+                ? canCommitQuestRewardTransaction(transactionId, timestampEpochMillis)
+                : canCommitReceiptTransaction(transactionId, timestampEpochMillis);
+        if (economyReceipts.containsKey(transactionId) || !canCommit) {
             throw new IllegalStateException("Economy transaction receipt cannot be committed");
         }
         prepareLedgerForCommit(timestampEpochMillis);
@@ -1353,13 +1521,28 @@ public final class PlatformSavedData extends SavedData {
 
     private static boolean sameReceiptEvidence(
             EconomyTransactionReceipt first, EconomyTransactionReceipt second) {
+        return first.kind() == second.kind() && sameReceiptEvidenceExceptKind(first, second);
+    }
+
+    private static boolean sameQuestCompletionFinalization(
+            EconomyTransactionReceipt snapshot, EconomyTransactionReceipt current) {
+        return snapshot.kind() == EconomyTransactionReceipt.Kind.QUEST_REWARD
+                && current.kind() == EconomyTransactionReceipt.Kind.QUEST_COMPLETION
+                && snapshot.reversedBy().isEmpty()
+                && snapshot.invalidatedByRestore().isEmpty()
+                && current.reversedBy().isEmpty()
+                && current.invalidatedByRestore().isEmpty()
+                && sameReceiptEvidenceExceptKind(snapshot, current);
+    }
+
+    private static boolean sameReceiptEvidenceExceptKind(
+            EconomyTransactionReceipt first, EconomyTransactionReceipt second) {
         boolean itemMatches = first.item().isEmpty() && second.item().isEmpty()
                 || first.item().isPresent() && second.item().isPresent()
                 && net.minecraft.world.item.ItemStack.matches(first.item().orElseThrow(), second.item().orElseThrow());
         return first.timestampEpochMillis() == second.timestampEpochMillis()
                 && first.actorId().equals(second.actorId())
                 && first.playerId().equals(second.playerId())
-                && first.kind() == second.kind()
                 && first.amount() == second.amount()
                 && first.claim().equals(second.claim())
                 && first.shopId().equals(second.shopId())
@@ -1408,6 +1591,9 @@ public final class PlatformSavedData extends SavedData {
             UUID transactionId, EconomyTransactionReceipt receipt, List<EconomyAlert> alerts) {
         if (economyReceipts.putIfAbsent(transactionId, receipt) != null) {
             throw new IllegalStateException("Economy transaction receipt already exists");
+        }
+        if (isPermanentQuestReceiptKind(receipt.kind())) {
+            questRewardReceiptCount++;
         }
         registerReceiptExpiry(transactionId, receipt);
         trimReceiptCapacity(receipt.timestampEpochMillis(), MAX_ECONOMY_TRANSACTIONS);
@@ -1534,7 +1720,8 @@ public final class PlatformSavedData extends SavedData {
 
     private void registerReceiptExpiry(UUID transactionId, EconomyTransactionReceipt receipt) {
         RpgSkillOperation operation = rpgSkillOperations.get(transactionId);
-        long expiry = operation != null && operation.phase() == RpgSkillOperation.Phase.PENDING
+        long expiry = isPermanentQuestReceiptKind(receipt.kind())
+                || operation != null && operation.phase() == RpgSkillOperation.Phase.PENDING
                 ? NON_EXPIRING_RECEIPT
                 : receiptExpiry(receipt.timestampEpochMillis());
         recordReceiptExpiry(transactionId, expiry);
@@ -1592,7 +1779,10 @@ public final class PlatformSavedData extends SavedData {
         if (operation != null && operation.phase() == RpgSkillOperation.Phase.PENDING) {
             throw new IllegalStateException("Pending paid RPG operation receipt cannot be evicted");
         }
-        economyReceipts.remove(transactionId);
+        EconomyTransactionReceipt removed = economyReceipts.remove(transactionId);
+        if (removed != null && isPermanentQuestReceiptKind(removed.kind())) {
+            questRewardReceiptCount--;
+        }
         receiptEvictionTimes.remove(transactionId);
         rpgSkillOperations.remove(transactionId);
     }
@@ -1600,9 +1790,14 @@ public final class PlatformSavedData extends SavedData {
     private void rebuildReceiptExpiryIndex() {
         receiptEvictionTimes.clear();
         receiptExpiryQueue.clear();
+        questRewardReceiptCount = 0;
         economyReceipts.forEach((transactionId, receipt) -> {
             RpgSkillOperation operation = rpgSkillOperations.get(transactionId);
-            long expiry = operation != null && operation.phase() == RpgSkillOperation.Phase.PENDING
+            if (isPermanentQuestReceiptKind(receipt.kind())) {
+                questRewardReceiptCount++;
+            }
+            long expiry = isPermanentQuestReceiptKind(receipt.kind())
+                    || operation != null && operation.phase() == RpgSkillOperation.Phase.PENDING
                     ? NON_EXPIRING_RECEIPT
                     : receiptExpiry(receipt.timestampEpochMillis());
             receiptEvictionTimes.put(transactionId, expiry);
@@ -1648,6 +1843,11 @@ public final class PlatformSavedData extends SavedData {
             Map<UUID, EconomyTransactionReceipt> receipts,
             java.util.Collection<UUID> activeTransactionIds) {
         Set<UUID> retained = new HashSet<>();
+        receipts.forEach((transactionId, receipt) -> {
+            if (isPermanentQuestReceiptKind(receipt.kind())) {
+                retained.add(transactionId);
+            }
+        });
         for (UUID transactionId : activeTransactionIds) {
             EconomyTransactionReceipt receipt = receipts.get(transactionId);
             if (receipt != null) {
@@ -1932,6 +2132,11 @@ public final class PlatformSavedData extends SavedData {
         return Optional.empty();
     }
 
+    private static boolean isPermanentQuestReceiptKind(EconomyTransactionReceipt.Kind kind) {
+        return kind == EconomyTransactionReceipt.Kind.QUEST_REWARD
+                || kind == EconomyTransactionReceipt.Kind.QUEST_COMPLETION;
+    }
+
     private static DataResult<List<ReceiptEntry>> receiptEntries(Map<UUID, EconomyTransactionReceipt> receipts) {
         return DataResult.success(receipts.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
@@ -2157,6 +2362,16 @@ public final class PlatformSavedData extends SavedData {
     public record AuditPage(int page, int totalPages, int totalEntries, List<AuditEntry> entries) {
         public AuditPage {
             entries = List.copyOf(entries);
+        }
+    }
+
+    public record EconomyReceiptBatch(
+            List<Map.Entry<UUID, EconomyTransactionReceipt>> entries,
+            Optional<UUID> nextCursor,
+            boolean hasMore) {
+        public EconomyReceiptBatch {
+            entries = List.copyOf(entries);
+            nextCursor = nextCursor == null ? Optional.empty() : nextCursor;
         }
     }
 

@@ -3,9 +3,12 @@ package org.dldyou.rovenfall.quest;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Optional;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.UnaryOperator;
 import net.minecraft.core.UUIDUtil;
@@ -18,8 +21,13 @@ import org.dldyou.rovenfall.Rovenfall;
 /** Persistent quest state, deliberately separate from platform, economy, and RPG roots. */
 public final class QuestPlayerSavedData extends SavedData {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
-    public static final int CURRENT_SCHEMA_VERSION = 1;
+    public static final int CURRENT_SCHEMA_VERSION = 4;
     public static final int MAX_PLAYERS = 100_000;
+    static final long PROCESSED_EVIDENCE_OWNER_RETENTION_MILLIS = Duration.ofDays(30).toMillis();
+    static final long PROCESSED_EVIDENCE_RETIRE_CONFIRMATION_MILLIS = Duration.ofDays(30).toMillis();
+    static final long PROCESSED_EVIDENCE_REPLAY_MILLIS =
+            PROCESSED_EVIDENCE_OWNER_RETENTION_MILLIS
+                    + PROCESSED_EVIDENCE_RETIRE_CONFIRMATION_MILLIS;
 
     private static final Codec<Map<UUID, QuestPlayerState>> PLAYERS_CODEC = PlayerEntry.CODEC
             .listOf(0, MAX_PLAYERS)
@@ -36,11 +44,14 @@ public final class QuestPlayerSavedData extends SavedData {
             CODEC);
 
     private static final Map<Integer, UnaryOperator<PersistedState>> MIGRATIONS = Map.of(
-            0, state -> state.atVersion(1));
+            0, state -> state.atVersion(1),
+            1, state -> state.atVersion(2),
+            2, state -> state.atVersion(3),
+            3, state -> state.atVersion(4));
 
     private final int schemaVersion;
     private final boolean writable;
-    private final Map<UUID, QuestPlayerState> players;
+    private final NavigableMap<UUID, QuestPlayerState> players;
 
     public QuestPlayerSavedData() {
         this(CURRENT_SCHEMA_VERSION, Map.of(), true);
@@ -49,7 +60,7 @@ public final class QuestPlayerSavedData extends SavedData {
     private QuestPlayerSavedData(int schemaVersion, Map<UUID, QuestPlayerState> players, boolean writable) {
         this.schemaVersion = schemaVersion;
         this.writable = writable;
-        this.players = new LinkedHashMap<>(players);
+        this.players = new TreeMap<>(players);
     }
 
     private static QuestPlayerSavedData decode(int schemaVersion, Map<UUID, QuestPlayerState> players) {
@@ -100,6 +111,21 @@ public final class QuestPlayerSavedData extends SavedData {
         return new Snapshot(schemaVersion, players);
     }
 
+    public PlayerBatch playersAfter(UUID afterExclusive, int maximumEntries) {
+        if (maximumEntries < 1 || maximumEntries > 256) {
+            throw new IllegalArgumentException("Quest player recovery batch must be between 1 and 256");
+        }
+        NavigableMap<UUID, QuestPlayerState> tail = afterExclusive == null
+                ? players : players.tailMap(afterExclusive, false);
+        java.util.List<Map.Entry<UUID, QuestPlayerState>> entries = tail.entrySet().stream()
+                .limit(maximumEntries)
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
+                .toList();
+        return new PlayerBatch(entries,
+                entries.isEmpty() ? Optional.empty() : Optional.of(entries.getLast().getKey()),
+                !entries.isEmpty() && players.higherKey(entries.getLast().getKey()) != null);
+    }
+
     /** Commits only when the caller's observed state is still current. */
     boolean commit(UUID playerId, QuestPlayerState expected, QuestPlayerState updated) {
         if (!writable || playerId == null || ZERO_UUID.equals(playerId)
@@ -116,6 +142,57 @@ public final class QuestPlayerSavedData extends SavedData {
         players.put(playerId, updated);
         setDirty();
         return true;
+    }
+
+    /** Two-phase retirement for processed IDs whose owner-domain evidence is no longer retained. */
+    int maintainProcessedEvidence(
+            UUID playerId,
+            Map<UUID, Boolean> ownerEvidencePresent,
+            long timestampEpochMillis,
+            int maximumEntries) {
+        if (!writable || playerId == null || ZERO_UUID.equals(playerId)
+                || ownerEvidencePresent == null || timestampEpochMillis < 0
+                || maximumEntries < 1 || maximumEntries > 256
+                || ownerEvidencePresent.size() > maximumEntries) {
+            return 0;
+        }
+        QuestPlayerState current = state(playerId);
+        Map<UUID, QuestPlayerState.ProcessedEvidence> processed =
+                new LinkedHashMap<>(current.processedEvidence());
+        long ownerRetentionCutoff = timestampEpochMillis <= PROCESSED_EVIDENCE_OWNER_RETENTION_MILLIS
+                ? 0L
+                : timestampEpochMillis - PROCESSED_EVIDENCE_OWNER_RETENTION_MILLIS;
+        long retirementCutoff = timestampEpochMillis <= PROCESSED_EVIDENCE_RETIRE_CONFIRMATION_MILLIS
+                ? 0L
+                : timestampEpochMillis - PROCESSED_EVIDENCE_RETIRE_CONFIRMATION_MILLIS;
+        int changed = 0;
+        for (Map.Entry<UUID, Boolean> candidate : ownerEvidencePresent.entrySet()) {
+            QuestPlayerState.ProcessedEvidence evidence = processed.get(candidate.getKey());
+            if (evidence == null || evidence.kind().isEmpty()
+                    || evidence.timestampEpochMillis() >= ownerRetentionCutoff) {
+                continue;
+            }
+            if (Boolean.TRUE.equals(candidate.getValue())) {
+                if (evidence.ownerEvidenceMissingSinceEpochMillis().isPresent()) {
+                    processed.put(candidate.getKey(), evidence.ownerEvidenceMissingSince(Optional.empty()));
+                    changed++;
+                }
+                continue;
+            }
+            Optional<Long> missingSince = evidence.ownerEvidenceMissingSinceEpochMillis();
+            if (missingSince.isEmpty()) {
+                processed.put(candidate.getKey(), evidence.ownerEvidenceMissingSince(
+                        Optional.of(timestampEpochMillis)));
+                changed++;
+            } else if (missingSince.orElseThrow() < retirementCutoff) {
+                processed.remove(candidate.getKey());
+                changed++;
+            }
+        }
+        if (changed == 0) {
+            return 0;
+        }
+        return commit(playerId, current, new QuestPlayerState(current.quests(), processed)) ? changed : 0;
     }
 
     private static DataResult<Map<UUID, QuestPlayerState>> playersFromEntries(java.util.List<PlayerEntry> entries) {
@@ -159,6 +236,16 @@ public final class QuestPlayerSavedData extends SavedData {
 
         public Optional<QuestPlayerState> player(UUID playerId) {
             return Optional.ofNullable(players.get(playerId));
+        }
+    }
+
+    public record PlayerBatch(
+            java.util.List<Map.Entry<UUID, QuestPlayerState>> entries,
+            Optional<UUID> nextCursor,
+            boolean hasMore) {
+        public PlayerBatch {
+            entries = java.util.List.copyOf(entries);
+            nextCursor = nextCursor == null ? Optional.empty() : nextCursor;
         }
     }
 }
