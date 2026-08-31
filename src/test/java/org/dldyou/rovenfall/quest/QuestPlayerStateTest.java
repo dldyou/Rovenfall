@@ -35,6 +35,21 @@ final class QuestPlayerStateTest {
     }
 
     @Test
+    void completionReceiptRetainsCapturedRewardIntentAcrossRestart() {
+        UUID transactionId = uuid(12);
+        QuestPlayerState.RewardOperation operation = new QuestPlayerState.RewardOperation(
+                1, transactionId, 100, Optional.of(id("mining")), 25, 1_000,
+                QuestPlayerState.RewardOperation.Phase.CAPTURED);
+        QuestPlayerState.CompletionReceipt receipt = new QuestPlayerState.CompletionReceipt(
+                1, transactionId, 2_000, operation);
+        QuestPlayerState state = state(Map.of(FIRST_STEPS,
+                new QuestPlayerState.QuestEntry(1, Map.of(GATHER_WOOD, 8L), Optional.of(receipt))));
+
+        assertEquals(state, roundTrip(QuestPlayerState.CODEC, state));
+        assertEquals(Optional.of(operation), receipt.rewardOperation());
+    }
+
+    @Test
     void retainsUnknownQuestEvidenceWithoutPruning() {
         QuestPlayerState state = state(Map.of(
                 HIDDEN, entry(2, Map.of(), 11),
@@ -70,6 +85,14 @@ final class QuestPlayerStateTest {
         QuestPlayerSavedData migrated = QuestPlayerSavedData.CODEC.parse(NbtOps.INSTANCE, schemaZero).getOrThrow();
         assertEquals(QuestPlayerSavedData.CURRENT_SCHEMA_VERSION, migrated.schemaVersion());
         assertTrue(migrated.isWritable());
+
+        CompoundTag schemaThree = (CompoundTag) QuestPlayerSavedData.CODEC
+                .encodeStart(NbtOps.INSTANCE, root).getOrThrow();
+        schemaThree.putInt("schema_version", 3);
+        QuestPlayerSavedData migratedFromThree = QuestPlayerSavedData.CODEC
+                .parse(NbtOps.INSTANCE, schemaThree).getOrThrow();
+        assertEquals(QuestPlayerSavedData.CURRENT_SCHEMA_VERSION, migratedFromThree.schemaVersion());
+        assertTrue(migratedFromThree.isWritable());
         assertEquals(state, migrated.state(player));
 
         CompoundTag future = (CompoundTag) QuestPlayerSavedData.CODEC.encodeStart(NbtOps.INSTANCE, root).getOrThrow();

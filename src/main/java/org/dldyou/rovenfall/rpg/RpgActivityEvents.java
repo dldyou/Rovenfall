@@ -35,6 +35,7 @@ import org.dldyou.rovenfall.claims.ClaimConfig;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimRole;
 import org.dldyou.rovenfall.mobs.BossEncounterRuntime;
+import org.dldyou.rovenfall.quest.QuestProgressRuntime;
 
 /** NeoForge adapters for server-observed activity outcomes. */
 public final class RpgActivityEvents {
@@ -280,8 +281,22 @@ public final class RpgActivityEvents {
             long amount,
             String source,
             long timestamp) {
-        ActivityXpAwardService.award(RpgPlayerSavedData.get(server), RpgDefinitionReloadListener.snapshot(server),
-                playerId, activity, amount, timestamp, UUID.randomUUID(), source);
+        UUID transactionId = UUID.randomUUID();
+        RpgPlayerSavedData state = RpgPlayerSavedData.get(server);
+        RpgDefinitionSnapshot definitions = RpgDefinitionReloadListener.snapshot(server);
+        boolean retainQuestEvidence = QuestProgressRuntime.shouldCaptureActivityEvidence(
+                server, playerId, activity);
+        if (retainQuestEvidence) {
+            QuestProgressRuntime.prepareActivityEvidenceCapacity(server, playerId, timestamp);
+        }
+        var result = retainQuestEvidence
+                ? ActivityXpAwardService.awardObservedActivity(
+                        state, definitions, playerId, activity, amount, timestamp, transactionId, source)
+                : ActivityXpAwardService.award(
+                        state, definitions, playerId, activity, amount, timestamp, transactionId, source);
+        if (retainQuestEvidence && result.status() == ActivityXpAwardService.Status.SUCCESS) {
+            QuestProgressRuntime.acceptActivityEvidence(server, playerId, transactionId);
+        }
     }
 
     private static ServerPlayer playerFrom(Entity entity) {

@@ -159,6 +159,8 @@
   "economy_transaction_kind.rovenfall.career_promotion_payment": "Career promotion payment",
   "economy_transaction_kind.rovenfall.rpg_skill_payment": "RPG skill payment",
   "economy_transaction_kind.rovenfall.boss_reward": "Boss reward",
+  "economy_transaction_kind.rovenfall.quest_reward": "Quest reward",
+  "economy_transaction_kind.rovenfall.quest_completion": "Quest completion",
   "claim_role.rovenfall.owner": "Owner",
   "claim_role.rovenfall.manager": "Manager",
   "claim_role.rovenfall.builder": "Builder",

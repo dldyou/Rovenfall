@@ -6,32 +6,49 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.StringRepresentable;
 
 /** Immutable, server-owned quest evidence for one player. */
-public record QuestPlayerState(Map<Identifier, QuestEntry> quests) {
+public record QuestPlayerState(
+        Map<Identifier, QuestEntry> quests,
+        Map<UUID, ProcessedEvidence> processedEvidence) {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
     public static final int MAX_QUESTS = 4_096;
     public static final int MAX_OBJECTIVES_PER_QUEST = QuestDefinition.MAX_OBJECTIVES;
     public static final long MAX_OBJECTIVE_PROGRESS = QuestDefinition.MAX_REQUIRED_COUNT;
     public static final int MAX_DEFINITION_VERSION = QuestDefinition.MAX_VERSION;
+    public static final int MAX_PROCESSED_EVIDENCE = 4_096;
 
     private static final Codec<Map<Identifier, QuestEntry>> QUESTS_CODEC = QuestEntryMapEntry.CODEC
             .listOf(0, MAX_QUESTS)
             .flatXmap(QuestPlayerState::questsFromEntries, QuestPlayerState::questEntries);
+    private static final Codec<Map<UUID, ProcessedEvidence>> PROCESSED_EVIDENCE_CODEC = ProcessedEvidenceEntry.CODEC
+            .listOf(0, MAX_PROCESSED_EVIDENCE)
+            .flatXmap(QuestPlayerState::processedFromEntries, QuestPlayerState::processedEntries);
 
     public static final Codec<QuestPlayerState> CODEC = RecordCodecBuilder.<QuestPlayerState>create(instance -> instance.group(
-            QUESTS_CODEC.optionalFieldOf("quests", Map.of()).forGetter(QuestPlayerState::quests)
+            QUESTS_CODEC.optionalFieldOf("quests", Map.of()).forGetter(QuestPlayerState::quests),
+            PROCESSED_EVIDENCE_CODEC.optionalFieldOf("processed_evidence", Map.of())
+                    .forGetter(QuestPlayerState::processedEvidence)
     ).apply(instance, QuestPlayerState::new)).validate(QuestPlayerState::validate);
 
-    public static final QuestPlayerState EMPTY = new QuestPlayerState(Map.of());
+    public static final QuestPlayerState EMPTY = new QuestPlayerState(Map.of(), Map.of());
 
     public QuestPlayerState {
-        quests = Map.copyOf(quests);
+        NavigableMap<Identifier, QuestEntry> orderedQuests = new TreeMap<>(quests);
+        quests = java.util.Collections.unmodifiableNavigableMap(orderedQuests);
+        processedEvidence = Map.copyOf(processedEvidence);
+    }
+
+    public QuestPlayerState(Map<Identifier, QuestEntry> quests) {
+        this(quests, Map.of());
     }
 
     public boolean isValid() {
@@ -67,7 +84,7 @@ public record QuestPlayerState(Map<Identifier, QuestEntry> quests) {
     }
 
     private static Optional<String> validationError(QuestPlayerState state) {
-        if (state.quests().size() > MAX_QUESTS) {
+        if (state.quests().size() > MAX_QUESTS || state.processedEvidence().size() > MAX_PROCESSED_EVIDENCE) {
             return Optional.of("Quest player state exceeds the quest limit");
         }
         Set<UUID> transactions = java.util.HashSet.newHashSet(state.quests().size());
@@ -78,6 +95,16 @@ public record QuestPlayerState(Map<Identifier, QuestEntry> quests) {
             if (entry.getValue().completion().isPresent()
                     && !transactions.add(entry.getValue().completion().orElseThrow().transactionId())) {
                 return Optional.of("Quest player state contains a duplicate completion transaction");
+            }
+            if (entry.getValue().pendingReward().isPresent()
+                    && !transactions.add(entry.getValue().pendingReward().orElseThrow().transactionId())) {
+                return Optional.of("Quest player state contains a duplicate reward transaction");
+            }
+        }
+        for (Map.Entry<UUID, ProcessedEvidence> entry : state.processedEvidence().entrySet()) {
+            if (entry.getKey() == null || ZERO_UUID.equals(entry.getKey())
+                    || entry.getValue() == null || !entry.getValue().isValid()) {
+                return Optional.of("Quest player state contains invalid processed evidence");
             }
         }
         return Optional.empty();
@@ -100,9 +127,61 @@ public record QuestPlayerState(Map<Identifier, QuestEntry> quests) {
                 .toList());
     }
 
+    private static DataResult<Map<UUID, ProcessedEvidence>> processedFromEntries(
+            List<ProcessedEvidenceEntry> entries) {
+        Map<UUID, ProcessedEvidence> result = new LinkedHashMap<>();
+        for (ProcessedEvidenceEntry entry : entries) {
+            ProcessedEvidence evidence = new ProcessedEvidence(
+                    entry.timestamp(), entry.kind(), entry.ownerEvidenceMissingSinceEpochMillis());
+            if (ZERO_UUID.equals(entry.id()) || !evidence.isValid()
+                    || result.putIfAbsent(entry.id(), evidence) != null) {
+                return DataResult.error(() -> "Duplicate or zero processed quest evidence ID " + entry.id());
+            }
+        }
+        return DataResult.success(Map.copyOf(result));
+    }
+
+    private static DataResult<List<ProcessedEvidenceEntry>> processedEntries(
+            Map<UUID, ProcessedEvidence> values) {
+        return DataResult.success(values.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> new ProcessedEvidenceEntry(
+                        entry.getKey(), entry.getValue().timestampEpochMillis(), entry.getValue().kind(),
+                        entry.getValue().ownerEvidenceMissingSinceEpochMillis()))
+                .toList());
+    }
+
+    public record ProcessedEvidence(
+            long timestampEpochMillis,
+            Optional<QuestDefinition.Kind> kind,
+            Optional<Long> ownerEvidenceMissingSinceEpochMillis) {
+        public ProcessedEvidence {
+            kind = kind == null ? Optional.empty() : kind;
+            ownerEvidenceMissingSinceEpochMillis = ownerEvidenceMissingSinceEpochMillis == null
+                    ? Optional.empty()
+                    : ownerEvidenceMissingSinceEpochMillis;
+        }
+
+        public ProcessedEvidence(long timestampEpochMillis, QuestDefinition.Kind kind) {
+            this(timestampEpochMillis, Optional.ofNullable(kind), Optional.empty());
+        }
+
+        public boolean isValid() {
+            return timestampEpochMillis >= 0 && kind != null
+                    && ownerEvidenceMissingSinceEpochMillis != null
+                    && ownerEvidenceMissingSinceEpochMillis
+                            .filter(value -> value < timestampEpochMillis).isEmpty();
+        }
+
+        ProcessedEvidence ownerEvidenceMissingSince(Optional<Long> timestamp) {
+            return new ProcessedEvidence(timestampEpochMillis, kind, timestamp);
+        }
+    }
+
     public record QuestEntry(
             int definitionVersion,
             Map<Identifier, Long> objectiveProgress,
+            Optional<RewardOperation> pendingReward,
             Optional<CompletionReceipt> completion) {
         private static final Codec<Integer> VERSION_CODEC = Codec.intRange(1, MAX_DEFINITION_VERSION);
         private static final Codec<Map<Identifier, Long>> OBJECTIVE_PROGRESS_MAP_CODEC = ObjectiveProgressEntry.CODEC
@@ -113,12 +192,21 @@ public record QuestPlayerState(Map<Identifier, QuestEntry> quests) {
                 VERSION_CODEC.fieldOf("definition_version").forGetter(QuestEntry::definitionVersion),
                 OBJECTIVE_PROGRESS_MAP_CODEC.optionalFieldOf("objective_progress", Map.of())
                         .forGetter(QuestEntry::objectiveProgress),
+                RewardOperation.CODEC.optionalFieldOf("pending_reward").forGetter(QuestEntry::pendingReward),
                 CompletionReceipt.CODEC.optionalFieldOf("completion").forGetter(QuestEntry::completion)
         ).apply(instance, QuestEntry::new)).validate(QuestEntry::validate);
 
         public QuestEntry {
             objectiveProgress = Map.copyOf(objectiveProgress);
+            pendingReward = pendingReward == null ? Optional.empty() : pendingReward;
             completion = completion == null ? Optional.empty() : completion;
+        }
+
+        public QuestEntry(
+                int definitionVersion,
+                Map<Identifier, Long> objectiveProgress,
+                Optional<CompletionReceipt> completion) {
+            this(definitionVersion, objectiveProgress, Optional.empty(), completion);
         }
 
         public boolean isValid() {
@@ -147,6 +235,13 @@ public record QuestPlayerState(Map<Identifier, QuestEntry> quests) {
                     return Optional.of("Quest completion receipt is invalid or has a different definition version");
                 }
             }
+            if (entry.pendingReward().isPresent()) {
+                RewardOperation reward = entry.pendingReward().orElseThrow();
+                if (!reward.isValid() || reward.definitionVersion() != entry.definitionVersion()
+                        || entry.completion().isPresent()) {
+                    return Optional.of("Quest pending reward is invalid or conflicts with completion");
+                }
+            }
             return Optional.empty();
         }
 
@@ -168,7 +263,82 @@ public record QuestPlayerState(Map<Identifier, QuestEntry> quests) {
         }
     }
 
-    public record CompletionReceipt(int definitionVersion, UUID transactionId, long completedAtEpochMillis) {
+    public record RewardOperation(
+            int definitionVersion,
+            UUID transactionId,
+            long currency,
+            Optional<Identifier> activity,
+            long activityXp,
+            long startedAtEpochMillis,
+            Phase phase) {
+        private static final Codec<Long> EPOCH_CODEC = Codec.LONG.validate(value -> value >= 0
+                ? DataResult.success(value) : DataResult.error(() -> "Quest reward epoch must be non-negative"));
+        private static final Codec<Long> CURRENCY_CODEC = Codec.LONG.validate(value ->
+                value >= 0 && value <= QuestDefinition.MAX_CURRENCY_REWARD ? DataResult.success(value)
+                        : DataResult.error(() -> "Quest captured currency exceeds its bound"));
+        private static final Codec<Long> XP_CODEC = Codec.LONG.validate(value ->
+                value >= 0 && value <= QuestDefinition.MAX_ACTIVITY_XP_REWARD ? DataResult.success(value)
+                        : DataResult.error(() -> "Quest captured activity XP exceeds its bound"));
+        public static final Codec<RewardOperation> CODEC = RecordCodecBuilder.<RewardOperation>create(instance ->
+                instance.group(
+                        Codec.intRange(1, MAX_DEFINITION_VERSION).fieldOf("definition_version")
+                                .forGetter(RewardOperation::definitionVersion),
+                        UUIDUtil.STRING_CODEC.fieldOf("transaction_id").forGetter(RewardOperation::transactionId),
+                        CURRENCY_CODEC.fieldOf("currency")
+                                .forGetter(RewardOperation::currency),
+                        Identifier.CODEC.optionalFieldOf("activity").forGetter(RewardOperation::activity),
+                        XP_CODEC.fieldOf("activity_xp")
+                                .forGetter(RewardOperation::activityXp),
+                        EPOCH_CODEC.fieldOf("started_at_epoch_millis").forGetter(RewardOperation::startedAtEpochMillis),
+                        Phase.CODEC.fieldOf("phase").forGetter(RewardOperation::phase)
+                ).apply(instance, RewardOperation::new)).validate(RewardOperation::validate);
+
+        public RewardOperation {
+            activity = activity == null ? Optional.empty() : activity;
+        }
+
+        public boolean isValid() {
+            return definitionVersion >= 1 && definitionVersion <= MAX_DEFINITION_VERSION
+                    && transactionId != null && !ZERO_UUID.equals(transactionId)
+                    && currency >= 0 && currency <= QuestDefinition.MAX_CURRENCY_REWARD
+                    && activityXp >= 0 && activityXp <= QuestDefinition.MAX_ACTIVITY_XP_REWARD
+                    && ((activity.isEmpty() && activityXp == 0) || (activity.isPresent() && activityXp > 0))
+                    && startedAtEpochMillis >= 0 && phase != null;
+        }
+
+        public RewardOperation atPhase(Phase next) {
+            return new RewardOperation(definitionVersion, transactionId, currency, activity, activityXp,
+                    startedAtEpochMillis, next);
+        }
+
+        private static DataResult<RewardOperation> validate(RewardOperation operation) {
+            return operation.isValid() ? DataResult.success(operation)
+                    : DataResult.error(() -> "Quest reward operation is invalid");
+        }
+
+        public enum Phase implements StringRepresentable {
+            CAPTURED("captured"), CURRENCY_APPLIED("currency_applied"), XP_APPLIED("xp_applied"),
+            AUDIT_APPLIED("audit_applied");
+
+            public static final Codec<Phase> CODEC = StringRepresentable.fromEnum(Phase::values);
+            private final String id;
+
+            Phase(String id) {
+                this.id = id;
+            }
+
+            @Override
+            public String getSerializedName() {
+                return id;
+            }
+        }
+    }
+
+    public record CompletionReceipt(
+            int definitionVersion,
+            UUID transactionId,
+            long completedAtEpochMillis,
+            Optional<RewardOperation> rewardOperation) {
         private static final Codec<Integer> VERSION_CODEC = Codec.intRange(1, MAX_DEFINITION_VERSION);
         private static final Codec<Long> EPOCH_CODEC = Codec.LONG.validate(value ->
                 value >= 0 ? DataResult.success(value)
@@ -176,12 +346,37 @@ public record QuestPlayerState(Map<Identifier, QuestEntry> quests) {
         public static final Codec<CompletionReceipt> CODEC = RecordCodecBuilder.<CompletionReceipt>create(instance -> instance.group(
                 VERSION_CODEC.fieldOf("definition_version").forGetter(CompletionReceipt::definitionVersion),
                 UUIDUtil.STRING_CODEC.fieldOf("transaction_id").forGetter(CompletionReceipt::transactionId),
-                EPOCH_CODEC.fieldOf("completed_at_epoch_millis").forGetter(CompletionReceipt::completedAtEpochMillis)
+                EPOCH_CODEC.fieldOf("completed_at_epoch_millis").forGetter(CompletionReceipt::completedAtEpochMillis),
+                RewardOperation.CODEC.optionalFieldOf("reward_operation")
+                        .forGetter(CompletionReceipt::rewardOperation)
         ).apply(instance, CompletionReceipt::new)).validate(CompletionReceipt::validate);
+
+        /** Legacy completion records predate the captured reward intent. */
+        public CompletionReceipt(int definitionVersion, UUID transactionId, long completedAtEpochMillis) {
+            this(definitionVersion, transactionId, completedAtEpochMillis, Optional.empty());
+        }
+
+        public CompletionReceipt(
+                int definitionVersion,
+                UUID transactionId,
+                long completedAtEpochMillis,
+                RewardOperation rewardOperation) {
+            this(definitionVersion, transactionId, completedAtEpochMillis, Optional.ofNullable(rewardOperation));
+        }
+
+        public CompletionReceipt {
+            rewardOperation = rewardOperation == null ? Optional.empty() : rewardOperation;
+        }
 
         public boolean isValid() {
             return definitionVersion >= 1 && definitionVersion <= MAX_DEFINITION_VERSION
-                    && transactionId != null && !ZERO_UUID.equals(transactionId) && completedAtEpochMillis >= 0;
+                    && transactionId != null && !ZERO_UUID.equals(transactionId) && completedAtEpochMillis >= 0
+                    && (rewardOperation.isEmpty() || rewardOperation.filter(operation ->
+                            operation.isValid()
+                                    && operation.definitionVersion() == definitionVersion
+                                    && operation.transactionId().equals(transactionId)
+                                    && completedAtEpochMillis >= operation.startedAtEpochMillis())
+                            .isPresent());
         }
 
         private static DataResult<CompletionReceipt> validate(CompletionReceipt receipt) {
@@ -208,5 +403,19 @@ public record QuestPlayerState(Map<Identifier, QuestEntry> quests) {
                 Identifier.CODEC.fieldOf("id").forGetter(ObjectiveProgressEntry::id),
                 PROGRESS_CODEC.fieldOf("progress").forGetter(ObjectiveProgressEntry::progress)
         ).apply(instance, ObjectiveProgressEntry::new));
+    }
+
+    private record ProcessedEvidenceEntry(
+            UUID id,
+            long timestamp,
+            Optional<QuestDefinition.Kind> kind,
+            Optional<Long> ownerEvidenceMissingSinceEpochMillis) {
+        private static final Codec<ProcessedEvidenceEntry> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                UUIDUtil.STRING_CODEC.fieldOf("id").forGetter(ProcessedEvidenceEntry::id),
+                Codec.LONG.fieldOf("timestamp").forGetter(ProcessedEvidenceEntry::timestamp),
+                QuestDefinition.Kind.CODEC.optionalFieldOf("kind").forGetter(ProcessedEvidenceEntry::kind),
+                Codec.LONG.optionalFieldOf("owner_evidence_missing_since_epoch_millis")
+                        .forGetter(ProcessedEvidenceEntry::ownerEvidenceMissingSinceEpochMillis)
+        ).apply(instance, ProcessedEvidenceEntry::new));
     }
 }

@@ -19,5 +19,12 @@
       "kind": "claim_purchase",
       "required_count": 1
     }
-  ]
+  ],
+  "rewards": {
+    "currency": 100,
+    "activity_xp": {
+      "activity": "rovenfall:mining",
+      "amount": 10
+    }
+  }
 }

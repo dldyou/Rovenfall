@@ -14,6 +14,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import org.dldyou.rovenfall.Rovenfall;
 import org.dldyou.rovenfall.economy.ShopInstance;
+import org.dldyou.rovenfall.quest.QuestProgressRuntime;
 
 /** Server-thread-only transaction boundary for administrator-shop purchases and sales. */
 public final class ShopTradeService {
@@ -46,6 +47,7 @@ public final class ShopTradeService {
                 EconomyConfig.maximumBalance());
         if (result.status() == Status.SUCCESS) {
             player.getInventory().setChanged();
+            QuestProgressRuntime.acceptEconomyEvidence(player.level().getServer(), result.transactionId());
         }
         return result;
     }

@@ -149,6 +149,9 @@ import org.dldyou.rovenfall.rpg.PlayerCareerPromotionService;
 import org.dldyou.rovenfall.rpg.RpgDefinitionReloadListener;
 import org.dldyou.rovenfall.rpg.RpgItemPaymentGameTestScenario;
 import org.dldyou.rovenfall.quest.QuestDefinitionReloadListener;
+import org.dldyou.rovenfall.quest.QuestPlayerSavedData;
+import org.dldyou.rovenfall.quest.QuestProgressRuntime;
+import org.dldyou.rovenfall.quest.QuestProgressService;
 import org.dldyou.rovenfall.world.ProtectedRegion;
 import org.dldyou.rovenfall.world.PortalDefinition;
 import org.dldyou.rovenfall.world.WorldTopology;
@@ -191,6 +194,7 @@ public final class Rovenfall {
         RovenfallMobRuntime.register(NeoForge.EVENT_BUS);
         MobMutationRuntime.register(NeoForge.EVENT_BUS);
         BossEncounterRuntime.register(NeoForge.EVENT_BUS);
+        QuestProgressRuntime.register(NeoForge.EVENT_BUS);
         NeoForge.EVENT_BUS.addListener(this::addServerReloadListeners);
         NeoForge.EVENT_BUS.addListener(shopTemplates::onDefaultDataComponentsBound);
         NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onDamage);
@@ -210,7 +214,11 @@ public final class Rovenfall {
         var environment = event.registerEnvironment(id("empty"), new TestEnvironmentDefinition.AllOf(List.of()));
         var activeSkillEnvironment = event.registerEnvironment(
                 id("active_skill"), new TestEnvironmentDefinition.AllOf(List.of()));
+        var questEnvironment = event.registerEnvironment(
+                id("quest"), new TestEnvironmentDefinition.AllOf(List.of()));
         var testData = new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 1, 0, true);
+        var questTestData = new TestData<>(
+                questEnvironment, Identifier.withDefaultNamespace("empty"), 1, 0, true);
         event.registerTest(id("foundation"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData));
         event.registerTest(id("player_gui_navigation"), new FunctionGameTestInstance(
                 BuiltinTestFunctions.ALWAYS_PASS,
@@ -1216,7 +1224,6 @@ public final class Rovenfall {
                                         .activityXp().getOrDefault(id("hunting"), 0L)
                                         == xpBefore + loot.experience(),
                         "Qualified boss contribution did not durably award economy and RPG progression");
-
                 BossRewardService.recover(server, timestamp + 3);
                 var replay = BossRewardService.prepare(
                         server, encounter, boss, mob, contribution, loot, timestamp + 4);
@@ -1299,6 +1306,7 @@ public final class Rovenfall {
 
                 BossRewardService.recover(server, restartCreatedAt + 1);
                 var completedRestart = rewards.operation(restartTransactionId).orElseThrow();
+                var bossEvidence = QuestProgressService.evidence(restartTransactionId, completedRestart);
                 var deliveredItem = level.getEntity(itemEntityId);
                 long restartBalanceAfter = PlatformSavedData.get(server)
                         .economyBalance(restartPlayer.getUUID()).orElse(0L);
@@ -1310,6 +1318,9 @@ public final class Rovenfall {
                                 && entry.afterValue().equals(restartAuditEvidence))
                         .count();
                 helper.assertTrue(completedRestart.phase() == BossRewardOperation.Phase.COMPLETED
+                                && bossEvidence.isPresent()
+                                && bossEvidence.orElseThrow().kind().getSerializedName().equals("boss_defeat")
+                                && bossEvidence.orElseThrow().target().equals(Optional.of(restartBossId))
                                 && restartBalanceAfter == restartBalanceBefore + restartPending.currency()
                                 && restartXpAfter == restartXpBefore + restartPending.experience()
                                 && deliveredItem instanceof net.minecraft.world.entity.item.ItemEntity item
@@ -1771,6 +1782,25 @@ public final class Rovenfall {
                 helper.assertTrue(RpgPlayerSavedData.get(server).state(naturalMiner.getUUID())
                                 .activityXp().getOrDefault(id("mining"), 0L) == 1,
                         "Validated natural ore break did not award mining XP");
+                var questState = QuestPlayerSavedData.get(server).state(naturalMiner.getUUID());
+                helper.assertTrue(questState.quests().get(id("first_steps"))
+                                .objectiveProgress().getOrDefault(id("first_steps/activity"), 0L) == 1,
+                        "Server-observed mining outcome did not advance the quest");
+                var retainedActivity = RpgPlayerSavedData.get(server)
+                        .questActivityEvidenceFor(
+                                naturalMiner.getUUID(),
+                                RpgPlayerSavedData.MAX_QUEST_ACTIVITY_EVIDENCE_BATCH_SIZE)
+                        .getFirst();
+                helper.assertTrue(questState.processedEvidence().containsKey(retainedActivity.getKey()),
+                        "Quest progress did not retain the owner evidence transaction");
+                helper.assertTrue(retainedActivity.getValue().acknowledgedAtEpochMillis().isPresent(),
+                        "Terminal quest delivery did not acknowledge the RPG outbox evidence");
+                QuestProgressRuntime.acceptActivityEvidence(
+                        server, naturalMiner.getUUID(), retainedActivity.getKey());
+                helper.assertTrue(QuestPlayerSavedData.get(server).state(naturalMiner.getUUID())
+                                .quests().get(id("first_steps")).objectiveProgress()
+                                .getOrDefault(id("first_steps/activity"), 0L) == 1,
+                        "Duplicate activity delivery advanced the quest twice");
 
                 var worldState = ActivityWorldSavedData.get(server);
                 BlockPos syntheticPosition = miningPosition.east();
@@ -1939,6 +1969,118 @@ public final class Rovenfall {
                         RpgPlayerSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow()).getOrThrow();
                 helper.assertTrue(roundTrip.state(player).activityXp().get(id("combat")) == 1,
                         "Activity XP did not survive codec round-trip");
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("quest_server_outcomes"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, questTestData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var platform = PlatformSavedData.get(server);
+                var rpg = RpgPlayerSavedData.get(server);
+                var quests = QuestPlayerSavedData.get(server);
+                var player = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                long timestamp = System.currentTimeMillis();
+                var nether = server.getLevel(net.minecraft.world.level.Level.NETHER);
+                helper.assertTrue(nether != null, "Nether was unavailable for quest activity evidence");
+
+                BlockPos miningPosition = new BlockPos(21_000, 64, 21_000);
+                NeoForge.EVENT_BUS.post(new BlockDropsEvent(
+                        nether, miningPosition, Blocks.DIAMOND_ORE.defaultBlockState(), null,
+                        new ArrayList<>(), player, ItemStack.EMPTY));
+                var afterActivity = quests.state(player.getUUID()).quests().get(id("first_steps"));
+                helper.assertTrue(afterActivity != null
+                                && afterActivity.objectiveProgress()
+                                        .getOrDefault(id("first_steps/activity"), 0L) == 1,
+                        "Server activity did not enter first-steps quest progress");
+
+                Identifier shopId = id("quest_outcome_" + UUID.randomUUID());
+                Identifier offerId = id("foundation_bread");
+                helper.assertTrue(ShopInstanceService.create(
+                                platform, ShopTemplateReloadListener.snapshot(server),
+                                AdministrationService.SYSTEM_ACTOR, true, shopId, id("foundation"),
+                                Optional.empty(), key -> server.getLevel(key) != null,
+                                ShopInstance.AccessPolicy.publicAccess(), server.overworld().getGameTime(),
+                                "gametest quest shop", timestamp, UUID.randomUUID()).status()
+                                == ShopInstanceService.Status.SUCCESS,
+                        "Quest outcome shop setup failed");
+                helper.assertTrue(EconomyService.award(
+                                platform, player.getUUID(), 2_000, "gametest quest account", timestamp + 1,
+                                UUID.randomUUID(), 0, Long.MAX_VALUE).status()
+                                == EconomyService.TransactionStatus.SUCCESS,
+                        "Quest outcome account setup failed");
+                var offer = platform.shopInstance(shopId).orElseThrow().offers().get(offerId);
+                UUID shopTransaction = UUID.randomUUID();
+                helper.assertTrue(ShopTradeService.trade(
+                                platform, player, new ShopTradeService.TradeRequest(
+                                        shopId, offerId, ShopTradeService.Direction.BUY, 1,
+                                        offer.item(), offer.buyPrice().orElseThrow(), shopTransaction),
+                                server.overworld().getGameTime(), timestamp + 2).status()
+                                == ShopTradeService.Status.SUCCESS,
+                        "Server shop outcome did not commit");
+                helper.assertTrue(quests.state(player.getUUID()).quests().get(id("first_steps"))
+                                .objectiveProgress().getOrDefault(id("first_steps/shop_trade"), 0L) == 1,
+                        "Committed shop receipt did not enter quest progress");
+
+                int chunkX = 6_000;
+                int chunkZ = 6_000;
+                ClaimKey claimKey = new ClaimKey(player.level().dimension(), chunkX, chunkZ);
+                while (platform.claim(claimKey).isPresent()) {
+                    claimKey = new ClaimKey(player.level().dimension(), ++chunkX, chunkZ);
+                }
+                BlockPos claimPosition = new BlockPos((chunkX << 4) + 8, 70, (chunkZ << 4) + 8);
+                long balanceBeforeClaim = platform.economyBalance(player.getUUID()).orElseThrow();
+                UUID claimTransaction = UUID.randomUUID();
+                var claim = ClaimPurchaseService.purchase(
+                        platform, player.getUUID(), player.level().dimension(), player.level().dimension(),
+                        claimPosition, ignored -> true, ignored -> false,
+                        1_000, 250, 4, timestamp + 3, claimTransaction);
+                helper.assertTrue(claim.status() == ClaimPurchaseService.Status.SUCCESS,
+                        "Server land outcome did not commit");
+                QuestProgressRuntime.acceptEconomyEvidence(server, claimTransaction);
+
+                var completed = quests.state(player.getUUID()).quests().get(id("first_steps"));
+                helper.assertTrue(completed != null && completed.completion().isPresent()
+                                && completed.pendingReward().isEmpty()
+                                && completed.objectiveProgress()
+                                        .getOrDefault(id("first_steps/claim_purchase"), 0L) == 1,
+                        "Three server-owned outcomes did not complete the quest");
+                helper.assertTrue(platform.economyBalance(player.getUUID()).orElseThrow()
+                                == balanceBeforeClaim - 1_000 + 100,
+                        "Quest currency reward was not applied exactly once");
+                helper.assertTrue(rpg.state(player.getUUID()).activityXp().getOrDefault(id("mining"), 0L) == 11,
+                        "Quest activity XP reward was not applied exactly once");
+                helper.assertTrue(rpg.questRewardReceiptCount() > 0,
+                        "RPG owner root did not retain the quest reward receipt");
+
+                long finalBalance = platform.economyBalance(player.getUUID()).orElseThrow();
+                long finalXp = rpg.state(player.getUUID()).activityXp().getOrDefault(id("mining"), 0L);
+                QuestProgressRuntime.acceptEconomyEvidence(server, shopTransaction);
+                QuestProgressRuntime.acceptEconomyEvidence(server, claimTransaction);
+                helper.assertTrue(platform.economyBalance(player.getUUID()).orElseThrow() == finalBalance
+                                && rpg.state(player.getUUID()).activityXp()
+                                        .getOrDefault(id("mining"), 0L) == finalXp,
+                        "Duplicate owner evidence paid quest rewards twice");
+
+                var persistedQuests = QuestPlayerSavedData.CODEC.parse(
+                        NbtOps.INSTANCE, QuestPlayerSavedData.CODEC.encodeStart(
+                                NbtOps.INSTANCE, quests).getOrThrow()).getOrThrow();
+                var persistedRpg = RpgPlayerSavedData.CODEC.parse(
+                        NbtOps.INSTANCE, RpgPlayerSavedData.CODEC.encodeStart(
+                                NbtOps.INSTANCE, rpg).getOrThrow()).getOrThrow();
+                helper.assertTrue(persistedQuests.state(player.getUUID()).quests().get(id("first_steps"))
+                                .completion().isPresent()
+                                && persistedRpg.state(player.getUUID()).activityXp()
+                                        .getOrDefault(id("mining"), 0L) == finalXp
+                                && persistedRpg.questRewardReceiptCount() == rpg.questRewardReceiptCount(),
+                        "Quest completion or RPG reward receipt did not survive persistence");
+
+                ShopInstanceService.delete(
+                        platform, AdministrationService.SYSTEM_ACTOR, true, shopId,
+                        "gametest quest cleanup", timestamp + 4, UUID.randomUUID());
+                player.discard();
                 helper.succeed();
             }
         });

@@ -103,6 +103,9 @@ public final class QuestDefinitionSnapshot {
                     "objective count must be between 1 and " + QuestDefinition.MAX_OBJECTIVES));
             return;
         }
+        if (definition.rewards() == null || !definition.rewards().isValid()) {
+            problems.add(problem(source, "quest rewards exceed a bound or contain an invalid activity"));
+        }
         for (QuestDefinition.Objective objective : definition.objectives()) {
             if (objective == null || objective.id() == null || objective.kind() == null) {
                 problems.add(problem(source, "invalid objective"));

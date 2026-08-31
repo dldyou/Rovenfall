@@ -26,6 +26,7 @@ import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimRegionPolicy;
 import org.dldyou.rovenfall.claims.ClaimRole;
 import org.dldyou.rovenfall.claims.ClaimSettings;
+import org.dldyou.rovenfall.quest.QuestProgressRuntime;
 import org.dldyou.rovenfall.world.WorldTopology;
 
 /** Server-owned current-chunk claim lifecycle exposed through a native menu. */
@@ -486,6 +487,7 @@ public final class PlayerClaimMenu extends ChestMenu {
                 ClaimConfig.basePrice(), ClaimConfig.priceIncrease(), ClaimConfig.ownershipCap(),
                 now(), UUID.randomUUID());
         if (result.status() == ClaimPurchaseService.Status.SUCCESS) {
+            QuestProgressRuntime.acceptEconomyEvidence(viewer.level().getServer(), result.transactionId());
             message("gui.rovenfall.claim.purchase_complete", result.price(), result.balance());
         } else if (result.status() == ClaimPurchaseService.Status.DUPLICATE_TRANSACTION) {
             message("gui.rovenfall.claim.purchase_duplicate");
