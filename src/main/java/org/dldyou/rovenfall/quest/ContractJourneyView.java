@@ -34,7 +34,7 @@ public record ContractJourneyView(
         return new ContractJourneyView(definitionRevision, writable, entries);
     }
 
-    private static ContractRow row(
+    static ContractRow row(
             QuestPlayerState.ContractKey key,
             QuestPlayerState.QuestEntry retained,
             QuestDefinitionSnapshot definitions) {

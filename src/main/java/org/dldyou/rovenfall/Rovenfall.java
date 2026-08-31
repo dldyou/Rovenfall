@@ -159,7 +159,10 @@ import org.dldyou.rovenfall.rpg.PlayerCareerPromotionService;
 import org.dldyou.rovenfall.rpg.RpgDefinitionReloadListener;
 import org.dldyou.rovenfall.rpg.RpgItemPaymentGameTestScenario;
 import org.dldyou.rovenfall.quest.QuestDefinitionReloadListener;
+import org.dldyou.rovenfall.quest.ActiveJourneyTrackerClient;
+import org.dldyou.rovenfall.quest.ActiveJourneyTrackerNetwork;
 import org.dldyou.rovenfall.quest.QuestPlayerSavedData;
+import org.dldyou.rovenfall.quest.QuestPlayerState;
 import org.dldyou.rovenfall.quest.QuestProgressRuntime;
 import org.dldyou.rovenfall.quest.QuestProgressService;
 import org.dldyou.rovenfall.world.ProtectedRegion;
@@ -185,10 +188,12 @@ public final class Rovenfall {
         modBus.addListener(this::registerGameTests);
         modBus.addListener(RpgSkillNetwork::registerPayloads);
         modBus.addListener(PlayerMenuNetwork::registerPayloads);
+        modBus.addListener(ActiveJourneyTrackerNetwork::registerPayloads);
         if (FMLEnvironment.getDist() == Dist.CLIENT) {
             RpgSkillClient.register(modBus);
             RovenfallMobClient.register(modBus);
             RovenfallInventoryClient.register(modBus);
+            ActiveJourneyTrackerClient.register(modBus);
         }
         NeoForge.EVENT_BUS.addListener(RovenfallCommands::register);
         NeoForge.EVENT_BUS.addListener(EconomyService::onPlayerLoggedIn);
@@ -198,6 +203,10 @@ public final class Rovenfall {
         NeoForge.EVENT_BUS.addListener(RpgSkillNetwork::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(RpgSkillNetwork::onPlayerLoggedOut);
         NeoForge.EVENT_BUS.addListener(PlayerMenuNetwork::onPlayerLoggedOut);
+        NeoForge.EVENT_BUS.addListener(ActiveJourneyTrackerNetwork::onPlayerLoggedIn);
+        NeoForge.EVENT_BUS.addListener(ActiveJourneyTrackerNetwork::onPlayerLoggedOut);
+        NeoForge.EVENT_BUS.addListener(ActiveJourneyTrackerNetwork::onServerTick);
+        NeoForge.EVENT_BUS.addListener(ActiveJourneyTrackerNetwork::onDatapackSync);
         NeoForge.EVENT_BUS.addListener(PlayerRecordService::onPlayerLoggedIn);
         PortalEvents.register(NeoForge.EVENT_BUS);
         WildernessResetEvents.register(NeoForge.EVENT_BUS);
@@ -339,6 +348,41 @@ public final class Rovenfall {
                             "Journey requests were not assigned and projected as three bounded custom cards");
                     player.discard();
                     helper.succeed();
+                });
+            }
+        });
+        event.registerTest(id("player_active_journey_tracker"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS,
+                new TestData<>(questEnvironment, Identifier.withDefaultNamespace("empty"), 20, 0, true)) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var player = helper.makeMockServerPlayerInLevel();
+                var quests = QuestPlayerSavedData.get(player.level().getServer());
+                PlayerQuestMenu.open(player);
+                player.containerMenu.clicked(10, 0, ContainerInput.PICKUP, player);
+                helper.assertTrue(player.containerMenu instanceof PlayerQuestMenu,
+                        "Journey card did not open its custom detail screen");
+
+                helper.runAfterDelay(1, () -> {
+                    player.containerMenu.clicked(49, 0, ContainerInput.PICKUP, player);
+                    var tracked = quests.state(player.getUUID()).trackedJourney();
+                    helper.assertTrue(tracked.flatMap(QuestPlayerState.TrackedJourney::storyQuestId).isPresent()
+                                    && tracked.orElseThrow().contractKey().isEmpty(),
+                            "One-click journey selection did not persist one server-owned story tracker");
+                    var persisted = QuestPlayerSavedData.CODEC.parse(
+                            NbtOps.INSTANCE,
+                            QuestPlayerSavedData.CODEC.encodeStart(NbtOps.INSTANCE, quests).getOrThrow())
+                            .getOrThrow();
+                    helper.assertTrue(persisted.state(player.getUUID()).trackedJourney().equals(tracked),
+                            "Active journey selection did not survive persistence");
+
+                    helper.runAfterDelay(1, () -> {
+                        player.containerMenu.clicked(49, 0, ContainerInput.PICKUP, player);
+                        helper.assertTrue(quests.state(player.getUUID()).trackedJourney().isEmpty(),
+                                "Clicking the selected journey again did not clear its tracker");
+                        player.discard();
+                        helper.succeed();
+                    });
                 });
             }
         });

@@ -213,6 +213,30 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.quest.reward.unavailable",
             "gui.rovenfall.quest.next_step.none",
             "gui.rovenfall.quest.guide",
+            "gui.rovenfall.quest.tracker.pin",
+            "gui.rovenfall.quest.tracker.pinned",
+            "gui.rovenfall.quest.tracker.clear",
+            "gui.rovenfall.quest.tracker.started",
+            "gui.rovenfall.quest.tracker.cleared",
+            "gui.rovenfall.quest.tracker.unavailable",
+            "gui.rovenfall.quest.tracker.kind.story",
+            "gui.rovenfall.quest.tracker.kind.daily",
+            "gui.rovenfall.quest.tracker.kind.weekly",
+            "hud.rovenfall.journey.tracker.changed",
+            "hud.rovenfall.journey.tracker.cleared",
+            "hud.rovenfall.journey.tracker.state",
+            "hud.rovenfall.journey.tracker.kind.story",
+            "hud.rovenfall.journey.tracker.kind.daily",
+            "hud.rovenfall.journey.tracker.kind.weekly",
+            "hud.rovenfall.journey.tracker.status.available",
+            "hud.rovenfall.journey.tracker.status.in_progress",
+            "hud.rovenfall.journey.tracker.objective.activity",
+            "hud.rovenfall.journey.tracker.objective.activity_unknown",
+            "hud.rovenfall.journey.tracker.objective.shop_trade",
+            "hud.rovenfall.journey.tracker.objective.claim_purchase",
+            "hud.rovenfall.journey.tracker.objective.boss_defeat",
+            "hud.rovenfall.journey.tracker.refresh.daily",
+            "hud.rovenfall.journey.tracker.refresh.weekly",
             "gui.rovenfall.quest.stale",
             "gui.rovenfall.quest.objective.activity",
             "gui.rovenfall.quest.objective.shop_trade",
@@ -321,10 +345,7 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.admin.world.field.warning_value",
             "gui.rovenfall.admin.world.preview.transaction",
             "gui.rovenfall.claim.atlas.technical.position",
-            "gui.rovenfall.portal.technical",
-            "gui.rovenfall.quest.technical.quest_id",
-            "gui.rovenfall.quest.technical.objective_id",
-            "gui.rovenfall.quest.contract.technical");
+            "gui.rovenfall.portal.technical");
 
     @Test
     void supportedLanguageCatalogsHaveEqualKeySets() {
@@ -415,7 +436,10 @@ final class LocalizationCatalogTest {
                 "gui.rovenfall.shop.offer_id",
                 "gui.rovenfall.shop.binding",
                 "gui.rovenfall.rpg.definition_revision",
-                "gui.rovenfall.rpg.unresolved");
+                "gui.rovenfall.rpg.unresolved",
+                "gui.rovenfall.quest.technical.quest_id",
+                "gui.rovenfall.quest.technical.objective_id",
+                "gui.rovenfall.quest.contract.technical");
         for (String locale : SUPPORTED_LOCALES) {
             var catalog = catalog(locale);
             for (String key : removedIdentityKeys) {
@@ -438,6 +462,8 @@ final class LocalizationCatalogTest {
         assertEquals("탐험 기록", korean.get("gui.rovenfall.quest.exploration").getAsString());
         assertEquals("발견", korean.get("gui.rovenfall.quest.exploration.status.discovered").getAsString());
         assertEquals("길찾기", korean.get("gui.rovenfall.quest.exploration.navigation.start").getAsString());
+        assertEquals("화면에 표시", korean.get("gui.rovenfall.quest.tracker.pin").getAsString());
+        assertEquals("이번 주 의뢰", korean.get("gui.rovenfall.quest.tracker.kind.weekly").getAsString());
         assertEquals("토지 도감", korean.get("gui.rovenfall.claim.atlas.title").getAsString());
         assertEquals("토지 검색", korean.get("gui.rovenfall.claim.atlas.search").getAsString());
         assertEquals("길찾기 설정", korean.get("gui.rovenfall.claim.atlas.navigation.start").getAsString());

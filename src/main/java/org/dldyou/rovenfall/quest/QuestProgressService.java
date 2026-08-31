@@ -185,7 +185,7 @@ public final class QuestProgressService {
         processed.put(evidence.sourceTransactionId(), new QuestPlayerState.ProcessedEvidence(
                 evidence.timestampEpochMillis(), evidence.kind()));
         QuestPlayerState updated = new QuestPlayerState(
-                quests, processed, contracts, current.initializedContractWindows());
+                quests, processed, contracts, current.initializedContractWindows(), current.trackedJourney());
         boolean committed = state.commit(playerId, current, updated);
         return new ProgressResult(
                 committed ? (completedQuests > 0 ? ProgressStatus.REWARD_PENDING : ProgressStatus.SUCCESS)
@@ -313,7 +313,7 @@ public final class QuestProgressService {
             }
             if (!quests.commit(playerId, current, new QuestPlayerState(
                     updatedQuests, current.processedEvidence(), updatedContracts,
-                    current.initializedContractWindows()))) {
+                    current.initializedContractWindows(), current.trackedJourney()))) {
                 return new RewardResult(RewardStatus.CONCURRENT_CHANGE, completed);
             }
             if (completedStep) {

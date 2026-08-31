@@ -107,6 +107,15 @@ completion receipts. Removed quest IDs remain stored and are exposed as
 unresolved until an explicit content migration is shipped. A newer unsupported
 schema loads read-only.
 
+Each player may also retain one optional active-journey selection. It records the exact story
+quest ID or assigned contract key together with the selected definition version; it is not a
+second progress store and never grants a reward. On selection, login, evidence progress, content
+reload, request rotation, and periodic reconciliation, the server verifies that the definition,
+version, current request window, status, and next incomplete objective still match. Any completed,
+expired, removed, changed, invalid, or future-schema selection is cleared or withheld. The client
+receives only the privacy-safe presentation projection: kind, localized title key, available or
+in-progress state, one objective kind/progress, and an optional localized activity name.
+
 Gameplay adapters consume only durable server-owned outcomes: RPG-owned activity
 outcomes, shop and land economy receipts, and completed boss reward operations.
 An activity starts counting only while its matching quest objective is unlocked

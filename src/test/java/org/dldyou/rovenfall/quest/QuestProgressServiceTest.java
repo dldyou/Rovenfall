@@ -60,6 +60,27 @@ final class QuestProgressServiceTest {
     }
 
     @Test
+    void progressAndRewardRecoveryPreserveTheTrackedJourney() {
+        QuestDefinitionSnapshot definitions = definitions(1, 0, 0);
+        QuestPlayerSavedData quests = new QuestPlayerSavedData();
+        assertEquals(ActiveJourneyService.MutationStatus.SUCCESS,
+                ActiveJourneyService.selectStory(quests, definitions, PLAYER, QUEST).status());
+        QuestPlayerState.TrackedJourney tracked = quests.state(PLAYER).trackedJourney().orElseThrow();
+
+        var evidence = new QuestProgressService.Evidence(
+                QuestDefinition.Kind.ACTIVITY, Optional.of(MINING), 1, 2_000, uuid(12));
+        assertEquals(QuestProgressService.ProgressStatus.REWARD_PENDING,
+                QuestProgressService.applyEvidence(quests, definitions, PLAYER, evidence).status());
+        assertEquals(Optional.of(tracked), quests.state(PLAYER).trackedJourney());
+
+        assertEquals(QuestProgressService.RewardStatus.COMPLETED,
+                QuestProgressService.recoverRewards(
+                        quests, definitions, new PlatformSavedData(), new RpgPlayerSavedData(),
+                        rpgDefinitions(), PLAYER, 2_100, 0, 1_000_000).status());
+        assertEquals(Optional.of(tracked), quests.state(PLAYER).trackedJourney());
+    }
+
+    @Test
     void ignoredActivityOutcomeIsNeverDeliveredAgainAfterAcknowledgement() {
         RpgPlayerSavedData rpg = new RpgPlayerSavedData();
         UUID sourceTransaction = uuid(11);

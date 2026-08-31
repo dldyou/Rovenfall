@@ -193,6 +193,7 @@ public final class QuestProgressRuntime {
                 QuestPlayerSavedData.get(server), QuestDefinitionReloadListener.snapshot(server),
                 PlatformSavedData.get(server), playerId, evidence);
         recoverPlayerRewards(server, playerId, System.currentTimeMillis());
+        syncOnlinePlayer(server, playerId);
         return result;
     }
 
@@ -357,6 +358,14 @@ public final class QuestProgressRuntime {
                 System.currentTimeMillis(), ACTIVITY_BATCH);
         recoverPlayerRewards(server, player.getUUID(), System.currentTimeMillis());
         maintainProcessedEvidence(server, player.getUUID(), System.currentTimeMillis(), cursor);
+        ActiveJourneyTrackerNetwork.sync(player);
+    }
+
+    private static void syncOnlinePlayer(MinecraftServer server, UUID playerId) {
+        ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+        if (player != null) {
+            ActiveJourneyTrackerNetwork.sync(player);
+        }
     }
 
     private static final class Cursor {

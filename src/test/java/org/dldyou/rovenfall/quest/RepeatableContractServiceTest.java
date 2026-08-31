@@ -45,6 +45,20 @@ final class RepeatableContractServiceTest {
     }
 
     @Test
+    void assignmentPreservesTheTrackedJourney() {
+        QuestPlayerSavedData savedData = new QuestPlayerSavedData();
+        QuestPlayerState.TrackedJourney tracked = QuestPlayerState.TrackedJourney.story(id("story"), 1);
+        QuestPlayerState initial = new QuestPlayerState(
+                Map.of(), Map.of(), Map.of(), Set.of(), Optional.of(tracked));
+        assertTrue(savedData.commit(PLAYER, QuestPlayerState.EMPTY, initial));
+
+        assertEquals(RepeatableContractService.AssignmentStatus.SUCCESS,
+                RepeatableContractService.ensureAssignments(
+                        savedData, definitions(1, 1), PLAYER, MONDAY_EPOCH_DAY * DAY).status());
+        assertEquals(Optional.of(tracked), savedData.state(PLAYER).trackedJourney());
+    }
+
+    @Test
     void assignmentVariesByPlayerWithoutLosingDeterminism() {
         QuestDefinitionSnapshot definitions = definitions(8, 4);
         long timestamp = MONDAY_EPOCH_DAY * DAY;

@@ -31,6 +31,9 @@ import org.dldyou.rovenfall.mobs.BossEncounterState;
 import org.dldyou.rovenfall.mobs.BossRewardOperation;
 import org.dldyou.rovenfall.mobs.BossRewardSavedData;
 import org.dldyou.rovenfall.mobs.MobMutationRuntime;
+import org.dldyou.rovenfall.quest.ActiveJourneyService;
+import org.dldyou.rovenfall.quest.ActiveJourneyTrackerNetwork;
+import org.dldyou.rovenfall.quest.ActiveJourneyTrackerPayloads;
 import org.dldyou.rovenfall.quest.ContractJourneyView;
 import org.dldyou.rovenfall.quest.QuestDefinition;
 import org.dldyou.rovenfall.quest.QuestDefinitionSnapshot;
@@ -114,6 +117,10 @@ final class PerformanceBudgetTest {
         assertEquals(256, ExplorationPlayerState.MAX_DISCOVERIES);
         assertEquals(28, ExplorationJournalView.MAX_PAGE_SIZE);
         assertEquals(8, ExplorationDiscoveryService.MAX_RECOVERY_STEPS);
+        assertEquals(20, ActiveJourneyTrackerNetwork.SYNC_INTERVAL_TICKS);
+        assertEquals(16, ActiveJourneyTrackerNetwork.MAX_PLAYERS_PER_TICK);
+        assertEquals(384, ActiveJourneyTrackerPayloads.MAX_PACKET_BYTES);
+        assertEquals(160, ActiveJourneyTrackerPayloads.MAX_TRANSLATION_KEY_LENGTH);
     }
 
     private static ScenarioResult runScenario(int playerCount) {
@@ -199,6 +206,13 @@ final class PerformanceBudgetTest {
                     CONTRACT_DEFINITIONS, assigned, 1, true, CONTRACT_NOW);
             assertEquals(ContractJourneyView.MAX_ENTRIES, contracts.entries().size());
             assertEquals(assigned, quests.state(player));
+            assertEquals(ActiveJourneyService.MutationStatus.SUCCESS,
+                    ActiveJourneyService.selectContract(
+                            quests, CONTRACT_DEFINITIONS, player,
+                            contracts.entries().getFirst().key(), CONTRACT_NOW).status());
+            assertTrue(ActiveJourneyService.view(
+                    quests, CONTRACT_DEFINITIONS, RPG_DEFINITIONS, player, 1, CONTRACT_NOW)
+                    .journey().isPresent());
             contractRows += contracts.entries().size();
         }
         long contractsNanos = System.nanoTime() - start;
@@ -336,7 +350,8 @@ final class PerformanceBudgetTest {
                 exploration journal 28 rows/page from at most 128 definitions; portal scans 64 definitions;
                 land nearby radius 8 areas; admin pages 50 rows;
                 boss tick encounters 32; skill requests 20/player/s;
-                activate/state packets 128/64 bytes; recovery journals 10,000 boss operations,
+                activate/state packets 128/64 bytes; active journey snapshots 384 bytes,
+                synchronized for at most 16 players every 20 ticks; recovery journals 10,000 boss operations,
                 8 Wilderness snapshots, and 64 Wilderness evidence records.
                 """.formatted(twenty.markdown(), fifty.markdown());
     }

@@ -65,7 +65,7 @@ public record QuestJourneyView(
                 nextStep(definitions, state));
     }
 
-    private static QuestRow row(
+    static QuestRow row(
             Identifier id, QuestDefinitionSnapshot definitions, QuestPlayerState state) {
         QuestDefinition definition = definitions.quest(id).orElse(null);
         QuestPlayerState.QuestEntry retained = state.quests().get(id);
