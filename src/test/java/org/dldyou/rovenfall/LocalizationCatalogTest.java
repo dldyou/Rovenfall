@@ -110,6 +110,7 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.inventory.skills",
             "gui.rovenfall.inventory.shops",
             "gui.rovenfall.inventory.admin",
+            "gui.rovenfall.inventory.journey",
             "gui.rovenfall.inventory.current_tab",
             "gui.rovenfall.inventory.open_tab",
             "gui.rovenfall.menu.slot_position",
@@ -141,6 +142,29 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.rpg.result.stale",
             "gui.rovenfall.rpg.result.rate_limit",
             "gui.rovenfall.rpg.result.pending",
+            "gui.rovenfall.quest.title",
+            "gui.rovenfall.quest.dashboard",
+            "gui.rovenfall.quest.summary",
+            "gui.rovenfall.quest.empty",
+            "gui.rovenfall.quest.read_only",
+            "gui.rovenfall.quest.status.available",
+            "gui.rovenfall.quest.status.in_progress",
+            "gui.rovenfall.quest.status.locked",
+            "gui.rovenfall.quest.status.reward_pending",
+            "gui.rovenfall.quest.status.completed",
+            "gui.rovenfall.quest.status.unresolved",
+            "gui.rovenfall.quest.status.definition_changed",
+            "gui.rovenfall.quest.prerequisite",
+            "gui.rovenfall.quest.reward.currency",
+            "gui.rovenfall.quest.reward.activity_xp",
+            "gui.rovenfall.quest.reward.unavailable",
+            "gui.rovenfall.quest.next_step.none",
+            "gui.rovenfall.quest.guide",
+            "gui.rovenfall.quest.stale",
+            "gui.rovenfall.quest.objective.activity",
+            "gui.rovenfall.quest.objective.shop_trade",
+            "gui.rovenfall.quest.objective.claim_purchase",
+            "gui.rovenfall.quest.objective.boss_defeat",
             "command.rovenfall.admin.operations.summary",
             "command.rovenfall.admin.operations.anomalies",
             "command.rovenfall.admin.help.header",
@@ -207,6 +231,7 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.inventory.skills",
             "gui.rovenfall.inventory.shops",
             "gui.rovenfall.inventory.admin",
+            "gui.rovenfall.inventory.journey",
             "gui.rovenfall.player.back",
             "gui.rovenfall.player.refresh",
             "gui.rovenfall.player.previous",
@@ -229,7 +254,9 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.admin.world.field.radius",
             "gui.rovenfall.admin.world.field.transaction",
             "gui.rovenfall.admin.world.field.warning_value",
-            "gui.rovenfall.admin.world.preview.transaction");
+            "gui.rovenfall.admin.world.preview.transaction",
+            "gui.rovenfall.quest.technical.quest_id",
+            "gui.rovenfall.quest.technical.objective_id");
 
     @Test
     void supportedLanguageCatalogsHaveEqualKeySets() {
@@ -335,16 +362,22 @@ final class LocalizationCatalogTest {
         assertEquals("처리 기록", korean.get("gui.rovenfall.admin.domain.audit").getAsString());
         assertEquals("운영 상태", korean.get("gui.rovenfall.admin.domain.metrics").getAsString());
         assertEquals("기술 정보", korean.get("gui.rovenfall.admin.advanced").getAsString());
+        assertEquals("여정", korean.get("gui.rovenfall.inventory.journey").getAsString());
+        assertEquals("다음 할 일", korean.get("gui.rovenfall.quest.dashboard").getAsString());
 
         var english = catalog("en_us");
         assertEquals("Land", english.get("gui.rovenfall.player.claims").getAsString());
         assertEquals("Wilderness Management", english.get("gui.rovenfall.admin.world.wilderness").getAsString());
         assertEquals("Technical information", english.get("gui.rovenfall.admin.advanced").getAsString());
+        assertEquals("Journey", english.get("gui.rovenfall.inventory.journey").getAsString());
+        assertEquals("Next Step", english.get("gui.rovenfall.quest.dashboard").getAsString());
 
         var japanese = catalog("ja_jp");
         assertEquals("土地", japanese.get("gui.rovenfall.player.claims").getAsString());
         assertEquals("荒野の管理", japanese.get("gui.rovenfall.admin.world.wilderness").getAsString());
         assertEquals("技術情報", japanese.get("gui.rovenfall.admin.advanced").getAsString());
+        assertEquals("旅路", japanese.get("gui.rovenfall.inventory.journey").getAsString());
+        assertEquals("次にすること", japanese.get("gui.rovenfall.quest.dashboard").getAsString());
 
         assertOrdinaryGuiAvoids(
                 "ko_kr",

@@ -23,6 +23,9 @@ import net.minecraft.world.item.component.ItemLore;
 import org.dldyou.rovenfall.claims.Claim;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimRole;
+import org.dldyou.rovenfall.quest.QuestDefinitionReloadListener;
+import org.dldyou.rovenfall.quest.QuestJourneyView;
+import org.dldyou.rovenfall.quest.QuestPlayerSavedData;
 import org.dldyou.rovenfall.rpg.RpgDefinitionReloadListener;
 import org.dldyou.rovenfall.rpg.RpgDefinitionSnapshot;
 import org.dldyou.rovenfall.rpg.RpgPlayerSavedData;
@@ -45,6 +48,7 @@ public final class PlayerDashboardMenu extends ChestMenu {
         OPEN_SHOPS,
         OPEN_CLAIMS,
         OPEN_RPG,
+        OPEN_QUESTS,
         BACK,
         REFRESH
     }
@@ -112,6 +116,10 @@ public final class PlayerDashboardMenu extends ChestMenu {
                 PlayerRpgMenu.open(viewer);
                 return;
             }
+            case OPEN_QUESTS -> {
+                PlayerQuestMenu.open(viewer);
+                return;
+            }
             case BACK -> page = Page.HOME;
             case REFRESH, NONE -> {
             }
@@ -141,6 +149,7 @@ public final class PlayerDashboardMenu extends ChestMenu {
                 case 10 -> Action.OPEN_ECONOMY;
                 case 13 -> Action.OPEN_CLAIMS;
                 case 16 -> Action.OPEN_RPG;
+                case 17 -> Action.OPEN_QUESTS;
                 default -> Action.NONE;
             };
             case ECONOMY -> slot == 15 ? Action.OPEN_SHOPS : Action.NONE;
@@ -187,7 +196,7 @@ public final class PlayerDashboardMenu extends ChestMenu {
         DashboardSnapshot snapshot = snapshot();
         RpgDefinitionSnapshot definitions = RpgDefinitionReloadListener.snapshot(viewer.level().getServer());
         switch (page) {
-            case HOME -> renderHome(snapshot, definitions);
+            case HOME -> renderHome(snapshot, definitions, journey());
             case ECONOMY -> renderEconomy(snapshot);
         }
         dashboard.setItem(REFRESH_SLOT, icon(
@@ -197,7 +206,10 @@ public final class PlayerDashboardMenu extends ChestMenu {
         broadcastChanges();
     }
 
-    private void renderHome(DashboardSnapshot snapshot, RpgDefinitionSnapshot definitions) {
+    private void renderHome(
+            DashboardSnapshot snapshot,
+            RpgDefinitionSnapshot definitions,
+            QuestJourneyView journey) {
         dashboard.setItem(4, icon(
                 Items.COMPASS,
                 Component.translatable("gui.rovenfall.player.home"),
@@ -225,6 +237,32 @@ public final class PlayerDashboardMenu extends ChestMenu {
                         snapshot.activeSkills().stream().filter(Optional::isPresent).count(),
                         RpgPlayerState.MAX_ACTIVE_SKILL_SLOTS),
                 Component.translatable("gui.rovenfall.player.click")));
+        List<Component> journeyLore = new java.util.ArrayList<>();
+        journey.nextStep().ifPresentOrElse(
+                step -> {
+                    journeyLore.add(Component.translatable(step.questTranslationKey()));
+                    journeyLore.add(Component.translatable(
+                            "gui.rovenfall.quest.next_step",
+                            PlayerQuestMenu.nextStepLine(step, definitions)));
+                },
+                () -> journeyLore.add(Component.translatable("gui.rovenfall.quest.next_step.none")));
+        if (!journey.writable()) {
+            journeyLore.add(Component.translatable("gui.rovenfall.quest.read_only"));
+        }
+        journeyLore.add(Component.translatable("gui.rovenfall.player.click"));
+        dashboard.setItem(17, icon(
+                Items.COMPASS,
+                Component.translatable("gui.rovenfall.quest.dashboard"),
+                journeyLore.toArray(Component[]::new)));
+    }
+
+    private QuestJourneyView journey() {
+        var server = viewer.level().getServer();
+        var definitions = QuestDefinitionReloadListener.versioned(server);
+        var saved = QuestPlayerSavedData.get(server);
+        return QuestJourneyView.create(
+                definitions.snapshot(), saved.state(viewerId), definitions.revision(),
+                saved.isWritable(), 0, 1);
     }
 
     private void renderEconomy(DashboardSnapshot snapshot) {

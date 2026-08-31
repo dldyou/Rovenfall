@@ -11,13 +11,13 @@ custom screen at these logical sizes:
 
 | Logical size | Expected layout |
 | --- | --- |
-| 320 × 240 | Minimum supported view; wrapped inventory tabs and one-column cards |
+| 320 × 240 | Minimum supported view; all seven inventory tabs and one-column cards |
 | 426 × 240 | Common 1280 × 720 high-GUI-scale view |
 | 640 × 360 | Medium view; two-column administration and player cards |
 | 854 × 480 | Common 16:9 GUI view |
 | 1920 × 1080 | Large unscaled/windowed view with bounded panel width |
 
-The tests require panels, cards, detail regions, paging, Technical information, toolbars, inventory
+The tests require panels, cards, detail regions, paging, Technical information, toolbars, all seven inventory
 tabs, and character summary to remain on screen without collisions. They also enforce at least
 3:1 adjacent contrast for the two-tone keyboard focus ring. The minimum supported logical size is
 320 × 240; smaller dimensions are outside Minecraft's normal GUI-scale floor and are not an RC
@@ -59,6 +59,22 @@ For a repeatable local multiplayer capture, start `runServer`, then launch the c
 `./gradlew runClient -PquickPlayMultiplayer=localhost`. The property is optional and leaves the
 normal client run unchanged.
 
+## Issue #110 journey-board release checks
+
+Issue #101 screenshots above are historical evidence and predate the Journey tab. Before an
+Issue #110 release, repeat the client matrix with the seventh tab visible and capture the Journey
+board in all three locales. Verify both the Journey tab and the Overview next-step card open the
+same board. The board must retain at most 28 logical quest entries per page; Previous and Next
+must remain reachable with mouse, `Tab`, arrow keys, `Page Up`, and `Page Down`.
+
+For the shipped first journey, verify the next step advances from Mining activity to a shop trade
+to a land purchase only after server-observed evidence. Refresh after a definition reload or a
+progress change and verify stale information is rejected rather than acted on. In normal details,
+verify quest and objective references are absent; enable **Technical information** and verify the
+focused reference is narrated. With Minecraft narration enabled, verify the Journey title, current
+page/card position, status, objective progress, next step, disabled/read-only state, and keyboard
+activation guidance are spoken without relying on color.
+
 ## Issue #101 release-candidate result
 
 The 2026-08-30 release-candidate run used the Gradle-managed Eclipse Temurin 25.0.4 daemon and
@@ -86,8 +102,8 @@ operator role, and commit SHA. Capture PNGs with descriptive names such as
 
 For every applicable row:
 
-1. Open the survival inventory and capture the six tabs, character summary, slots, and focused tab.
-2. Open Overview, Land, Skills, and Shops using keyboard only; page and activate one safe action.
+1. Open the survival inventory and capture all seven tabs, character summary, slots, and focused tab.
+2. Open Overview, Journey, Land, Skills, and Shops using keyboard only; page and activate one safe action.
 3. Confirm normal details contain no raw UUID, namespaced ID, or long hash. Focus Technical information,
    reveal them, then verify `Ctrl+C` copies the keyboard-focused card details.
 4. Open the operator console for each role. Verify role-visible domains, search, paging, selectors,
