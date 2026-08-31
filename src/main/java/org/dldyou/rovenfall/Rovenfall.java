@@ -215,6 +215,8 @@ public final class Rovenfall {
         var environment = event.registerEnvironment(id("empty"), new TestEnvironmentDefinition.AllOf(List.of()));
         var activeSkillEnvironment = event.registerEnvironment(
                 id("active_skill"), new TestEnvironmentDefinition.AllOf(List.of()));
+        var landAtlasEnvironment = event.registerEnvironment(
+                id("land_atlas"), new TestEnvironmentDefinition.AllOf(List.of()));
         var questEnvironment = event.registerEnvironment(
                 id("quest"), new TestEnvironmentDefinition.AllOf(List.of()));
         var testData = new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 1, 0, true);
@@ -292,6 +294,39 @@ public final class Rovenfall {
                     player.containerMenu.clicked(45, 0, ContainerInput.PICKUP, player);
                     helper.assertTrue(player.containerMenu instanceof PlayerDashboardMenu,
                             "Shop back action did not reopen the overview");
+                    player.discard();
+                    helper.succeed();
+                });
+            }
+        });
+        event.registerTest(id("player_land_atlas_navigation"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS,
+                new TestData<>(landAtlasEnvironment, Identifier.withDefaultNamespace("empty"), 10, 0, true)) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var player = helper.makeMockServerPlayerInLevel();
+                var platform = PlatformSavedData.get(player.level().getServer());
+                int claimsBefore = platform.claimCount();
+                int auditsBefore = platform.auditCount();
+                PlayerClaimMenu.open(player);
+                helper.assertTrue(player.containerMenu instanceof PlayerClaimMenu,
+                        "Land atlas did not open from the player inventory flow");
+                player.containerMenu.clicked(16, 0, ContainerInput.PICKUP, player);
+                helper.assertTrue(player.containerMenu instanceof PlayerClaimMenu,
+                        "Available-land atlas did not remain in the custom land menu");
+                int navigationSlot = java.util.stream.IntStream.range(9, 45)
+                        .filter(slot -> player.containerMenu.getSlot(slot).hasItem())
+                        .skip(1)
+                        .findFirst()
+                        .orElse(-1);
+                helper.assertTrue(navigationSlot >= 0,
+                        "Available-land atlas did not provide a bounded navigation target");
+                helper.runAfterDelay(1, () -> {
+                    player.containerMenu.clicked(navigationSlot, 0, ContainerInput.PICKUP, player);
+                    helper.assertTrue(player.containerMenu == player.inventoryMenu,
+                            "Starting native land navigation did not close the atlas");
+                    helper.assertTrue(platform.claimCount() == claimsBefore && platform.auditCount() == auditsBefore,
+                            "Read-only atlas navigation mutated land or audit state");
                     player.discard();
                     helper.succeed();
                 });

@@ -75,6 +75,21 @@ focused reference is narrated. With Minecraft narration enabled, verify the Jour
 page/card position, status, objective progress, next step, disabled/read-only state, and keyboard
 activation guidance are spoken without relying on color.
 
+## Issue #111 land-atlas release checks
+
+Before an Issue #111 release, repeat the standard client matrix for the Land Atlas in `ko_kr`,
+`en_us`, and `ja_jp`. Confirm that all labels use ordinary player language and that normal cards
+do not show raw identifiers or technical positions.
+
+| Case | Required state | Expected result |
+| --- | --- | --- |
+| Current and owned | Player stands on owned land and has at least two owned lands | Current Land and My Land open usable cards; owner management still follows the server permission check. |
+| Nearby privacy | Include owner, explicitly permitted, public, and restricted nearby land | Only land the viewer may see is listed; hidden land and owner names never appear in search results or narration. |
+| Available purchase | Include nearby protected and available land | Only eligible available land is listed; setting a waypoint works, but purchase is offered only after the player travels there. |
+| Search and paging | Seed more than one page of visible land | Search, Previous, Next, keyboard focus, and narration stay reachable; no result exceeds the bounded page size. |
+| Navigation | Set and clear a waypoint, then select another world | The locator-bar marker appears and clears in the current world; another-world navigation explains the limit without loading the remote area. |
+| Stale selection | Change land ownership, permission, or availability before activating a shown card | The server rejects the stale selection, refreshes the atlas, and performs no unintended mutation. |
+
 ## Issue #101 release-candidate result
 
 The 2026-08-30 release-candidate run used the Gradle-managed Eclipse Temurin 25.0.4 daemon and

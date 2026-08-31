@@ -134,6 +134,13 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.claim.title",
             "gui.rovenfall.claim.error.stale",
             "gui.rovenfall.claim.error.rate_limit",
+            "gui.rovenfall.claim.atlas.title",
+            "gui.rovenfall.claim.atlas.search",
+            "gui.rovenfall.claim.atlas.navigation.start",
+            "gui.rovenfall.claim.atlas.navigation.clear",
+            "gui.rovenfall.claim.atlas.stale",
+            "gui.rovenfall.claim.atlas.private_land",
+            "gui.rovenfall.claim.atlas.private_details",
             "gui.rovenfall.rpg.title",
             "gui.rovenfall.rpg.summary",
             "gui.rovenfall.rpg.unavailable_content",
@@ -255,6 +262,7 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.admin.world.field.transaction",
             "gui.rovenfall.admin.world.field.warning_value",
             "gui.rovenfall.admin.world.preview.transaction",
+            "gui.rovenfall.claim.atlas.technical.position",
             "gui.rovenfall.quest.technical.quest_id",
             "gui.rovenfall.quest.technical.objective_id");
 
@@ -364,6 +372,9 @@ final class LocalizationCatalogTest {
         assertEquals("기술 정보", korean.get("gui.rovenfall.admin.advanced").getAsString());
         assertEquals("여정", korean.get("gui.rovenfall.inventory.journey").getAsString());
         assertEquals("다음 할 일", korean.get("gui.rovenfall.quest.dashboard").getAsString());
+        assertEquals("토지 도감", korean.get("gui.rovenfall.claim.atlas.title").getAsString());
+        assertEquals("토지 검색", korean.get("gui.rovenfall.claim.atlas.search").getAsString());
+        assertEquals("길찾기 설정", korean.get("gui.rovenfall.claim.atlas.navigation.start").getAsString());
 
         var english = catalog("en_us");
         assertEquals("Land", english.get("gui.rovenfall.player.claims").getAsString());
@@ -371,6 +382,9 @@ final class LocalizationCatalogTest {
         assertEquals("Technical information", english.get("gui.rovenfall.admin.advanced").getAsString());
         assertEquals("Journey", english.get("gui.rovenfall.inventory.journey").getAsString());
         assertEquals("Next Step", english.get("gui.rovenfall.quest.dashboard").getAsString());
+        assertEquals("Land Atlas", english.get("gui.rovenfall.claim.atlas.title").getAsString());
+        assertEquals("Search land", english.get("gui.rovenfall.claim.atlas.search").getAsString());
+        assertEquals("Set Waypoint", english.get("gui.rovenfall.claim.atlas.navigation.start").getAsString());
 
         var japanese = catalog("ja_jp");
         assertEquals("土地", japanese.get("gui.rovenfall.player.claims").getAsString());
@@ -378,6 +392,9 @@ final class LocalizationCatalogTest {
         assertEquals("技術情報", japanese.get("gui.rovenfall.admin.advanced").getAsString());
         assertEquals("旅路", japanese.get("gui.rovenfall.inventory.journey").getAsString());
         assertEquals("次にすること", japanese.get("gui.rovenfall.quest.dashboard").getAsString());
+        assertEquals("土地図鑑", japanese.get("gui.rovenfall.claim.atlas.title").getAsString());
+        assertEquals("土地を検索", japanese.get("gui.rovenfall.claim.atlas.search").getAsString());
+        assertEquals("道案内を設定", japanese.get("gui.rovenfall.claim.atlas.navigation.start").getAsString());
 
         assertOrdinaryGuiAvoids(
                 "ko_kr",
