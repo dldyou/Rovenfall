@@ -7,6 +7,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundTrackedWaypointPacket;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.SimpleContainer;
@@ -19,6 +20,13 @@ import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.waypoints.Waypoint;
+import net.minecraft.world.waypoints.WaypointStyleAssets;
+import org.dldyou.rovenfall.exploration.ExplorationDefinitionReloadListener;
+import org.dldyou.rovenfall.exploration.ExplorationJournalView;
+import org.dldyou.rovenfall.exploration.ExplorationPlayerSavedData;
+import org.dldyou.rovenfall.exploration.ExplorationPlayerState;
 import org.dldyou.rovenfall.quest.ContractJourneyView;
 import org.dldyou.rovenfall.quest.QuestDefinition;
 import org.dldyou.rovenfall.quest.QuestDefinitionReloadListener;
@@ -41,16 +49,22 @@ public final class PlayerQuestMenu extends ChestMenu {
     };
     private static final int BACK_SLOT = 45;
     private static final int CONTRACTS_SLOT = 46;
+    private static final int EXPLORATION_SLOT = 47;
+    private static final int[] EXPLORATION_FILTER_SLOTS = {1, 2, 3};
     private static final int[] CONTRACT_SLOTS = {20, 22, 24};
     private static final int PREVIOUS_SLOT = 48;
     private static final int GUIDE_SLOT = 49;
     private static final int NEXT_SLOT = 50;
     private static final int REFRESH_SLOT = 53;
+    static final UUID EXPLORATION_MARKER_ID =
+            UUID.fromString("aa43fe27-4456-4f81-99cf-93558a69c79f");
 
     enum Page {
         LIST,
         DETAIL,
-        CONTRACTS
+        CONTRACTS,
+        EXPLORATION_LIST,
+        EXPLORATION_DETAIL
     }
 
     enum Action {
@@ -58,9 +72,15 @@ public final class PlayerQuestMenu extends ChestMenu {
         SELECT,
         BACK,
         CONTRACTS,
+        EXPLORATION,
+        FILTER_ALL,
+        FILTER_HUB,
+        FILTER_WILDERNESS,
         PREVIOUS,
         GUIDE,
         NEXT,
+        NAVIGATE,
+        CLEAR_NAVIGATION,
         REFRESH
     }
 
@@ -74,6 +94,13 @@ public final class PlayerQuestMenu extends ChestMenu {
     private List<QuestJourneyView.QuestRow> displayedRows = List.of();
     private QuestJourneyView renderedView;
     private ContractJourneyView renderedContracts;
+    private ExplorationJournalView renderedExploration;
+    private List<ExplorationJournalView.Row> displayedExplorationRows = List.of();
+    private ExplorationJournalView.Row selectedExploration;
+    private ExplorationJournalView.Filter explorationFilter = ExplorationJournalView.Filter.ALL;
+    private int explorationPage;
+    private long renderedExplorationRevision;
+    private ExplorationPlayerState renderedExplorationState = ExplorationPlayerState.EMPTY;
     private long renderedRevision;
     private QuestPlayerState renderedState = QuestPlayerState.EMPTY;
     private boolean renderedWritable;
@@ -117,7 +144,9 @@ public final class PlayerQuestMenu extends ChestMenu {
         }
         lastHandledGameTime = gameTime;
         if (action == Action.REFRESH) {
-            if (page != Page.CONTRACTS) {
+            if (page == Page.EXPLORATION_DETAIL) {
+                resetToExploration();
+            } else if (page != Page.CONTRACTS && page != Page.EXPLORATION_LIST) {
                 resetToList();
             }
             render();
@@ -127,16 +156,26 @@ public final class PlayerQuestMenu extends ChestMenu {
             back();
             return;
         }
-        if (!sessionCurrent()) {
-            stale();
+        if (explorationPage(page) ? !explorationSessionCurrent() : !sessionCurrent()) {
+            if (explorationPage(page)) {
+                staleExploration();
+            } else {
+                stale();
+            }
             return;
         }
         switch (action) {
             case SELECT -> select(slotIndex);
             case CONTRACTS -> toggleContracts();
+            case EXPLORATION -> toggleExploration();
+            case FILTER_ALL -> filterExploration(ExplorationJournalView.Filter.ALL);
+            case FILTER_HUB -> filterExploration(ExplorationJournalView.Filter.HUB);
+            case FILTER_WILDERNESS -> filterExploration(ExplorationJournalView.Filter.WILDERNESS);
             case PREVIOUS -> previous();
             case GUIDE -> openNextStep();
             case NEXT -> next();
+            case NAVIGATE -> navigateToExploration();
+            case CLEAR_NAVIGATION -> clearExplorationNavigation();
             case NONE, BACK, REFRESH -> {
             }
         }
@@ -156,14 +195,44 @@ public final class PlayerQuestMenu extends ChestMenu {
         if (slot == BACK_SLOT) {
             return Action.BACK;
         }
-        if (slot == CONTRACTS_SLOT && page != Page.DETAIL) {
+        if (slot == CONTRACTS_SLOT && page != Page.DETAIL && page != Page.EXPLORATION_DETAIL) {
             return Action.CONTRACTS;
+        }
+        if (slot == EXPLORATION_SLOT && page != Page.DETAIL && page != Page.EXPLORATION_DETAIL) {
+            return Action.EXPLORATION;
         }
         if (slot == REFRESH_SLOT) {
             return Action.REFRESH;
         }
         if (page == Page.CONTRACTS) {
             return Action.NONE;
+        }
+        if (page == Page.EXPLORATION_LIST) {
+            if (slot == EXPLORATION_FILTER_SLOTS[0]) {
+                return Action.FILTER_ALL;
+            }
+            if (slot == EXPLORATION_FILTER_SLOTS[1]) {
+                return Action.FILTER_HUB;
+            }
+            if (slot == EXPLORATION_FILTER_SLOTS[2]) {
+                return Action.FILTER_WILDERNESS;
+            }
+            if (slot == PREVIOUS_SLOT) {
+                return Action.PREVIOUS;
+            }
+            if (slot == GUIDE_SLOT) {
+                return Action.CLEAR_NAVIGATION;
+            }
+            if (slot == NEXT_SLOT) {
+                return Action.NEXT;
+            }
+            return contentOffset(slot) >= 0 ? Action.SELECT : Action.NONE;
+        }
+        if (page == Page.EXPLORATION_DETAIL) {
+            if (slot == PREVIOUS_SLOT) {
+                return Action.CLEAR_NAVIGATION;
+            }
+            return slot == GUIDE_SLOT ? Action.NAVIGATE : Action.NONE;
         }
         if (slot == PREVIOUS_SLOT) {
             return Action.PREVIOUS;
@@ -196,6 +265,10 @@ public final class PlayerQuestMenu extends ChestMenu {
 
     static boolean shouldEnsureAssignments(Page page) {
         return page == Page.CONTRACTS;
+    }
+
+    static boolean explorationPage(Page page) {
+        return page == Page.EXPLORATION_LIST || page == Page.EXPLORATION_DETAIL;
     }
 
     static String statusKey(QuestJourneyView.Status status) {
@@ -246,6 +319,21 @@ public final class PlayerQuestMenu extends ChestMenu {
 
     private void select(int slot) {
         int offset = contentOffset(slot);
+        if (page == Page.EXPLORATION_LIST) {
+            if (offset < 0 || offset >= displayedExplorationRows.size()) {
+                render();
+                return;
+            }
+            ExplorationJournalView.Row row = displayedExplorationRows.get(offset);
+            if (row.id().isEmpty()) {
+                render();
+                return;
+            }
+            selectedExploration = row;
+            page = Page.EXPLORATION_DETAIL;
+            render();
+            return;
+        }
         if (offset < 0 || offset >= displayedRows.size()) {
             render();
             return;
@@ -257,7 +345,9 @@ public final class PlayerQuestMenu extends ChestMenu {
     }
 
     private void previous() {
-        if (page == Page.LIST) {
+        if (page == Page.EXPLORATION_LIST) {
+            explorationPage = Math.max(0, explorationPage - 1);
+        } else if (page == Page.LIST) {
             listPage = Math.max(0, listPage - 1);
         } else {
             detailPage = Math.max(0, detailPage - 1);
@@ -266,7 +356,12 @@ public final class PlayerQuestMenu extends ChestMenu {
     }
 
     private void next() {
-        if (page == Page.LIST) {
+        if (page == Page.EXPLORATION_LIST) {
+            int last = Math.max(0, renderedExploration.totalPages() - 1);
+            if (explorationPage < last) {
+                explorationPage++;
+            }
+        } else if (page == Page.LIST) {
             int last = Math.max(0, renderedView.totalPages() - 1);
             if (listPage < last) {
                 listPage++;
@@ -292,6 +387,21 @@ public final class PlayerQuestMenu extends ChestMenu {
         render();
     }
 
+    private void toggleExploration() {
+        if (page == Page.EXPLORATION_LIST) {
+            resetToList();
+        } else {
+            resetToExploration();
+        }
+        render();
+    }
+
+    private void filterExploration(ExplorationJournalView.Filter filter) {
+        explorationFilter = filter;
+        explorationPage = 0;
+        render();
+    }
+
     private void openNextStep() {
         if (!renderedWritable) {
             viewer.sendOverlayMessage(Component.translatable("gui.rovenfall.quest.read_only"));
@@ -311,9 +421,15 @@ public final class PlayerQuestMenu extends ChestMenu {
     }
 
     private void back() {
-        if (page == Page.DETAIL || page == Page.CONTRACTS) {
+        if (page == Page.EXPLORATION_DETAIL) {
+            resetToExploration();
+            render();
+            return;
+        }
+        if (page == Page.DETAIL || page == Page.CONTRACTS || page == Page.EXPLORATION_LIST) {
             page = Page.LIST;
             selected = null;
+            selectedExploration = null;
             detailPage = 0;
             render();
             return;
@@ -327,9 +443,23 @@ public final class PlayerQuestMenu extends ChestMenu {
         render();
     }
 
+    private void staleExploration() {
+        viewer.sendOverlayMessage(Component.translatable("gui.rovenfall.quest.exploration.stale"));
+        resetToExploration();
+        render();
+    }
+
     private void resetToList() {
         page = Page.LIST;
         selected = null;
+        selectedExploration = null;
+        detailPage = 0;
+    }
+
+    private void resetToExploration() {
+        page = Page.EXPLORATION_LIST;
+        selected = null;
+        selectedExploration = null;
         detailPage = 0;
     }
 
@@ -341,6 +471,15 @@ public final class PlayerQuestMenu extends ChestMenu {
         return isCurrent(
                 renderedRevision, renderedState, renderedWritable,
                 definitions.revision(), saved.state(viewerId), saved.isWritable());
+    }
+
+    private boolean explorationSessionCurrent() {
+        var server = viewer.level().getServer();
+        ExplorationDefinitionReloadListener.VersionedSnapshot definitions =
+                ExplorationDefinitionReloadListener.versioned(server);
+        ExplorationPlayerState state = ExplorationPlayerSavedData.get(server).state(viewerId);
+        return renderedExplorationRevision == definitions.revision()
+                && renderedExplorationState.equals(state);
     }
 
     private void render() {
@@ -355,6 +494,9 @@ public final class PlayerQuestMenu extends ChestMenu {
                     saved, versioned.snapshot(), viewerId, now);
         }
         QuestPlayerState state = saved.state(viewerId);
+        ExplorationDefinitionReloadListener.VersionedSnapshot explorationDefinitions =
+                ExplorationDefinitionReloadListener.versioned(server);
+        ExplorationPlayerState explorationState = ExplorationPlayerSavedData.get(server).state(viewerId);
         boolean writable = saved.isWritable();
         boolean contractsWritable = writable && (assignment == null
                 || assignment.status() == RepeatableContractService.AssignmentStatus.SUCCESS
@@ -364,24 +506,38 @@ public final class PlayerQuestMenu extends ChestMenu {
                         versioned.revision(), state, writable)) {
             resetToList();
         }
+        if (page == Page.EXPLORATION_DETAIL && selectedExploration != null && renderedExploration != null
+                && (renderedExplorationRevision != explorationDefinitions.revision()
+                        || !renderedExplorationState.equals(explorationState))) {
+            resetToExploration();
+        }
 
         renderedView = QuestJourneyView.create(
                 versioned.snapshot(), state, versioned.revision(), writable, listPage, PAGE_SIZE);
         renderedContracts = ContractJourneyView.create(
                 versioned.snapshot(), state, versioned.revision(), contractsWritable, now);
+        renderedExploration = ExplorationJournalView.create(
+                explorationDefinitions.snapshot(), explorationState,
+                explorationFilter, explorationPage, PAGE_SIZE);
         renderedRevision = versioned.revision();
         renderedState = state;
         renderedWritable = writable;
         listPage = renderedView.page();
+        renderedExplorationRevision = explorationDefinitions.revision();
+        renderedExplorationState = explorationState;
+        explorationPage = renderedExploration.page();
 
         content.clearContent();
         switch (page) {
             case LIST -> renderList();
             case DETAIL -> renderDetail();
             case CONTRACTS -> renderContracts();
+            case EXPLORATION_LIST -> renderExplorationList();
+            case EXPLORATION_DETAIL -> renderExplorationDetail();
         }
-        if (page != Page.DETAIL) {
+        if (page != Page.DETAIL && page != Page.EXPLORATION_DETAIL) {
             addContractsToggle();
+            addExplorationToggle();
         }
         content.setItem(REFRESH_SLOT, icon(
                 Items.CLOCK,
@@ -460,6 +616,113 @@ public final class PlayerQuestMenu extends ChestMenu {
         addBack();
     }
 
+    private void renderExplorationList() {
+        displayedRows = List.of();
+        List<Component> header = List.of(
+                Component.translatable("gui.rovenfall.quest.exploration.summary"),
+                Component.translatable(
+                        "gui.rovenfall.quest.exploration.count",
+                        renderedExploration.discoveredEntries(), renderedExploration.catalogEntries()),
+                pageLine(renderedExploration.page(), renderedExploration.totalPages(),
+                        renderedExploration.totalEntries()));
+        content.setItem(4, PlayerDashboardMenu.icon(
+                Items.COMPASS,
+                Component.translatable("gui.rovenfall.quest.exploration"),
+                header.toArray(Component[]::new)));
+        for (int index = 0; index < EXPLORATION_FILTER_SLOTS.length; index++) {
+            ExplorationJournalView.Filter filter = ExplorationJournalView.Filter.values()[index];
+            Component name = Component.translatable(explorationFilterKey(filter));
+            content.setItem(EXPLORATION_FILTER_SLOTS[index], PlayerDashboardMenu.icon(
+                    explorationFilter == filter ? Items.FILLED_MAP : Items.MAP,
+                    name,
+                    Component.translatable(explorationFilter == filter
+                            ? "gui.rovenfall.inventory.current_tab"
+                            : "gui.rovenfall.inventory.open_tab", name)));
+        }
+        displayedExplorationRows = renderedExploration.entries();
+        for (int index = 0; index < displayedExplorationRows.size(); index++) {
+            content.setItem(CONTENT_SLOTS[index], explorationIcon(displayedExplorationRows.get(index), true));
+        }
+        if (displayedExplorationRows.isEmpty()) {
+            content.setItem(22, icon(Items.PAPER, "gui.rovenfall.quest.exploration.empty"));
+        }
+        addBack();
+        if (renderedExploration.page() > 0) {
+            content.setItem(PREVIOUS_SLOT, icon(Items.ARROW, "gui.rovenfall.player.previous"));
+        }
+        if ((long) (renderedExploration.page() + 1) * PAGE_SIZE < renderedExploration.totalEntries()) {
+            content.setItem(NEXT_SLOT, icon(Items.ARROW, "gui.rovenfall.player.next"));
+        }
+        content.setItem(GUIDE_SLOT, icon(
+                Items.BARRIER, "gui.rovenfall.quest.exploration.navigation.clear",
+                Component.translatable("gui.rovenfall.player.click")));
+    }
+
+    private void navigateToExploration() {
+        var server = viewer.level().getServer();
+        ExplorationDefinitionReloadListener.VersionedSnapshot definitions =
+                ExplorationDefinitionReloadListener.versioned(server);
+        ExplorationPlayerState state = ExplorationPlayerSavedData.get(server).state(viewerId);
+        Optional<ExplorationJournalView.GuidanceTarget> target = ExplorationJournalView.resolveGuidance(
+                definitions.snapshot(), definitions.revision(), state,
+                renderedExplorationRevision, renderedExplorationState, selectedExploration);
+        if (target.isEmpty()) {
+            staleExploration();
+            return;
+        }
+        ExplorationJournalView.GuidanceTarget guidance = target.orElseThrow();
+        if (!viewer.level().dimension().equals(guidance.dimension())) {
+            viewer.sendOverlayMessage(Component.translatable(
+                    "gui.rovenfall.quest.exploration.navigation.other_world"));
+            return;
+        }
+        viewer.connection.send(explorationNavigationPacket(guidance));
+        viewer.sendOverlayMessage(Component.translatable(
+                "gui.rovenfall.quest.exploration.navigation.started"));
+        viewer.closeContainer();
+    }
+
+    private void clearExplorationNavigation() {
+        viewer.connection.send(clearExplorationNavigationPacket());
+        viewer.sendOverlayMessage(Component.translatable(
+                "gui.rovenfall.quest.exploration.navigation.cleared"));
+    }
+
+    static ClientboundTrackedWaypointPacket explorationNavigationPacket(
+            ExplorationJournalView.GuidanceTarget target) {
+        Waypoint.Icon icon = new Waypoint.Icon();
+        icon.style = WaypointStyleAssets.BOWTIE;
+        icon.color = Optional.of(0x68D391);
+        return ClientboundTrackedWaypointPacket.addWaypointChunk(
+                EXPLORATION_MARKER_ID, icon,
+                new ChunkPos(target.position().getX() >> 4, target.position().getZ() >> 4));
+    }
+
+    static ClientboundTrackedWaypointPacket clearExplorationNavigationPacket() {
+        return ClientboundTrackedWaypointPacket.removeWaypoint(EXPLORATION_MARKER_ID);
+    }
+
+    private void renderExplorationDetail() {
+        displayedRows = List.of();
+        displayedExplorationRows = List.of();
+        if (selectedExploration == null || selectedExploration.id().isEmpty()) {
+            resetToExploration();
+            renderExplorationList();
+            return;
+        }
+        content.setItem(4, explorationIcon(selectedExploration, false));
+        content.setItem(22, explorationIcon(selectedExploration, false));
+        addBack();
+        content.setItem(PREVIOUS_SLOT, icon(
+                Items.BARRIER, "gui.rovenfall.quest.exploration.navigation.clear",
+                Component.translatable("gui.rovenfall.player.click")));
+        if (selectedExploration.guidanceAvailable()) {
+            content.setItem(GUIDE_SLOT, icon(
+                    Items.COMPASS, "gui.rovenfall.quest.exploration.navigation.start",
+                    Component.translatable("gui.rovenfall.player.click")));
+        }
+    }
+
     private ItemStack contractIcon(ContractJourneyView.ContractRow row) {
         List<Component> lore = new ArrayList<>();
         row.descriptionTranslationKey().ifPresent(key -> lore.add(Component.translatable(key)));
@@ -480,6 +743,30 @@ public final class PlayerQuestMenu extends ChestMenu {
                 lore.toArray(Component[]::new));
     }
 
+    private ItemStack explorationIcon(ExplorationJournalView.Row row, boolean clickable) {
+        if (row.status() == ExplorationJournalView.Status.HIDDEN) {
+            return PlayerDashboardMenu.icon(
+                    Items.MAP,
+                    Component.translatable("gui.rovenfall.quest.exploration.hidden"),
+                    Component.translatable("gui.rovenfall.quest.exploration.hidden.description"));
+        }
+        List<Component> lore = new ArrayList<>();
+        row.descriptionTranslationKey().ifPresent(key -> lore.add(Component.translatable(key)));
+        lore.add(Component.translatable(explorationStatusKey(row.status())));
+        row.world().ifPresent(world -> lore.add(Component.translatable(
+                world == ExplorationJournalView.World.HUB
+                        ? "gui.rovenfall.portal.world.hub"
+                        : "gui.rovenfall.portal.world.wilderness")));
+        if (clickable) {
+            lore.add(Component.translatable("gui.rovenfall.player.click"));
+        }
+        return PlayerDashboardMenu.icon(
+                row.status() == ExplorationJournalView.Status.DISCOVERED ? Items.EMERALD : Items.FILLED_MAP,
+                row.titleTranslationKey().<Component>map(Component::translatable)
+                        .orElseGet(() -> Component.translatable("gui.rovenfall.quest.exploration.hidden")),
+                lore.toArray(Component[]::new));
+    }
+
     private void addContractsToggle() {
         boolean contracts = page == Page.CONTRACTS;
         content.setItem(CONTRACTS_SLOT, PlayerDashboardMenu.icon(
@@ -491,6 +778,32 @@ public final class PlayerQuestMenu extends ChestMenu {
                         ? "gui.rovenfall.quest.story.hint"
                         : "gui.rovenfall.quest.contracts.hint"),
                 Component.translatable("gui.rovenfall.player.click")));
+    }
+
+    private void addExplorationToggle() {
+        boolean exploration = page == Page.EXPLORATION_LIST;
+        content.setItem(EXPLORATION_SLOT, PlayerDashboardMenu.icon(
+                exploration ? Items.WRITABLE_BOOK : Items.COMPASS,
+                Component.translatable(exploration
+                        ? "gui.rovenfall.quest.story"
+                        : "gui.rovenfall.quest.exploration"),
+                Component.translatable(exploration
+                        ? "gui.rovenfall.quest.story.hint"
+                        : "gui.rovenfall.quest.exploration.hint"),
+                Component.translatable("gui.rovenfall.player.click")));
+    }
+
+    private static String explorationFilterKey(ExplorationJournalView.Filter filter) {
+        return "gui.rovenfall.quest.exploration.filter." + filter.name().toLowerCase(Locale.ROOT);
+    }
+
+    private static String explorationStatusKey(ExplorationJournalView.Status status) {
+        return "gui.rovenfall.quest.exploration.status." + switch (status) {
+            case DISCOVERED -> "discovered";
+            case UNDISCOVERED -> "undiscovered";
+            case DEFINITION_CHANGED -> "changed";
+            case HIDDEN -> throw new IllegalArgumentException("Hidden rows have no public status");
+        };
     }
 
     private static String cadenceKey(QuestDefinition.Cadence cadence) {

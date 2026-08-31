@@ -6,9 +6,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
 import java.util.Optional;
+import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.waypoints.WaypointStyleAssets;
+import org.dldyou.rovenfall.exploration.ExplorationJournalView;
 import org.dldyou.rovenfall.quest.QuestJourneyView;
 import org.dldyou.rovenfall.quest.QuestPlayerState;
+import org.dldyou.rovenfall.world.WorldTopology;
 import org.junit.jupiter.api.Test;
 
 final class PlayerQuestMenuTest {
@@ -26,6 +31,10 @@ final class PlayerQuestMenuTest {
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.CONTRACTS, 46));
         assertEquals(PlayerQuestMenu.Action.NONE,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DETAIL, 46));
+        assertEquals(PlayerQuestMenu.Action.EXPLORATION,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 47));
+        assertEquals(PlayerQuestMenu.Action.EXPLORATION,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.CONTRACTS, 47));
         assertEquals(PlayerQuestMenu.Action.PREVIOUS,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 48));
         assertEquals(PlayerQuestMenu.Action.GUIDE,
@@ -42,6 +51,26 @@ final class PlayerQuestMenuTest {
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.CONTRACTS, 48));
         assertEquals(PlayerQuestMenu.Action.REFRESH,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.CONTRACTS, 53));
+        assertEquals(PlayerQuestMenu.Action.FILTER_ALL,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.EXPLORATION_LIST, 1));
+        assertEquals(PlayerQuestMenu.Action.FILTER_HUB,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.EXPLORATION_LIST, 2));
+        assertEquals(PlayerQuestMenu.Action.FILTER_WILDERNESS,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.EXPLORATION_LIST, 3));
+        assertEquals(PlayerQuestMenu.Action.SELECT,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.EXPLORATION_LIST, 10));
+        assertEquals(PlayerQuestMenu.Action.PREVIOUS,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.EXPLORATION_LIST, 48));
+        assertEquals(PlayerQuestMenu.Action.CLEAR_NAVIGATION,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.EXPLORATION_LIST, 49));
+        assertEquals(PlayerQuestMenu.Action.NEXT,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.EXPLORATION_LIST, 50));
+        assertEquals(PlayerQuestMenu.Action.CLEAR_NAVIGATION,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.EXPLORATION_DETAIL, 48));
+        assertEquals(PlayerQuestMenu.Action.NAVIGATE,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.EXPLORATION_DETAIL, 49));
+        assertEquals(PlayerQuestMenu.Action.NONE,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.EXPLORATION_DETAIL, 47));
     }
 
     @Test
@@ -66,6 +95,32 @@ final class PlayerQuestMenuTest {
         assertFalse(PlayerQuestMenu.shouldEnsureAssignments(PlayerQuestMenu.Page.LIST));
         assertFalse(PlayerQuestMenu.shouldEnsureAssignments(PlayerQuestMenu.Page.DETAIL));
         assertTrue(PlayerQuestMenu.shouldEnsureAssignments(PlayerQuestMenu.Page.CONTRACTS));
+        assertFalse(PlayerQuestMenu.shouldEnsureAssignments(PlayerQuestMenu.Page.EXPLORATION_LIST));
+        assertFalse(PlayerQuestMenu.shouldEnsureAssignments(PlayerQuestMenu.Page.EXPLORATION_DETAIL));
+    }
+
+    @Test
+    void explorationUsesItsOwnNativeWaypointMarker() throws ReflectiveOperationException {
+        ExplorationJournalView.GuidanceTarget target = new ExplorationJournalView.GuidanceTarget(
+                WorldTopology.HUB, new BlockPos(40, 70, -17));
+        var navigation = PlayerQuestMenu.explorationNavigationPacket(target);
+
+        assertEquals(PlayerQuestMenu.EXPLORATION_MARKER_ID,
+                navigation.waypoint().id().left().orElseThrow());
+        assertFalse(PlayerQuestMenu.EXPLORATION_MARKER_ID.equals(PlayerClaimMenu.NAVIGATION_MARKER_ID));
+        assertFalse(PlayerQuestMenu.EXPLORATION_MARKER_ID.equals(PlayerPortalMenu.NAVIGATION_MARKER_ID));
+        assertEquals(WaypointStyleAssets.BOWTIE, navigation.waypoint().icon().style);
+        assertEquals(Optional.of(0x68D391), navigation.waypoint().icon().color);
+        var chunkField = navigation.waypoint().getClass().getDeclaredField("chunkPos");
+        chunkField.setAccessible(true);
+        assertEquals(new ChunkPos(2, -2), chunkField.get(navigation.waypoint()));
+
+        var clear = PlayerQuestMenu.clearExplorationNavigationPacket();
+        assertEquals(PlayerQuestMenu.EXPLORATION_MARKER_ID,
+                clear.waypoint().id().left().orElseThrow());
+        assertTrue(PlayerQuestMenu.explorationPage(PlayerQuestMenu.Page.EXPLORATION_LIST));
+        assertTrue(PlayerQuestMenu.explorationPage(PlayerQuestMenu.Page.EXPLORATION_DETAIL));
+        assertFalse(PlayerQuestMenu.explorationPage(PlayerQuestMenu.Page.LIST));
     }
 
     @Test

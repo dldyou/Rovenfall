@@ -20,6 +20,12 @@ import net.minecraft.world.phys.Vec3;
 import org.dldyou.rovenfall.claims.Claim;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.economy.ShopInstance;
+import org.dldyou.rovenfall.exploration.ExplorationDefinition;
+import org.dldyou.rovenfall.exploration.ExplorationDefinitionSnapshot;
+import org.dldyou.rovenfall.exploration.ExplorationDiscoveryService;
+import org.dldyou.rovenfall.exploration.ExplorationJournalView;
+import org.dldyou.rovenfall.exploration.ExplorationPlayerSavedData;
+import org.dldyou.rovenfall.exploration.ExplorationPlayerState;
 import org.dldyou.rovenfall.mobs.BossEncounterSavedData;
 import org.dldyou.rovenfall.mobs.BossEncounterState;
 import org.dldyou.rovenfall.mobs.BossRewardOperation;
@@ -61,6 +67,7 @@ final class PerformanceBudgetTest {
             contract("daily_a", QuestDefinition.Cadence.DAILY),
             contract("daily_b", QuestDefinition.Cadence.DAILY),
             contract("weekly_a", QuestDefinition.Cadence.WEEKLY)));
+    private static final ExplorationDefinitionSnapshot EXPLORATION_DEFINITIONS = explorationDefinitions();
 
     @Test
     void twentyAndFiftyPlayerScenariosExerciseEveryTargetDomainAndWriteDiagnostics() {
@@ -103,12 +110,17 @@ final class PerformanceBudgetTest {
         assertEquals(3, ContractJourneyView.MAX_ENTRIES);
         assertEquals(128, QuestDefinitionSnapshot.MAX_CONTRACT_DEFINITIONS);
         assertEquals(256, QuestPlayerState.MAX_CONTRACTS);
+        assertEquals(128, ExplorationDefinitionSnapshot.MAX_DEFINITIONS);
+        assertEquals(256, ExplorationPlayerState.MAX_DISCOVERIES);
+        assertEquals(28, ExplorationJournalView.MAX_PAGE_SIZE);
+        assertEquals(8, ExplorationDiscoveryService.MAX_RECOVERY_STEPS);
     }
 
     private static ScenarioResult runScenario(int playerCount) {
         PlatformSavedData platform = new PlatformSavedData();
         RpgPlayerSavedData rpg = new RpgPlayerSavedData();
         QuestPlayerSavedData quests = new QuestPlayerSavedData();
+        ExplorationPlayerSavedData exploration = new ExplorationPlayerSavedData();
         BossRewardSavedData bossRewards = new BossRewardSavedData();
         assertEquals(AdministrationService.RoleChangeStatus.SUCCESS, AdministrationService.changeRole(
                 platform, AdministrationService.SYSTEM_ACTOR, true, OPERATOR,
@@ -192,6 +204,22 @@ final class PerformanceBudgetTest {
         long contractsNanos = System.nanoTime() - start;
 
         start = System.nanoTime();
+        int explorationRows = 0;
+        for (int index = 0; index < playerCount; index++) {
+            BlockPos position = explorationPosition(index);
+            var observed = ExplorationDiscoveryService.observe(
+                    exploration, EXPLORATION_DEFINITIONS, rpg, RPG_DEFINITIONS,
+                    players.get(index), WorldTopology.HUB, position, CONTRACT_NOW, CONTRACT_NOW);
+            assertEquals(ExplorationDiscoveryService.Status.SUCCESS, observed.status());
+            ExplorationJournalView journal = ExplorationJournalView.create(
+                    EXPLORATION_DEFINITIONS, exploration.state(players.get(index)),
+                    ExplorationJournalView.Filter.ALL, 0, ExplorationJournalView.MAX_PAGE_SIZE);
+            assertEquals(ExplorationDefinitionSnapshot.MAX_DEFINITIONS, journal.totalEntries());
+            explorationRows += journal.entries().size();
+        }
+        long explorationNanos = System.nanoTime() - start;
+
+        start = System.nanoTime();
         PortalTravelService.Gateway gateway = new PortalTravelService.Gateway() {
             @Override
             public boolean dimensionAvailable(ResourceKey<Level> dimension) {
@@ -249,12 +277,12 @@ final class PerformanceBudgetTest {
         assertEquals(auditsBeforeRead, platform.auditCount());
         return new ScenarioResult(
                 playerCount, platform.economyAccountCount(), platform.claimCount(), rpg.playerCount(),
-                quests.playerCount(),
+                quests.playerCount(), exploration.playerCount(),
                 playerCount, encounter.contributions().size(), mutationEvaluations,
-                bossRewards.pendingOperations().size(), atlasRows, portalViewRows, contractRows,
+                bossRewards.pendingOperations().size(), atlasRows, portalViewRows, contractRows, explorationRows,
                 balances.entries().size(), audits.entries().size(),
                 economyNanos, claimsNanos, atlasNanos, portalViewNanos,
-                rpgNanos, contractsNanos, portalsNanos, bossesNanos, administrationNanos);
+                rpgNanos, contractsNanos, explorationNanos, portalsNanos, bossesNanos, administrationNanos);
     }
 
     private static void assertScenario(ScenarioResult result) {
@@ -262,6 +290,7 @@ final class PerformanceBudgetTest {
         assertEquals(result.players(), result.claims());
         assertEquals(result.players(), result.rpgPlayers());
         assertEquals(result.players(), result.questPlayers());
+        assertEquals(result.players(), result.explorationPlayers());
         assertEquals(result.players(), result.portalTravels());
         assertEquals(result.players(), result.bossContributors());
         assertEquals(result.players(), result.mutationEvaluations());
@@ -271,6 +300,7 @@ final class PerformanceBudgetTest {
         assertTrue(result.portalViewRows() > 0
                 && result.portalViewRows() <= result.players() * PlayerPortalView.PAGE_SIZE);
         assertEquals(result.players() * ContractJourneyView.MAX_ENTRIES, result.contractRows());
+        assertEquals(result.players() * ExplorationJournalView.MAX_PAGE_SIZE, result.explorationRows());
         assertEquals(result.players(), result.balanceRows());
         assertTrue(result.auditRows() > 0 && result.auditRows() <= PlatformSavedData.MAX_AUDIT_PAGE_SIZE);
         assertTrue(result.totalNanos() >= 0); // Diagnostic only; never a machine-specific time gate.
@@ -297,13 +327,13 @@ final class PerformanceBudgetTest {
                 Deterministic structural assertions passed for the repository-native 20/50-player load fixture.
                 Wall-clock measurements are diagnostics from this runner and never fail the build.
 
-                | Players | Accounts | Claims | RPG | Quest | Portal travels | Boss contributors | Mutation evaluations | Boss rewards | Atlas rows | Portal explorer rows | Request rows | Admin balance rows | Admin audit rows | Economy ms | Claims ms | Atlas ms | Portal explorer ms | RPG ms | Requests ms | Portals ms | Boss ms | Admin ms | Total ms |
-                | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+                | Players | Accounts | Claims | RPG | Quest | Exploration | Portal travels | Boss contributors | Mutation evaluations | Boss rewards | Atlas rows | Portal explorer rows | Request rows | Journal rows | Admin balance rows | Admin audit rows | Economy ms | Claims ms | Atlas ms | Portal explorer ms | RPG ms | Requests ms | Exploration ms | Portals ms | Boss ms | Admin ms | Total ms |
+                | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
                 %s
                 %s
 
                 Structural budgets: land atlas and portal explorer 36 rows/page; requests 3 rows/player;
-                portal scans 64 definitions;
+                exploration journal 28 rows/page from at most 128 definitions; portal scans 64 definitions;
                 land nearby radius 8 areas; admin pages 50 rows;
                 boss tick encounters 32; skill requests 20/player/s;
                 activate/state packets 128/64 bytes; recovery journals 10,000 boss operations,
@@ -332,29 +362,53 @@ final class PerformanceBudgetTest {
                         Optional.of(new QuestDefinition.Contract(cadence))));
     }
 
+    private static ExplorationDefinitionSnapshot explorationDefinitions() {
+        List<ExplorationDefinitionSnapshot.Source> sources = new ArrayList<>();
+        for (int index = 0; index < ExplorationDefinitionSnapshot.MAX_DEFINITIONS; index++) {
+            Identifier id = Identifier.fromNamespaceAndPath("rovenfall", "performance_discovery_" + index);
+            sources.add(new ExplorationDefinitionSnapshot.Source(
+                    Identifier.fromNamespaceAndPath(
+                            "rovenfall", "rovenfall/discoveries/performance_" + index + ".json"),
+                    "performance", id,
+                    new ExplorationDefinition(
+                            "discovery.rovenfall.performance." + index,
+                            "discovery.rovenfall.performance." + index + ".description",
+                            1, WorldTopology.HUB, explorationPosition(index), 4,
+                            index % 2 == 0, Optional.empty())));
+        }
+        return ExplorationDefinitionSnapshot.compile(sources);
+    }
+
+    private static BlockPos explorationPosition(int index) {
+        return new BlockPos(40_000 + index * 128, 70, 40_000);
+    }
+
     private static UUID id(long value) {
         return new UUID(0L, value);
     }
 
     private record ScenarioResult(
-            int players, int accounts, int claims, int rpgPlayers, int questPlayers, int portalTravels,
+            int players, int accounts, int claims, int rpgPlayers, int questPlayers, int explorationPlayers,
+            int portalTravels,
             int bossContributors, int mutationEvaluations, int pendingBossRewards, int atlasRows, int portalViewRows,
-            int contractRows, int balanceRows, int auditRows,
+            int contractRows, int explorationRows, int balanceRows, int auditRows,
             long economyNanos, long claimsNanos, long atlasNanos, long portalViewNanos, long rpgNanos,
-            long contractsNanos, long portalsNanos, long bossesNanos, long administrationNanos) {
+            long contractsNanos, long explorationNanos, long portalsNanos, long bossesNanos,
+            long administrationNanos) {
         long totalNanos() {
             return economyNanos + claimsNanos + atlasNanos + portalViewNanos + rpgNanos
-                    + contractsNanos + portalsNanos + bossesNanos + administrationNanos;
+                    + contractsNanos + explorationNanos + portalsNanos + bossesNanos + administrationNanos;
         }
 
         String markdown() {
-            return "| %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f |".formatted(
-                    players, accounts, claims, rpgPlayers, questPlayers, portalTravels, bossContributors,
-                    mutationEvaluations, pendingBossRewards, atlasRows, portalViewRows, contractRows,
+            return "| %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f |".formatted(
+                    players, accounts, claims, rpgPlayers, questPlayers, explorationPlayers,
+                    portalTravels, bossContributors, mutationEvaluations, pendingBossRewards,
+                    atlasRows, portalViewRows, contractRows, explorationRows,
                     balanceRows, auditRows,
                     millis(economyNanos), millis(claimsNanos), millis(atlasNanos), millis(portalViewNanos),
-                    millis(rpgNanos), millis(contractsNanos), millis(portalsNanos), millis(bossesNanos),
-                    millis(administrationNanos), millis(totalNanos()));
+                    millis(rpgNanos), millis(contractsNanos), millis(explorationNanos),
+                    millis(portalsNanos), millis(bossesNanos), millis(administrationNanos), millis(totalNanos()));
         }
 
         private static double millis(long nanos) {

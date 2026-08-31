@@ -1,0 +1,10 @@
+{
+  "title_translation_key": "discovery.rovenfall.weathered_ruins",
+  "description_translation_key": "discovery.rovenfall.weathered_ruins.description",
+  "version": 1,
+  "dimension": "rovenfall:wilderness",
+  "position": [192, 64, 192],
+  "radius": 24,
+  "public_guidance": false,
+  "activity_xp": 25
+}

@@ -213,6 +213,11 @@ def inspectReleaseJar = tasks.register('inspectReleaseJar') {
                     'org/dldyou/rovenfall/administration/RovenfallAdministrationMenus.class',
                     'org/dldyou/rovenfall/quest/ContractJourneyView.class',
                     'org/dldyou/rovenfall/quest/RepeatableContractService.class',
+                    'org/dldyou/rovenfall/exploration/ExplorationDefinitionReloadListener.class',
+                    'org/dldyou/rovenfall/exploration/ExplorationDiscoveryService.class',
+                    'org/dldyou/rovenfall/exploration/ExplorationJournalView.class',
+                    'org/dldyou/rovenfall/exploration/ExplorationPlayerSavedData.class',
+                    'org/dldyou/rovenfall/exploration/ExplorationRuntime.class',
                     'assets/rovenfall/lang/en_us.json',
                     'assets/rovenfall/lang/ja_jp.json',
                     'assets/rovenfall/lang/ko_kr.json',
@@ -221,7 +226,11 @@ def inspectReleaseJar = tasks.register('inspectReleaseJar') {
                     'data/rovenfall/rovenfall/quests/contracts/daily_market_delivery.json',
                     'data/rovenfall/rovenfall/quests/contracts/daily_mining_survey.json',
                     'data/rovenfall/rovenfall/quests/contracts/weekly_mining_expedition.json',
-                    'data/rovenfall/rovenfall/quests/contracts/weekly_rift_hunt.json'
+                    'data/rovenfall/rovenfall/quests/contracts/weekly_rift_hunt.json',
+                    'data/rovenfall/rovenfall/discoveries/hub_arrival.json',
+                    'data/rovenfall/rovenfall/discoveries/hub_commons.json',
+                    'data/rovenfall/rovenfall/discoveries/wilderness_trailhead.json',
+                    'data/rovenfall/rovenfall/discoveries/weathered_ruins.json'
             ]
             def missing = required.findAll { !entries.contains(it) }
             if (!missing.isEmpty()) {

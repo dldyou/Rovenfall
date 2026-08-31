@@ -1,0 +1,10 @@
+{
+  "title_translation_key": "discovery.rovenfall.hub_commons",
+  "description_translation_key": "discovery.rovenfall.hub_commons.description",
+  "version": 1,
+  "dimension": "minecraft:overworld",
+  "position": [96, 64, 0],
+  "radius": 32,
+  "public_guidance": true,
+  "activity_xp": 15
+}
