@@ -14,10 +14,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.NavigableSet;
 import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.UUID;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.resources.Identifier;
@@ -53,6 +55,7 @@ public final class PlatformSavedData extends SavedData {
     private static final Comparator<AuditEntry> AUDIT_NEWEST_FIRST = Comparator
             .comparingLong(AuditEntry::timestampEpochMillis).reversed()
             .thenComparing(AuditEntry::transactionId);
+    private static final Comparator<ClaimKey> CLAIM_KEY_ORDER = Comparator.comparing(ClaimKey::auditTarget);
     static final int MAX_AUDIT_ENTRIES = 100_000;
     static final int MAX_DENIED_AUDIT_ACTORS = 10_000;
     private static final Codec<Map<UUID, AdminRole>> ADMIN_ROLES_CODEC = Codec.unboundedMap(UUIDUtil.STRING_CODEC, AdminRole.CODEC);
@@ -142,6 +145,7 @@ public final class PlatformSavedData extends SavedData {
     private final Map<PortalDefinition.Endpoint, Identifier> portalOriginIndex = new HashMap<>();
     private final Map<ClaimKey, Set<Identifier>> protectedRegionIndex = new HashMap<>();
     private final Map<UUID, Integer> claimCountsByOwner = new HashMap<>();
+    private final Map<UUID, NavigableSet<ClaimKey>> claimKeysByOwner = new HashMap<>();
     private final Map<UUID, ArrayDeque<Long>> recentTransactionsByPlayer = new HashMap<>();
     private final Map<UUID, Long> receiptEvictionTimes = new HashMap<>();
     private final PriorityQueue<ReceiptExpiry> receiptExpiryQueue = new PriorityQueue<>(
@@ -196,7 +200,7 @@ public final class PlatformSavedData extends SavedData {
         this.shopInstances = new HashMap<>(shopInstances);
         this.economyReceipts = new TreeMap<>(economyReceipts);
         this.economyAlerts = new ArrayList<>(economyAlerts);
-        this.claims = new TreeMap<>(Comparator.comparing(ClaimKey::auditTarget));
+        this.claims = new TreeMap<>(CLAIM_KEY_ORDER);
         this.claims.putAll(claims);
         this.claimReceipts = new HashMap<>(claimReceipts);
         this.protectedRegions = new TreeMap<>();
@@ -395,6 +399,20 @@ public final class PlatformSavedData extends SavedData {
 
     public int claimCount(UUID ownerId) {
         return claimCountsByOwner.getOrDefault(ownerId, 0);
+    }
+
+    /** Immutable, deterministically ordered owner projection backed by the derived owner index. */
+    public List<Map.Entry<ClaimKey, Claim>> claimsOwnedBy(UUID ownerId, int maximumEntries) {
+        if (ownerId == null || maximumEntries < 1) {
+            throw new IllegalArgumentException("Owner claim query must be bounded");
+        }
+        NavigableSet<ClaimKey> keys = claimKeysByOwner.get(ownerId);
+        if (keys == null) {
+            return List.of();
+        }
+        return keys.stream().limit(maximumEntries)
+                .map(key -> Map.entry(key, claims.get(key)))
+                .toList();
     }
 
     public int claimCount() {
@@ -1244,8 +1262,7 @@ public final class PlatformSavedData extends SavedData {
         }
         prepareLedgerForCommit(timestampEpochMillis);
         economyBalances.put(playerId, balance);
-        claims.put(claimKey, claim);
-        claimCountsByOwner.merge(playerId, 1, Math::addExact);
+        replaceClaim(claimKey, claim);
         economyTransactions.put(transactionId, timestampEpochMillis);
         commitReceiptEvidence(transactionId, receipt, alerts);
         commitAudit(auditEntry);
@@ -1887,6 +1904,13 @@ public final class PlatformSavedData extends SavedData {
         Claim previous = claims.get(key);
         if (previous != null && (replacement == null || !previous.ownerId().equals(replacement.ownerId()))) {
             claimCountsByOwner.computeIfPresent(previous.ownerId(), (ignored, count) -> count == 1 ? null : count - 1);
+            NavigableSet<ClaimKey> owned = claimKeysByOwner.get(previous.ownerId());
+            if (owned != null) {
+                owned.remove(key);
+                if (owned.isEmpty()) {
+                    claimKeysByOwner.remove(previous.ownerId());
+                }
+            }
         }
         if (replacement == null) {
             claims.remove(key);
@@ -1895,6 +1919,8 @@ public final class PlatformSavedData extends SavedData {
         claims.put(key, replacement);
         if (previous == null || !previous.ownerId().equals(replacement.ownerId())) {
             claimCountsByOwner.merge(replacement.ownerId(), 1, Math::addExact);
+            claimKeysByOwner.computeIfAbsent(replacement.ownerId(), ignored -> new TreeSet<>(CLAIM_KEY_ORDER))
+                    .add(key);
         }
     }
 
@@ -2238,7 +2264,11 @@ public final class PlatformSavedData extends SavedData {
 
     private void rebuildClaimOwnerIndex() {
         claimCountsByOwner.clear();
-        claims.values().forEach(claim -> claimCountsByOwner.merge(claim.ownerId(), 1, Math::addExact));
+        claimKeysByOwner.clear();
+        claims.forEach((key, claim) -> {
+            claimCountsByOwner.merge(claim.ownerId(), 1, Math::addExact);
+            claimKeysByOwner.computeIfAbsent(claim.ownerId(), ignored -> new TreeSet<>(CLAIM_KEY_ORDER)).add(key);
+        });
     }
 
     private void rebuildProtectedRegionIndex() {

@@ -7,6 +7,8 @@ final class RovenfallPlayerMenuLayout {
     static final int TOOLBAR_HEIGHT = 24;
     static final int PAGE_BUTTON_WIDTH = 52;
     static final int TECHNICAL_BUTTON_WIDTH = 20;
+    static final int SEARCH_HEIGHT = 20;
+    static final int SEARCH_BUTTON_WIDTH = 56;
     private static final int EDGE = 8;
     private static final int HEADER_HEIGHT = 30;
     private static final int MAX_WIDTH = 760;
@@ -16,6 +18,10 @@ final class RovenfallPlayerMenuLayout {
     }
 
     static Layout fit(int screenWidth, int screenHeight) {
+        return fit(screenWidth, screenHeight, false);
+    }
+
+    static Layout fit(int screenWidth, int screenHeight, boolean search) {
         int panelWidth = Math.max(160, Math.min(MAX_WIDTH, screenWidth - EDGE * 2));
         int panelHeight = Math.max(120, screenHeight - EDGE * 2);
         Bounds panel = new Bounds((screenWidth - panelWidth) / 2, EDGE, panelWidth, panelHeight);
@@ -24,7 +30,7 @@ final class RovenfallPlayerMenuLayout {
                 panel.bottom() - TOOLBAR_HEIGHT - GAP,
                 panel.width() - GAP * 2,
                 TOOLBAR_HEIGHT);
-        int bodyY = panel.y() + HEADER_HEIGHT;
+        int bodyY = panel.y() + HEADER_HEIGHT + (search ? SEARCH_HEIGHT + GAP : 0);
         int bodyHeight = Math.max(CARD_HEIGHT, toolbar.y() - GAP - bodyY);
         boolean wide = panel.width() >= 560;
         int detailWidth = wide ? DETAIL_WIDTH : 0;
@@ -35,7 +41,7 @@ final class RovenfallPlayerMenuLayout {
                 : new Bounds(cards.right(), bodyY, 0, bodyHeight);
         int columns = cards.width() >= 330 ? 2 : 1;
         int rows = Math.max(1, (cards.height() + GAP) / (CARD_HEIGHT + GAP));
-        return new Layout(panel, cards, detail, toolbar, columns, rows, wide);
+        return new Layout(panel, cards, detail, toolbar, columns, rows, wide, search);
     }
 
     static int toolbarStart(int rowCount) {
@@ -53,7 +59,8 @@ final class RovenfallPlayerMenuLayout {
             Bounds toolbar,
             int columns,
             int rows,
-            boolean wide) {
+            boolean wide,
+            boolean search) {
         int pageSize() {
             return columns * rows;
         }
@@ -95,6 +102,25 @@ final class RovenfallPlayerMenuLayout {
                     panel.y() + 3,
                     TECHNICAL_BUTTON_WIDTH,
                     20);
+        }
+
+        Bounds searchField() {
+            if (!search) {
+                return new Bounds(panel.x() + GAP, panel.y() + HEADER_HEIGHT, 0, 0);
+            }
+            int width = panel.width() - GAP * 3 - SEARCH_BUTTON_WIDTH;
+            return new Bounds(panel.x() + GAP, panel.y() + HEADER_HEIGHT, width, SEARCH_HEIGHT);
+        }
+
+        Bounds searchButton() {
+            if (!search) {
+                return new Bounds(panel.right() - GAP, panel.y() + HEADER_HEIGHT, 0, 0);
+            }
+            return new Bounds(
+                    panel.right() - GAP - SEARCH_BUTTON_WIDTH,
+                    panel.y() + HEADER_HEIGHT,
+                    SEARCH_BUTTON_WIDTH,
+                    SEARCH_HEIGHT);
         }
 
         Bounds pageLabel() {

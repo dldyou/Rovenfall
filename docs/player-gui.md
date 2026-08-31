@@ -5,6 +5,8 @@ Rovenfall turns the ordinary survival inventory into the primary player entry po
 ## Interaction model
 
 - Overview uses a three-row menu. Land, Skills, Shops, and Journey use six-row menus.
+- Land opens the Land Atlas: Current Land, My Land, Nearby Land, and Available Land. The atlas is a bounded, server-filtered list; restricted land and owner names are never sent to players who cannot view them. Search is limited to visible land and uses an owner name rather than a raw identifier.
+- A land card can set a locator-bar waypoint in the current world. Clearing the waypoint is available from the atlas. The atlas never loads remote areas, and purchase remains available only while standing on the selected available land.
 - Journey is the quest board. It shows at most 28 journeys on a page, a plain-language status and reward preview, then one server-selected next step. The Overview card opens the same board, so players never need a command, UUID, or definition identifier to find their first journey.
 - The first journey introduces the opening loop: gain Mining activity progress, trade at a shop, then buy a piece of land. It is guidance rather than a timer; all progress and any reward remain server-owned.
 - Mouse users activate an item with the primary (left) button. Shift-click, drag, number-key swaps, secondary clicks, and other inventory gestures cannot invoke an action.
@@ -38,7 +40,7 @@ compatibility checks, and manual capture procedure.
 - `/rovenfall career promote|switch ...`
 - `/rovenfall skill learn|bind|unbind|reset ...`
 
-Remote claim transfer acceptance or cancellation by dimension and chunk coordinates is command-only because the current-chunk GUI intentionally has no remote claim browser. `/rovenfall portal use <portal_id>` is also command-only until a player portal browser exists.
+Remote land management is available from the atlas only when the server grants the viewer the existing owner, manager, or pending-recipient permission. Purchase still requires standing on the land, and the server rechecks the selected land before every action. `/rovenfall portal use <portal_id>` remains command-only until a player portal browser exists.
 
 The Admin tab is the normal operator path. `/rovenfall admin gui` and the other `/rovenfall admin ...` commands remain permission-gated fallbacks for automation, recovery, and records outside bounded GUI result windows.
 

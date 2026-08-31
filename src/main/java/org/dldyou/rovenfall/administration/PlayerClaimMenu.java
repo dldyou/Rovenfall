@@ -10,6 +10,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundTrackedWaypointPacket;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.SimpleMenuProvider;
@@ -20,6 +21,9 @@ import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ChunkPos;
+import net.minecraft.world.waypoints.Waypoint;
+import net.minecraft.world.waypoints.WaypointStyleAssets;
 import org.dldyou.rovenfall.claims.Claim;
 import org.dldyou.rovenfall.claims.ClaimConfig;
 import org.dldyou.rovenfall.claims.ClaimKey;
@@ -29,8 +33,8 @@ import org.dldyou.rovenfall.claims.ClaimSettings;
 import org.dldyou.rovenfall.quest.QuestProgressRuntime;
 import org.dldyou.rovenfall.world.WorldTopology;
 
-/** Server-owned current-chunk claim lifecycle exposed through a native menu. */
-public final class PlayerClaimMenu extends ChestMenu {
+/** Server-owned land atlas and existing claim lifecycle exposed through the custom inventory UI. */
+public final class PlayerClaimMenu extends ChestMenu implements AdministrationTextInputMenu {
     static final int MAX_CANDIDATES = 36;
     static final int MAX_CANDIDATE_SCAN = MAX_CANDIDATES * 4;
     static final int PAGE_SIZE = 36;
@@ -41,8 +45,13 @@ public final class PlayerClaimMenu extends ChestMenu {
     private static final int PREVIOUS_SLOT = 48;
     private static final int NEXT_SLOT = 50;
     private static final int REFRESH_SLOT = 53;
+    private static final int NAVIGATE_SLOT = 29;
+    private static final int CLEAR_NAVIGATION_SLOT = 31;
+    static final UUID NAVIGATION_MARKER_ID = UUID.fromString("8ae6f57f-b7d2-4a9c-a86a-5914f629c06f");
 
     enum Page {
+        ATLAS_HOME,
+        ATLAS_LIST,
         OVERVIEW,
         TRUSTED,
         ROLE,
@@ -81,9 +90,16 @@ public final class PlayerClaimMenu extends ChestMenu {
     private final ServerPlayer viewer;
     private final UUID viewerId;
     private final SimpleContainer contents;
-    private Page page = Page.OVERVIEW;
+    private Page page = Page.ATLAS_HOME;
     private int pageIndex;
     private ClaimKey viewedKey;
+    private Optional<Claim> viewedClaim = Optional.empty();
+    private boolean selectedCurrentLand;
+    private Page detailReturnPage = Page.ATLAS_HOME;
+    private ClaimAtlasView.Section atlasSection;
+    private String atlasQuery = "";
+    private ClaimAtlasView atlasView;
+    private List<ClaimAtlasView.Row> displayedLands = List.of();
     private UUID selectedPlayer;
     private CandidatePurpose candidatePurpose;
     private List<UUID> displayedPlayers = List.of();
@@ -112,6 +128,25 @@ public final class PlayerClaimMenu extends ChestMenu {
     }
 
     @Override
+    public boolean applyTextInput(ServerPlayer player, String input) {
+        if (player == null
+                || !viewerId.equals(player.getUUID())
+                || page != Page.ATLAS_LIST
+                || atlasSection == null
+                || atlasSection == ClaimAtlasView.Section.AVAILABLE
+                || input == null
+                || input.length() > ClaimAtlasView.MAX_QUERY_LENGTH
+                || input.indexOf('\n') >= 0
+                || input.indexOf('\r') >= 0) {
+            return false;
+        }
+        atlasQuery = input.strip();
+        pageIndex = 0;
+        render();
+        return true;
+    }
+
+    @Override
     public void clicked(int slotIndex, int buttonNum, ContainerInput input, Player player) {
         if (!(player instanceof ServerPlayer serverPlayer)
                 || !viewerId.equals(serverPlayer.getUUID())
@@ -127,15 +162,22 @@ public final class PlayerClaimMenu extends ChestMenu {
         }
         lastHandledGameTime = gameTime;
         if (slotIndex == REFRESH_SLOT) {
-            resetToOverview();
-            render();
+            refresh();
             return;
         }
         if (slotIndex == BACK_SLOT) {
             back();
             return;
         }
-        if (!currentKey().equals(viewedKey)) {
+        if (page == Page.ATLAS_HOME) {
+            handleAtlasHome(slotIndex);
+            return;
+        }
+        if (page == Page.ATLAS_LIST) {
+            handleAtlasList(slotIndex);
+            return;
+        }
+        if (!detailSelectionIsCurrent()) {
             stale();
             return;
         }
@@ -145,11 +187,13 @@ public final class PlayerClaimMenu extends ChestMenu {
             return;
         }
         if (slotIndex == NEXT_SLOT && page == Page.TRUSTED) {
-            pageIndex++;
+            pageIndex = Math.min(Integer.MAX_VALUE - 1, pageIndex + 1);
             render();
             return;
         }
         switch (page) {
+            case ATLAS_HOME, ATLAS_LIST -> {
+            }
             case OVERVIEW -> handleOverview(slotIndex);
             case TRUSTED -> handleTrusted(slotIndex);
             case ROLE -> handleRole(slotIndex);
@@ -190,6 +234,15 @@ public final class PlayerClaimMenu extends ChestMenu {
         return actions;
     }
 
+    static boolean canViewDetails(PlatformSavedData state, UUID actorId, Claim claim) {
+        return state != null && actorId != null && claim != null
+                && (!claim.settings().entryRestricted()
+                        || claim.ownerId().equals(actorId)
+                        || claim.trustedRoles().containsKey(actorId)
+                        || claim.pendingTransferTo().filter(actorId::equals).isPresent()
+                        || ClaimManagementService.canManage(state, claim, actorId, false));
+    }
+
     static List<UUID> boundedCandidateIds(
             Collection<UUID> onlinePlayers, UUID ownerId, Set<UUID> excluded) {
         if (onlinePlayers == null || ownerId == null || excluded == null) {
@@ -214,7 +267,7 @@ public final class PlayerClaimMenu extends ChestMenu {
             Confirmation confirmation,
             Optional<Long> currentAmount) {
         return confirmation != null
-                && confirmation.key().equals(currentKey)
+                && (!confirmation.requiresCurrentPosition() || confirmation.key().equals(currentKey))
                 && confirmation.expectedClaim().equals(currentClaim)
                 && (confirmation.kind() != ConfirmationKind.PURCHASE
                         && confirmation.kind() != ConfirmationKind.SALE
@@ -226,7 +279,12 @@ public final class PlayerClaimMenu extends ChestMenu {
             return true;
         }
         return switch (page) {
-            case OVERVIEW -> slot == 19 || slot == 21 || slot == 23 || slot == 25 || slot == 31 || slot == 33;
+            case ATLAS_HOME -> slot == 10 || slot == 12 || slot == 14 || slot == 16
+                    || slot == CLEAR_NAVIGATION_SLOT;
+            case ATLAS_LIST -> slot == PREVIOUS_SLOT || slot == NEXT_SLOT
+                    || slot >= CONTENT_START && slot - CONTENT_START < displayedLands.size();
+            case OVERVIEW -> slot == 19 || slot == 21 || slot == 23 || slot == 25
+                    || slot == NAVIGATE_SLOT || slot == 31 || slot == 33;
             case TRUSTED -> slot == ADD_SLOT || slot == PREVIOUS_SLOT || slot == NEXT_SLOT
                     || slot >= CONTENT_START && slot < CONTENT_START + PAGE_SIZE;
             case ROLE -> slot == 19 || slot == 21 || slot == 23 || slot == 25 || slot == 31;
@@ -236,11 +294,79 @@ public final class PlayerClaimMenu extends ChestMenu {
         };
     }
 
+    private void handleAtlasHome(int slot) {
+        switch (slot) {
+            case 10 -> {
+                viewedKey = currentKey();
+                selectedCurrentLand = true;
+                detailReturnPage = Page.ATLAS_HOME;
+                page = Page.OVERVIEW;
+                render();
+            }
+            case 12 -> openAtlas(ClaimAtlasView.Section.OWNED);
+            case 14 -> openAtlas(ClaimAtlasView.Section.NEARBY);
+            case 16 -> openAtlas(ClaimAtlasView.Section.AVAILABLE);
+            case CLEAR_NAVIGATION_SLOT -> clearNavigation();
+            default -> {
+            }
+        }
+    }
+
+    private void openAtlas(ClaimAtlasView.Section section) {
+        atlasSection = section;
+        atlasQuery = "";
+        pageIndex = 0;
+        page = Page.ATLAS_LIST;
+        render();
+    }
+
+    private void handleAtlasList(int slot) {
+        ClaimAtlasView fresh = createAtlasView();
+        if (slot == PREVIOUS_SLOT) {
+            pageIndex = Math.max(0, pageIndex - 1);
+            render();
+            return;
+        }
+        if (slot == NEXT_SLOT) {
+            pageIndex = Math.min(Math.max(0, fresh.totalPages() - 1), pageIndex + 1);
+            render();
+            return;
+        }
+        int index = slot - CONTENT_START;
+        if (atlasView == null || !atlasView.equals(fresh)
+                || index < 0 || index >= displayedLands.size()) {
+            staleAtlas();
+            return;
+        }
+        ClaimAtlasView.Row selected = displayedLands.get(index);
+        if (!selected.actionable()) {
+            navigateTo(selected.key());
+            return;
+        }
+        viewedKey = selected.key();
+        viewedClaim = selected.expectedClaim();
+        selectedCurrentLand = selected.current();
+        detailReturnPage = Page.ATLAS_LIST;
+        page = Page.OVERVIEW;
+        render();
+    }
+
     private void handleOverview(int slot) {
         PlatformSavedData state = platform();
         Claim claim = state.claim(viewedKey).orElse(null);
+        if (claim != null && !canViewDetails(state, viewerId, claim)) {
+            rejectUnauthorized("view_private_land");
+            return;
+        }
+        if (slot == NAVIGATE_SLOT) {
+            navigateTo(viewedKey);
+            return;
+        }
         if (claim == null) {
-            if (slot == 31 && WorldTopology.allowsClaims(viewedKey.dimension()) && !isProtected(viewedKey)) {
+            if (slot == 31
+                    && currentKey().equals(viewedKey)
+                    && WorldTopology.allowsClaims(viewedKey.dimension())
+                    && !isProtected(viewedKey)) {
                 Optional<Long> price = purchasePrice(state);
                 if (price.isEmpty()) {
                     message("command.rovenfall.claim.error.invalid_configuration");
@@ -476,7 +602,7 @@ public final class PlayerClaimMenu extends ChestMenu {
                     platform(), viewerId, viewedKey, ClaimConfig.saleRefundPercent(),
                     EconomyConfig.maximumBalance(), "player claim GUI sale", now(), UUID.randomUUID()));
         }
-        resetToOverview();
+        resetDetailToOverview();
         render();
     }
 
@@ -546,17 +672,21 @@ public final class PlayerClaimMenu extends ChestMenu {
     }
 
     private void confirm(ConfirmationKind kind, Claim expectedClaim, long amount, UUID targetId) {
-        confirmation = new Confirmation(kind, viewedKey, Optional.ofNullable(expectedClaim), amount, targetId);
+        confirmation = new Confirmation(
+                kind, viewedKey, Optional.ofNullable(expectedClaim), amount, targetId,
+                kind == ConfirmationKind.PURCHASE);
         page = Page.CONFIRM;
         render();
     }
 
     private void back() {
         switch (page) {
-            case OVERVIEW -> {
+            case ATLAS_HOME -> {
                 PlayerDashboardMenu.open(viewer);
                 return;
             }
+            case ATLAS_LIST -> resetToAtlasHome();
+            case OVERVIEW -> page = detailReturnPage;
             case TRUSTED, SETTINGS -> page = Page.OVERVIEW;
             case ROLE -> page = Page.TRUSTED;
             case CANDIDATES -> page = candidatePurpose == CandidatePurpose.TRUST
@@ -573,8 +703,16 @@ public final class PlayerClaimMenu extends ChestMenu {
 
     private void render() {
         contents.clearContent();
-        viewedKey = currentKey();
+        if (page != Page.ATLAS_HOME && page != Page.ATLAS_LIST) {
+            if (viewedKey == null) {
+                viewedKey = currentKey();
+                selectedCurrentLand = true;
+            }
+            viewedClaim = platform().claim(viewedKey);
+        }
         switch (page) {
+            case ATLAS_HOME -> renderAtlasHome();
+            case ATLAS_LIST -> renderAtlasList();
             case OVERVIEW -> renderOverview();
             case TRUSTED -> renderTrusted();
             case ROLE -> renderRole();
@@ -589,16 +727,201 @@ public final class PlayerClaimMenu extends ChestMenu {
         broadcastChanges();
     }
 
+    private void renderAtlasHome() {
+        PlatformSavedData state = platform();
+        ClaimKey current = currentKey();
+        Claim currentClaim = state.claim(current).orElse(null);
+        contents.setItem(4, PlayerDashboardMenu.icon(
+                Items.MAP,
+                Component.translatable("gui.rovenfall.claim.atlas.title"),
+                Component.translatable("gui.rovenfall.claim.atlas.summary"),
+                Component.translatable("gui.rovenfall.claim.atlas.no_commands")));
+        contents.setItem(10, PlayerDashboardMenu.icon(
+                Items.GRASS_BLOCK,
+                Component.translatable("gui.rovenfall.claim.atlas.current"),
+                currentClaim == null
+                        ? Component.translatable("gui.rovenfall.player.claim.unclaimed")
+                        : currentClaim.ownerId().equals(viewerId)
+                                ? Component.translatable("gui.rovenfall.player.claim.owned")
+                                : Component.translatable("gui.rovenfall.player.claim.other"),
+                Component.translatable("gui.rovenfall.player.click")));
+        contents.setItem(12, PlayerDashboardMenu.icon(
+                Items.CHEST,
+                Component.translatable("gui.rovenfall.claim.atlas.owned"),
+                Component.translatable("gui.rovenfall.player.owned_claims", state.claimCount(viewerId)),
+                Component.translatable("gui.rovenfall.player.click")));
+        contents.setItem(14, PlayerDashboardMenu.icon(
+                Items.SPYGLASS,
+                Component.translatable("gui.rovenfall.claim.atlas.nearby"),
+                Component.translatable(
+                        "gui.rovenfall.claim.atlas.radius", ClaimAtlasView.NEARBY_RADIUS * 16),
+                Component.translatable("gui.rovenfall.player.click")));
+        contents.setItem(16, PlayerDashboardMenu.icon(
+                Items.MAP,
+                Component.translatable("gui.rovenfall.claim.atlas.available"),
+                Component.translatable(
+                        "gui.rovenfall.claim.atlas.radius", ClaimAtlasView.NEARBY_RADIUS * 16),
+                Component.translatable("gui.rovenfall.player.click")));
+        contents.setItem(CLEAR_NAVIGATION_SLOT, PlayerDashboardMenu.icon(
+                Items.BARRIER,
+                Component.translatable("gui.rovenfall.claim.atlas.navigation.clear"),
+                Component.translatable("gui.rovenfall.player.click")));
+        addBack();
+    }
+
+    private void renderAtlasList() {
+        atlasView = createAtlasView();
+        pageIndex = atlasView.page();
+        displayedLands = atlasView.entries();
+        List<Component> headerLore = new java.util.ArrayList<>();
+        headerLore.add(Component.translatable(
+                "gui.rovenfall.player.page",
+                atlasView.totalEntries() == 0 ? 0 : atlasView.page() + 1,
+                atlasView.totalPages(),
+                atlasView.totalEntries()));
+        if (atlasSection != ClaimAtlasView.Section.AVAILABLE) {
+            headerLore.add(Component.translatable("gui.rovenfall.claim.atlas.search.hint"));
+        }
+        if (atlasView.truncated()) {
+            headerLore.add(Component.translatable("gui.rovenfall.claim.atlas.truncated"));
+        }
+        ItemStack header = PlayerDashboardMenu.icon(
+                Items.MAP,
+                Component.translatable(sectionTranslationKey(atlasSection)),
+                headerLore.toArray(Component[]::new));
+        if (atlasSection != ClaimAtlasView.Section.AVAILABLE) {
+            AdministrationFormMarker.writeSearch(header);
+        }
+        contents.setItem(4, header);
+        for (int offset = 0; offset < displayedLands.size(); offset++) {
+            contents.setItem(CONTENT_START + offset, atlasRowIcon(displayedLands.get(offset)));
+        }
+        if (displayedLands.isEmpty()) {
+            contents.setItem(22, PlayerDashboardMenu.icon(
+                    Items.BARRIER,
+                    Component.translatable(atlasQuery.isBlank()
+                            ? "gui.rovenfall.claim.atlas.empty"
+                            : "gui.rovenfall.claim.atlas.search.empty")));
+        }
+        if (atlasView.page() > 0) {
+            contents.setItem(PREVIOUS_SLOT, PlayerDashboardMenu.icon(
+                    Items.ARROW, Component.translatable("gui.rovenfall.player.previous")));
+        }
+        if (atlasView.page() + 1 < atlasView.totalPages()) {
+            contents.setItem(NEXT_SLOT, PlayerDashboardMenu.icon(
+                    Items.ARROW, Component.translatable("gui.rovenfall.player.next")));
+        }
+        addBack();
+    }
+
+    private ItemStack atlasRowIcon(ClaimAtlasView.Row row) {
+        ItemStack stack = PlayerDashboardMenu.icon(
+                row.relation() == ClaimAtlasView.Relation.AVAILABLE ? Items.MAP : Items.GRASS_BLOCK,
+                atlasRowName(row),
+                Component.translatable(relationTranslationKey(row.relation())),
+                row.distanceChunks() < 0
+                        ? Component.translatable("gui.rovenfall.claim.atlas.other_world")
+                        : Component.translatable(
+                                "gui.rovenfall.claim.atlas.distance",
+                                Math.min(Integer.MAX_VALUE, (long) row.distanceChunks() * 16L)),
+                row.direction()
+                        .<Component>map(direction -> Component.translatable(
+                                "gui.rovenfall.claim.atlas.direction",
+                                Component.translatable(directionTranslationKey(direction))))
+                        .orElseGet(Component::empty),
+                row.current()
+                        ? Component.translatable("gui.rovenfall.claim.atlas.here")
+                        : Component.empty(),
+                Component.translatable(row.actionable()
+                        ? row.relation() == ClaimAtlasView.Relation.AVAILABLE
+                                ? "gui.rovenfall.claim.atlas.action.purchase"
+                                : row.relation() == ClaimAtlasView.Relation.TRANSFER_PENDING
+                                        ? "gui.rovenfall.claim.atlas.action.review_transfer"
+                                        : "gui.rovenfall.claim.atlas.action.manage"
+                        : "gui.rovenfall.claim.atlas.action.navigate"),
+                Component.translatable(
+                        "gui.rovenfall.claim.atlas.technical.position",
+                        row.key().dimension().identifier().toString(), row.key().chunkX(), row.key().chunkZ()));
+        return stack;
+    }
+
+    private Component atlasRowName(ClaimAtlasView.Row row) {
+        return switch (row.relation()) {
+            case OWNER -> Component.translatable("gui.rovenfall.claim.atlas.my_land");
+            case TRUSTED -> Component.translatable(
+                    "gui.rovenfall.claim.atlas.trusted_land",
+                    row.ownerName().<Component>map(Component::literal)
+                            .orElseGet(() -> Component.translatable("gui.rovenfall.player.unknown_player")));
+            case TRANSFER_PENDING -> Component.translatable(
+                    "gui.rovenfall.claim.atlas.transfer_land",
+                    row.ownerName().<Component>map(Component::literal)
+                            .orElseGet(() -> Component.translatable("gui.rovenfall.player.unknown_player")));
+            case MODERATED -> Component.translatable(
+                    "gui.rovenfall.claim.atlas.moderated_land",
+                    row.ownerName().<Component>map(Component::literal)
+                            .orElseGet(() -> Component.translatable("gui.rovenfall.player.unknown_player")));
+            case PUBLIC -> Component.translatable(
+                    "gui.rovenfall.claim.atlas.public_land",
+                    row.ownerName().<Component>map(Component::literal)
+                            .orElseGet(() -> Component.translatable("gui.rovenfall.player.unknown_player")));
+            case AVAILABLE -> Component.translatable("gui.rovenfall.claim.atlas.available_land");
+        };
+    }
+
+    private static String sectionTranslationKey(ClaimAtlasView.Section section) {
+        return "gui.rovenfall.claim.atlas.section."
+                + section.name().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private static String relationTranslationKey(ClaimAtlasView.Relation relation) {
+        return "gui.rovenfall.claim.atlas.relation."
+                + relation.name().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private static String directionTranslationKey(ClaimAtlasView.Direction direction) {
+        return "gui.rovenfall.claim.atlas.direction."
+                + direction.name().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private ClaimAtlasView createAtlasView() {
+        return ClaimAtlasView.create(
+                platform(), currentKey(), atlasSection, viewerId, atlasQuery, pageIndex,
+                this::isProtected, this::playerDisplayName);
+    }
+
     private void renderOverview() {
         PlatformSavedData state = platform();
         Claim claim = state.claim(viewedKey).orElse(null);
+        boolean currentPosition = currentKey().equals(viewedKey);
         contents.setItem(4, PlayerDashboardMenu.icon(
                 Items.GRASS_BLOCK,
-                Component.translatable("gui.rovenfall.claim.current_land"),
-                Component.translatable("gui.rovenfall.claim.current_location"),
+                Component.translatable(currentPosition
+                        ? "gui.rovenfall.claim.current_land"
+                        : "gui.rovenfall.claim.atlas.selected_land"),
+                Component.translatable(currentPosition
+                        ? "gui.rovenfall.claim.current_location"
+                        : "gui.rovenfall.claim.atlas.selected_location"),
                 Component.translatable("gui.rovenfall.player.owned_claims", state.claimCount(viewerId)),
-                Component.translatable("gui.rovenfall.player.balance", state.economyBalance(viewerId).orElse(0L))));
+                Component.translatable("gui.rovenfall.player.balance", state.economyBalance(viewerId).orElse(0L)),
+                Component.translatable(
+                        "gui.rovenfall.claim.atlas.technical.position",
+                        viewedKey.dimension().identifier().toString(), viewedKey.chunkX(), viewedKey.chunkZ())));
         addBack();
+        if (!currentPosition) {
+            contents.setItem(NAVIGATE_SLOT, PlayerDashboardMenu.icon(
+                    Items.COMPASS,
+                    Component.translatable("gui.rovenfall.claim.atlas.navigation.start"),
+                    Component.translatable("gui.rovenfall.claim.atlas.navigation.locator"),
+                    Component.translatable("gui.rovenfall.player.click")));
+        }
+
+        if (claim != null && !canViewDetails(state, viewerId, claim)) {
+            contents.setItem(13, PlayerDashboardMenu.icon(
+                    Items.BARRIER,
+                    Component.translatable("gui.rovenfall.claim.atlas.private_land"),
+                    Component.translatable("gui.rovenfall.claim.atlas.private_details")));
+            return;
+        }
 
         if (claim == null) {
             boolean claimableWorld = WorldTopology.allowsClaims(viewedKey.dimension());
@@ -614,12 +937,17 @@ public final class PlayerClaimMenu extends ChestMenu {
                     price.<Component>map(value -> Component.translatable("gui.rovenfall.claim.purchase_price", value))
                             .orElseGet(() -> Component.translatable(
                                     "command.rovenfall.claim.error.invalid_configuration"))));
-            if (claimableWorld && !protectedRegion && price.isPresent()) {
+            if (claimableWorld && !protectedRegion && price.isPresent() && currentPosition) {
                 contents.setItem(31, PlayerDashboardMenu.icon(
                         Items.GOLD_INGOT,
                         Component.translatable("gui.rovenfall.claim.purchase"),
                         Component.translatable("gui.rovenfall.claim.purchase_price", price.orElseThrow()),
                         Component.translatable("gui.rovenfall.claim.confirm_required")));
+            } else if (claimableWorld && !protectedRegion && price.isPresent()) {
+                contents.setItem(31, PlayerDashboardMenu.icon(
+                        Items.BARRIER,
+                        Component.translatable("gui.rovenfall.claim.atlas.purchase_here"),
+                        Component.translatable("gui.rovenfall.claim.atlas.purchase_here_hint")));
             }
             return;
         }
@@ -706,8 +1034,7 @@ public final class PlayerClaimMenu extends ChestMenu {
     private void renderTrusted() {
         Claim claim = platform().claim(viewedKey).orElse(null);
         if (claim == null) {
-            resetToOverview();
-            renderOverview();
+            renderReturnPage();
             return;
         }
         List<Map.Entry<UUID, ClaimRole>> trusted = claim.trustedRoles().entrySet().stream()
@@ -765,8 +1092,7 @@ public final class PlayerClaimMenu extends ChestMenu {
     private void renderSettings() {
         Claim claim = platform().claim(viewedKey).orElse(null);
         if (claim == null) {
-            resetToOverview();
-            renderOverview();
+            renderReturnPage();
             return;
         }
         contents.setItem(4, settingsIcon(claim.settings()));
@@ -782,8 +1108,7 @@ public final class PlayerClaimMenu extends ChestMenu {
     private void renderCandidates() {
         Claim claim = platform().claim(viewedKey).orElse(null);
         if (claim == null || candidatePurpose == null) {
-            resetToOverview();
-            renderOverview();
+            renderReturnPage();
             return;
         }
         Set<UUID> excluded = candidatePurpose == CandidatePurpose.TRUST
@@ -938,7 +1263,53 @@ public final class PlayerClaimMenu extends ChestMenu {
         return ClaimKey.at(viewer.level().dimension(), viewer.blockPosition());
     }
 
-    private void resetToOverview() {
+    private boolean detailSelectionIsCurrent() {
+        return viewedKey != null
+                && platform().claim(viewedKey).equals(viewedClaim)
+                && (!selectedCurrentLand || currentKey().equals(viewedKey));
+    }
+
+    private void staleAtlas() {
+        message("gui.rovenfall.claim.atlas.stale");
+        render();
+    }
+
+    private void navigateTo(ClaimKey key) {
+        if (key == null || !viewer.level().dimension().equals(key.dimension())) {
+            message("gui.rovenfall.claim.atlas.navigation.other_world");
+            return;
+        }
+        viewer.connection.send(navigationPacket(key));
+        message("gui.rovenfall.claim.atlas.navigation.started");
+        viewer.closeContainer();
+    }
+
+    private void clearNavigation() {
+        viewer.connection.send(clearNavigationPacket());
+        message("gui.rovenfall.claim.atlas.navigation.cleared");
+    }
+
+    static ClientboundTrackedWaypointPacket navigationPacket(ClaimKey key) {
+        Waypoint.Icon icon = new Waypoint.Icon();
+        icon.style = WaypointStyleAssets.BOWTIE;
+        icon.color = Optional.of(0xE8B94E);
+        return ClientboundTrackedWaypointPacket.addWaypointChunk(
+                NAVIGATION_MARKER_ID, icon, new ChunkPos(key.chunkX(), key.chunkZ()));
+    }
+
+    static ClientboundTrackedWaypointPacket clearNavigationPacket() {
+        return ClientboundTrackedWaypointPacket.removeWaypoint(NAVIGATION_MARKER_ID);
+    }
+
+    private Optional<String> playerDisplayName(UUID playerId) {
+        ServerPlayer player = viewer.level().getServer().getPlayerList().getPlayer(playerId);
+        if (player != null) {
+            return Optional.of(player.getDisplayName().getString());
+        }
+        return platform().playerRecord(playerId).flatMap(PlayerRecord::displayName);
+    }
+
+    private void resetDetailToOverview() {
         page = Page.OVERVIEW;
         pageIndex = 0;
         selectedPlayer = null;
@@ -947,9 +1318,56 @@ public final class PlayerClaimMenu extends ChestMenu {
         confirmation = null;
     }
 
+    private void renderReturnPage() {
+        page = detailReturnPage;
+        pageIndex = page == Page.ATLAS_LIST ? pageIndex : 0;
+        selectedPlayer = null;
+        candidatePurpose = null;
+        displayedPlayers = List.of();
+        confirmation = null;
+        if (page == Page.ATLAS_LIST && atlasSection != null) {
+            renderAtlasList();
+        } else {
+            page = Page.ATLAS_HOME;
+            renderAtlasHome();
+        }
+    }
+
+    private void resetToAtlasHome() {
+        page = Page.ATLAS_HOME;
+        pageIndex = 0;
+        viewedKey = null;
+        viewedClaim = Optional.empty();
+        selectedCurrentLand = false;
+        detailReturnPage = Page.ATLAS_HOME;
+        atlasSection = null;
+        atlasQuery = "";
+        atlasView = null;
+        displayedLands = List.of();
+        selectedPlayer = null;
+        candidatePurpose = null;
+        displayedPlayers = List.of();
+        confirmation = null;
+    }
+
+    private void refresh() {
+        if (page != Page.ATLAS_HOME && page != Page.ATLAS_LIST) {
+            page = detailReturnPage;
+            selectedPlayer = null;
+            candidatePurpose = null;
+            displayedPlayers = List.of();
+            confirmation = null;
+        }
+        render();
+    }
+
     private void stale() {
         message("gui.rovenfall.claim.error.stale");
-        resetToOverview();
+        page = detailReturnPage;
+        selectedPlayer = null;
+        candidatePurpose = null;
+        displayedPlayers = List.of();
+        confirmation = null;
         render();
     }
 
@@ -967,7 +1385,7 @@ public final class PlayerClaimMenu extends ChestMenu {
         }
         showMutationResult(ClaimManagementService.rejectUnauthorizedIntent(
                 platform(), viewerId, viewedKey, "gui=" + payload, now()));
-        resetToOverview();
+        resetDetailToOverview();
         render();
     }
 
@@ -990,7 +1408,17 @@ public final class PlayerClaimMenu extends ChestMenu {
             ClaimKey key,
             Optional<Claim> expectedClaim,
             long amount,
-            UUID targetId) {
+            UUID targetId,
+            boolean requiresCurrentPosition) {
+        Confirmation(
+                ConfirmationKind kind,
+                ClaimKey key,
+                Optional<Claim> expectedClaim,
+                long amount,
+                UUID targetId) {
+            this(kind, key, expectedClaim, amount, targetId, kind == ConfirmationKind.PURCHASE);
+        }
+
         Confirmation {
             expectedClaim = expectedClaim == null ? Optional.empty() : expectedClaim;
         }

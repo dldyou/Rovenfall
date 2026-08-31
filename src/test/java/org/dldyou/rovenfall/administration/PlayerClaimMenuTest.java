@@ -12,6 +12,7 @@ import java.util.Set;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.waypoints.WaypointStyleAssets;
 import org.dldyou.rovenfall.claims.Claim;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimRole;
@@ -38,7 +39,8 @@ final class PlayerClaimMenuTest {
         Claim claim = new Claim(owner, 1_000)
                 .withRole(manager, ClaimRole.MANAGER)
                 .withRole(builder, ClaimRole.BUILDER)
-                .withRole(user, ClaimRole.USER);
+                .withRole(user, ClaimRole.USER)
+                .withRole(visitor, ClaimRole.VISITOR);
 
         assertEquals(EnumSet.of(
                         PlayerClaimMenu.PermissionAction.VIEW_TRUSTED,
@@ -71,6 +73,16 @@ final class PlayerClaimMenuTest {
                 .contains(PlayerClaimMenu.PermissionAction.SELL));
         assertTrue(PlayerClaimMenu.allowedActions(state, recipient, pending)
                 .contains(PlayerClaimMenu.PermissionAction.ACCEPT_TRANSFER));
+
+        Claim restricted = pending.withSettings(new ClaimSettings(true, false));
+        assertTrue(PlayerClaimMenu.canViewDetails(state, owner, restricted));
+        assertTrue(PlayerClaimMenu.canViewDetails(state, manager, restricted));
+        assertTrue(PlayerClaimMenu.canViewDetails(state, visitor, restricted));
+        assertTrue(PlayerClaimMenu.canViewDetails(state, recipient, restricted));
+        assertTrue(PlayerClaimMenu.canViewDetails(state, moderator, restricted));
+        assertFalse(PlayerClaimMenu.canViewDetails(state, id(99), restricted));
+        assertTrue(PlayerClaimMenu.canViewDetails(
+                state, id(99), restricted.withSettings(new ClaimSettings(false, false))));
     }
 
     @Test
@@ -123,7 +135,7 @@ final class PlayerClaimMenuTest {
     }
 
     @Test
-    void rejectsChangedChunkOwnershipPriceAndTransferStateBeforeConfirmation() {
+    void revalidatesPurchaseAndTransferEvidenceWhileAllowingRemoteManagement() {
         UUID owner = id(1);
         Claim claim = new Claim(owner, 1_000);
         var purchase = new PlayerClaimMenu.Confirmation(
@@ -144,9 +156,24 @@ final class PlayerClaimMenuTest {
                 KEY, Optional.of(pending), 0, id(2));
         assertTrue(PlayerClaimMenu.confirmationIsCurrent(
                 KEY, Optional.of(pending), accept, Optional.empty()));
+        assertTrue(PlayerClaimMenu.confirmationIsCurrent(
+                new ClaimKey(Level.OVERWORLD, 30, 30), Optional.of(pending), accept, Optional.empty()));
         assertFalse(PlayerClaimMenu.confirmationIsCurrent(
                 KEY, Optional.of(pending.withSettings(new ClaimSettings(true, false))),
                 accept, Optional.empty()));
+    }
+
+    @Test
+    void createsOneStableNativeLocatorMarkerWithoutAProtocolPayload() {
+        var navigation = PlayerClaimMenu.navigationPacket(KEY);
+        assertEquals(PlayerClaimMenu.NAVIGATION_MARKER_ID,
+                navigation.waypoint().id().left().orElseThrow());
+        assertEquals(WaypointStyleAssets.BOWTIE, navigation.waypoint().icon().style);
+        assertEquals(Optional.of(0xE8B94E), navigation.waypoint().icon().color);
+
+        var clear = PlayerClaimMenu.clearNavigationPacket();
+        assertEquals(PlayerClaimMenu.NAVIGATION_MARKER_ID,
+                clear.waypoint().id().left().orElseThrow());
     }
 
     @Test
