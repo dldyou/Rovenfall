@@ -25,7 +25,8 @@ public record QuestPlayerState(
         Map<Identifier, QuestEntry> quests,
         Map<UUID, ProcessedEvidence> processedEvidence,
         Map<ContractKey, QuestEntry> contracts,
-        Set<ContractWindow> initializedContractWindows) {
+        Set<ContractWindow> initializedContractWindows,
+        Optional<TrackedJourney> trackedJourney) {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
     public static final int MAX_QUESTS = 4_096;
     public static final int MAX_OBJECTIVES_PER_QUEST = QuestDefinition.MAX_OBJECTIVES;
@@ -54,10 +55,12 @@ public record QuestPlayerState(
                     .forGetter(QuestPlayerState::processedEvidence),
             CONTRACTS_CODEC.optionalFieldOf("contracts", Map.of()).forGetter(QuestPlayerState::contracts),
             INITIALIZED_CONTRACT_WINDOWS_CODEC.optionalFieldOf("initialized_contract_windows", Set.of())
-                    .forGetter(QuestPlayerState::initializedContractWindows)
+                    .forGetter(QuestPlayerState::initializedContractWindows),
+            TrackedJourney.CODEC.optionalFieldOf("tracked_journey").forGetter(QuestPlayerState::trackedJourney)
     ).apply(instance, QuestPlayerState::new)).validate(QuestPlayerState::validate);
 
-    public static final QuestPlayerState EMPTY = new QuestPlayerState(Map.of(), Map.of(), Map.of(), Set.of());
+    public static final QuestPlayerState EMPTY = new QuestPlayerState(
+            Map.of(), Map.of(), Map.of(), Set.of(), Optional.empty());
 
     public QuestPlayerState {
         NavigableMap<Identifier, QuestEntry> orderedQuests = new TreeMap<>(quests);
@@ -66,16 +69,25 @@ public record QuestPlayerState(
         contracts = Collections.unmodifiableNavigableMap(new TreeMap<>(contracts));
         initializedContractWindows = Collections.unmodifiableNavigableSet(
                 new TreeSet<>(initializedContractWindows));
+        trackedJourney = trackedJourney == null ? Optional.empty() : trackedJourney;
+    }
+
+    public QuestPlayerState(
+            Map<Identifier, QuestEntry> quests,
+            Map<UUID, ProcessedEvidence> processedEvidence,
+            Map<ContractKey, QuestEntry> contracts,
+            Set<ContractWindow> initializedContractWindows) {
+        this(quests, processedEvidence, contracts, initializedContractWindows, Optional.empty());
     }
 
     public QuestPlayerState(
             Map<Identifier, QuestEntry> quests,
             Map<UUID, ProcessedEvidence> processedEvidence) {
-        this(quests, processedEvidence, Map.of(), Set.of());
+        this(quests, processedEvidence, Map.of(), Set.of(), Optional.empty());
     }
 
     public QuestPlayerState(Map<Identifier, QuestEntry> quests) {
-        this(quests, Map.of(), Map.of(), Set.of());
+        this(quests, Map.of(), Map.of(), Set.of(), Optional.empty());
     }
 
     public boolean isValid() {
@@ -143,6 +155,10 @@ public record QuestPlayerState(
         }
         if (state.initializedContractWindows().stream().anyMatch(window -> window == null || !window.isValid())) {
             return Optional.of("Quest player state contains an invalid initialized contract window");
+        }
+        if (state.trackedJourney() == null
+                || state.trackedJourney().filter(tracked -> !tracked.isValid()).isPresent()) {
+            return Optional.of("Quest player state contains an invalid tracked journey");
         }
         for (Map.Entry<UUID, ProcessedEvidence> entry : state.processedEvidence().entrySet()) {
             if (entry.getKey() == null || ZERO_UUID.equals(entry.getKey())
@@ -289,6 +305,44 @@ public record QuestPlayerState(
         private static DataResult<ContractKey> validate(ContractKey key) {
             return key.isValid() ? DataResult.success(key)
                     : DataResult.error(() -> "Contract key is invalid");
+        }
+    }
+
+    /** One server-owned selection, bound to the exact definition version shown when selected. */
+    public record TrackedJourney(
+            int definitionVersion,
+            Optional<Identifier> storyQuestId,
+            Optional<ContractKey> contractKey) {
+        private static final Codec<Integer> VERSION_CODEC = Codec.intRange(1, MAX_DEFINITION_VERSION);
+        public static final Codec<TrackedJourney> CODEC = RecordCodecBuilder.<TrackedJourney>create(instance ->
+                instance.group(
+                        VERSION_CODEC.fieldOf("definition_version").forGetter(TrackedJourney::definitionVersion),
+                        Identifier.CODEC.optionalFieldOf("story_quest_id").forGetter(TrackedJourney::storyQuestId),
+                        ContractKey.CODEC.optionalFieldOf("contract_key").forGetter(TrackedJourney::contractKey)
+                ).apply(instance, TrackedJourney::new)).validate(TrackedJourney::validate);
+
+        public TrackedJourney {
+            storyQuestId = storyQuestId == null ? Optional.empty() : storyQuestId;
+            contractKey = contractKey == null ? Optional.empty() : contractKey;
+        }
+
+        public static TrackedJourney story(Identifier questId, int definitionVersion) {
+            return new TrackedJourney(definitionVersion, Optional.ofNullable(questId), Optional.empty());
+        }
+
+        public static TrackedJourney contract(ContractKey key, int definitionVersion) {
+            return new TrackedJourney(definitionVersion, Optional.empty(), Optional.ofNullable(key));
+        }
+
+        public boolean isValid() {
+            return definitionVersion >= 1 && definitionVersion <= MAX_DEFINITION_VERSION
+                    && (storyQuestId.isPresent() ^ contractKey.isPresent())
+                    && contractKey.filter(key -> !key.isValid()).isEmpty();
+        }
+
+        private static DataResult<TrackedJourney> validate(TrackedJourney tracked) {
+            return tracked.isValid() ? DataResult.success(tracked)
+                    : DataResult.error(() -> "Tracked journey must contain exactly one valid quest reference");
         }
     }
 

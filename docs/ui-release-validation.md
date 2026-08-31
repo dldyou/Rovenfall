@@ -146,6 +146,23 @@ key, world, coordinate, radius, version, or reward in ordinary or advanced detai
 | Accessibility | Repeat at minimum, standard, and large GUI scales with narration enabled | Filter, hidden status, discovery status, cards, detail, guidance, Clear, Back, and Refresh remain understandable without color-only meaning. |
 | Locales | Repeat the flow in all three shipped locales | All labels and landmark content have matching placeholders and natural player-facing translations. |
 
+## Issue #123 active-journey tracker release checks
+
+Before an Issue #123 release, repeat the standard client matrix with a story journey, a daily
+request, and a weekly request that each have an incomplete objective. Capture the upper-right
+tracker in `ko_kr`, `en_us`, and `ja_jp`; Korean labels must use natural player terms such as
+`여정`, `일일 의뢰`, and `주간 의뢰`.
+
+| Case | Required state | Expected result |
+| --- | --- | --- |
+| Pin, replace, clear | Open Journey with one eligible story and two eligible requests | A story detail can pin its journey; selecting either request replaces it; selecting the pinned item or **Stop showing** clears it without a command, UUID, or ID entry. |
+| Privacy boundary | Inspect normal tracker, narration, and client packet capture | The projection has no player UUID, quest/template/objective ID, request window, coordinate, reward, hidden activity data, or definition revision; its fixed snapshot is at most 384 bytes. |
+| Server authority | Change progress, complete the target, expire its request window, remove or version-change its definition, and try a stale menu click | Only the server validates the shown click and progress. The tracker refreshes or clears; stale input cannot retain changed guidance or create progress/rewards. |
+| Synchronization | Log in, pin/clear, make matching server-observed progress, reload definitions, and cross a daily/weekly rotation | The panel updates promptly. Repeated unchanged state does not visibly flicker or cause repeated narration; the periodic reconciliation remains a 20-tick, at-most-16-player batch. |
+| HUD visibility | Pin a journey at minimum, standard, and large GUI scales | The card is inside the upper-right screen edge at every scale. Opening any screen or pressing F1 hides it; returning to gameplay restores it when still active. |
+| Accessibility | Enable Minecraft narration and use mouse plus keyboard Journey controls | Pin/replace/clear controls and the displayed title, kind, state, objective progress, and refresh wording are intelligible without color-only meaning. Narration does not repeat every tick. |
+| Locales | Repeat story, daily, and weekly tracker flows in all three shipped locales | No key is missing, placeholders remain correct, and the same natural player-facing terms appear in each locale. |
+
 ## Issue #101 release-candidate result
 
 The 2026-08-30 release-candidate run used the Gradle-managed Eclipse Temurin 25.0.4 daemon and

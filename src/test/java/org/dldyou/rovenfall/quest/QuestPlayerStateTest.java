@@ -70,6 +70,30 @@ final class QuestPlayerStateTest {
     }
 
     @Test
+    void trackedJourneyCodecRequiresExactlyOneBoundedReferenceAndRoundTrips() {
+        var daily = new QuestPlayerState.ContractWindow(QuestDefinition.Cadence.DAILY, 20_000);
+        var contract = new QuestPlayerState.ContractKey(daily, id("daily_trade"));
+        var story = QuestPlayerState.TrackedJourney.story(FIRST_STEPS, 3);
+        var contractJourney = QuestPlayerState.TrackedJourney.contract(contract, 4);
+        QuestPlayerState state = new QuestPlayerState(
+                Map.of(), Map.of(), Map.of(contract, openEntry()), Set.of(daily), Optional.of(contractJourney));
+
+        assertEquals(state, roundTrip(QuestPlayerState.CODEC, state));
+        assertEquals(story, roundTrip(QuestPlayerState.TrackedJourney.CODEC, story));
+        var ambiguous = new QuestPlayerState.TrackedJourney(
+                1, Optional.of(FIRST_STEPS), Optional.of(contract));
+        assertFalse(ambiguous.isValid());
+        assertTrue(QuestPlayerState.TrackedJourney.CODEC.encodeStart(NbtOps.INSTANCE, ambiguous)
+                .error().isPresent());
+        assertFalse(new QuestPlayerState.TrackedJourney(
+                1, Optional.empty(), Optional.empty()).isValid());
+        assertTrue(QuestPlayerState.TrackedJourney.CODEC.encodeStart(
+                NbtOps.INSTANCE,
+                new QuestPlayerState.TrackedJourney(0, Optional.of(FIRST_STEPS), Optional.empty()))
+                .error().isPresent());
+    }
+
+    @Test
     void contractStateRejectsMissingMarkersSlotOverflowMisalignedWeeksAndCrossDomainTransactions() {
         var daily = new QuestPlayerState.ContractWindow(QuestDefinition.Cadence.DAILY, 20_000);
         var invalidWeek = new QuestPlayerState.ContractWindow(QuestDefinition.Cadence.WEEKLY, 0);
@@ -200,7 +224,8 @@ final class QuestPlayerStateTest {
         QuestPlayerState state = new QuestPlayerState(
                 Map.of(),
                 Map.of(evidenceId, new QuestPlayerState.ProcessedEvidence(1, QuestDefinition.Kind.ACTIVITY)),
-                Map.of(key, openEntry()), Set.of(daily));
+                Map.of(key, openEntry()), Set.of(daily),
+                Optional.of(QuestPlayerState.TrackedJourney.contract(key, 1)));
         QuestPlayerSavedData root = new QuestPlayerSavedData();
         assertTrue(root.commit(player, QuestPlayerState.EMPTY, state));
 
@@ -209,6 +234,7 @@ final class QuestPlayerStateTest {
                 QuestPlayerSavedData.PROCESSED_EVIDENCE_OWNER_RETENTION_MILLIS + 2, 1));
         assertEquals(state.contracts(), root.state(player).contracts());
         assertEquals(state.initializedContractWindows(), root.state(player).initializedContractWindows());
+        assertEquals(state.trackedJourney(), root.state(player).trackedJourney());
 
         CompoundTag schemaFour = (CompoundTag) QuestPlayerSavedData.CODEC
                 .encodeStart(NbtOps.INSTANCE, root).getOrThrow();
@@ -217,11 +243,35 @@ final class QuestPlayerStateTest {
                 .getCompoundOrEmpty("state");
         oldState.remove("contracts");
         oldState.remove("initialized_contract_windows");
+        oldState.remove("tracked_journey");
         QuestPlayerSavedData migrated = QuestPlayerSavedData.CODEC.parse(NbtOps.INSTANCE, schemaFour).getOrThrow();
 
-        assertEquals(5, migrated.schemaVersion());
+        assertEquals(QuestPlayerSavedData.CURRENT_SCHEMA_VERSION, migrated.schemaVersion());
         assertTrue(migrated.state(player).contracts().isEmpty());
         assertTrue(migrated.state(player).initializedContractWindows().isEmpty());
+        assertTrue(migrated.state(player).trackedJourney().isEmpty());
+    }
+
+    @Test
+    void schemaFiveMigrationDefaultsTheTrackedJourney() {
+        UUID player = uuid(40);
+        QuestPlayerSavedData root = new QuestPlayerSavedData();
+        QuestPlayerState tracked = new QuestPlayerState(
+                Map.of(), Map.of(), Map.of(), Set.of(),
+                Optional.of(QuestPlayerState.TrackedJourney.story(FIRST_STEPS, 1)));
+        assertTrue(root.commit(player, QuestPlayerState.EMPTY, tracked));
+
+        CompoundTag schemaFive = (CompoundTag) QuestPlayerSavedData.CODEC
+                .encodeStart(NbtOps.INSTANCE, root).getOrThrow();
+        schemaFive.putInt("schema_version", 5);
+        schemaFive.getListOrEmpty("players").getCompoundOrEmpty(0)
+                .getCompoundOrEmpty("state").remove("tracked_journey");
+
+        QuestPlayerSavedData migrated = QuestPlayerSavedData.CODEC.parse(
+                NbtOps.INSTANCE, schemaFive).getOrThrow();
+        assertEquals(QuestPlayerSavedData.CURRENT_SCHEMA_VERSION, migrated.schemaVersion());
+        assertTrue(migrated.isWritable());
+        assertTrue(migrated.state(player).trackedJourney().isEmpty());
     }
 
     @Test

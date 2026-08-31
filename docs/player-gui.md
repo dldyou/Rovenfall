@@ -10,6 +10,7 @@ Rovenfall turns the ordinary survival inventory into the primary player entry po
 - Travel opens the Portal Explorer. It lists server-approved portal cards with an origin/destination world search, bounded pages, origin world, destination world, distance, and a current-world navigation marker. Portal IDs and coordinates stay in Technical information only. Navigation never loads a remote world.
 - Portal use is an on-site action: the server rechecks the selected portal, protection, current dimension, 8-block entrance distance, cooldown, combat lock, and safe arrival at activation time. A changed portal refreshes the card instead of travelling the player.
 - Journey is the quest board. It shows at most 28 journeys on a page, a plain-language status and reward preview, then one server-selected next step. Its Requests sub-screen shows at most two daily requests and one weekly request. Its Exploration Journal shows public destinations and places the player has discovered without revealing secret coordinates. The Overview card opens the same board, so players never need a command, UUID, or definition identifier to find their next activity.
+- A player can pin one available or in-progress story journey, daily request, or weekly request to the active-journey tracker. Select the shown card once to pin or replace the tracker; selecting the pinned card again, or using **Stop showing**, clears it. This is a display preference for the next unfinished objective, not a client-owned quest action.
 - The first journey introduces the opening loop: gain Mining activity progress, trade at a shop, then buy a piece of land. It is guidance rather than a timer; all progress and any reward remain server-owned.
 - Mouse users activate an item with the primary (left) button. Shift-click, drag, number-key swaps, secondary clicks, and other inventory gestures cannot invoke an action.
 - Keyboard users move the visible slot outline with the arrow keys, then activate the focused item with `Enter` or `Space`. In administration views, `Tab` moves focus into or out of the search/form field and `Enter` submits it.
@@ -37,6 +38,34 @@ Open **Journey**, then select **Requests** in slot 46. The server initializes th
 - Normal details never show a template ID or UTC window number. **Technical information** may reveal those values for diagnostics.
 - Refresh rereads the current roster without rerolling it. Back returns to the journey board.
 - An empty or read-only roster remains a usable, narrated screen and never asks the client to create progress.
+
+## Active journey tracker
+
+The active journey tracker is the small dark-fantasy panel in the upper-right corner of normal
+gameplay. It is the quick, command-free way to keep one chosen story journey, daily request, or
+weekly request visible while playing.
+
+- Open **Journey**. In a story detail, select **Show on screen**. In **Requests**, select a shown
+  daily or weekly card. Selecting a different eligible card replaces the current tracker; selecting
+  the same card clears it. **Stop showing** is also available from the Journey board when a tracker
+  is active.
+- The panel shows only a localized title, story/daily/weekly label, available or in-progress state,
+  one incomplete objective with progress, and the daily or weekly refresh wording when relevant.
+  It never shows a UUID, quest/template/objective ID, request window, coordinate, hidden target,
+  reward, or a technical definition revision.
+- The server owns the selection and its content version. It accepts only the authenticated vanilla
+  menu click, rechecks that the shown selection is still eligible, and clears an expired, completed,
+  removed, changed, or future-schema selection rather than displaying stale guidance. The client
+  cannot submit progress, rewards, identifiers, locations, or a revision.
+- A bounded server-to-client snapshot is at most 384 bytes. It is refreshed on login, a tracker
+  selection or clear, observed quest progress, definition reload, request rotation, and a bounded
+  20-tick reconciliation pass. Duplicate snapshots are not resent; the periodic pass examines at
+  most 16 players at once.
+- The panel follows the selected GUI scale, stays within the screen edge, and disappears whenever
+  another screen is open or the player uses the F1 HUD toggle. Minecraft narration announces the
+  same localized tracker title, state, and objective information; it does not repeat every tick.
+- `ko_kr`, `en_us`, and `ja_jp` all ship the same tracker controls, status, objective, and refresh
+  wording. Korean player-facing text uses natural terms such as `여정`, `일일 의뢰`, and `주간 의뢰`.
 
 ## Exploration journal
 

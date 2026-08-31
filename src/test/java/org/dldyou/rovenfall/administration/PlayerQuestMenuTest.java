@@ -11,6 +11,7 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.waypoints.WaypointStyleAssets;
 import org.dldyou.rovenfall.exploration.ExplorationJournalView;
+import org.dldyou.rovenfall.quest.QuestDefinition;
 import org.dldyou.rovenfall.quest.QuestJourneyView;
 import org.dldyou.rovenfall.quest.QuestPlayerState;
 import org.dldyou.rovenfall.world.WorldTopology;
@@ -39,18 +40,24 @@ final class PlayerQuestMenuTest {
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 48));
         assertEquals(PlayerQuestMenu.Action.GUIDE,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 49));
+        assertEquals(PlayerQuestMenu.Action.TRACK_STORY,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DETAIL, 49));
         assertEquals(PlayerQuestMenu.Action.NEXT,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 50));
+        assertEquals(PlayerQuestMenu.Action.CLEAR_TRACKER,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 51));
         assertEquals(PlayerQuestMenu.Action.REFRESH,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 53));
         assertEquals(PlayerQuestMenu.Action.NONE,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 0));
-        assertEquals(PlayerQuestMenu.Action.NONE,
+        assertEquals(PlayerQuestMenu.Action.TRACK_CONTRACT,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.CONTRACTS, 20));
         assertEquals(PlayerQuestMenu.Action.NONE,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.CONTRACTS, 48));
         assertEquals(PlayerQuestMenu.Action.REFRESH,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.CONTRACTS, 53));
+        assertEquals(PlayerQuestMenu.Action.CLEAR_TRACKER,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.CONTRACTS, 51));
         assertEquals(PlayerQuestMenu.Action.FILTER_ALL,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.EXPLORATION_LIST, 1));
         assertEquals(PlayerQuestMenu.Action.FILTER_HUB,
@@ -88,6 +95,27 @@ final class PlayerQuestMenuTest {
         assertEquals(0, PlayerQuestMenu.boundedPage(-1, 0));
         assertEquals(0, PlayerQuestMenu.boundedPage(99, PlayerQuestMenu.PAGE_SIZE));
         assertEquals(1, PlayerQuestMenu.boundedPage(99, PlayerQuestMenu.PAGE_SIZE + 1));
+    }
+
+    @Test
+    void mapsOnlyExactRequestSlotsAndRecognizesTheServerOwnedSelection() {
+        Identifier storyId = Identifier.parse("rovenfall:first_steps");
+        QuestPlayerState story = withTracked(
+                state(0), QuestPlayerState.TrackedJourney.story(storyId, 1));
+        QuestPlayerState.ContractKey contractKey = new QuestPlayerState.ContractKey(
+                new QuestPlayerState.ContractWindow(QuestDefinition.Cadence.DAILY, 20_000),
+                Identifier.parse("rovenfall:daily_market_delivery"));
+        QuestPlayerState contract = withTracked(
+                state(0), QuestPlayerState.TrackedJourney.contract(contractKey, 1));
+
+        assertEquals(0, PlayerQuestMenu.contractOffset(20));
+        assertEquals(1, PlayerQuestMenu.contractOffset(22));
+        assertEquals(2, PlayerQuestMenu.contractOffset(24));
+        assertEquals(-1, PlayerQuestMenu.contractOffset(21));
+        assertTrue(PlayerQuestMenu.tracksStory(story, storyId));
+        assertFalse(PlayerQuestMenu.tracksStory(contract, storyId));
+        assertTrue(PlayerQuestMenu.tracksContract(contract, contractKey));
+        assertFalse(PlayerQuestMenu.tracksContract(story, contractKey));
     }
 
     @Test
@@ -141,5 +169,13 @@ final class PlayerQuestMenuTest {
                         1,
                         Map.of(Identifier.parse("rovenfall:first_steps/activity"), progress),
                         Optional.empty())));
+    }
+
+    private static QuestPlayerState withTracked(
+            QuestPlayerState state,
+            QuestPlayerState.TrackedJourney trackedJourney) {
+        return new QuestPlayerState(
+                state.quests(), state.processedEvidence(), state.contracts(),
+                state.initializedContractWindows(), Optional.of(trackedJourney));
     }
 }

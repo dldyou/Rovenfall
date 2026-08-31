@@ -75,7 +75,7 @@ public final class RepeatableContractService {
             return new AssignmentResult(AssignmentStatus.UNCHANGED, 0, 0, false);
         }
         QuestPlayerState updated = new QuestPlayerState(
-                current.quests(), current.processedEvidence(), contracts, initialized);
+                current.quests(), current.processedEvidence(), contracts, initialized, current.trackedJourney());
         if (!updated.isValid()) {
             return new AssignmentResult(AssignmentStatus.STATE_FULL, 0, 0, false);
         }

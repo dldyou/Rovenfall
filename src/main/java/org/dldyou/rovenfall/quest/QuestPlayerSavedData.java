@@ -21,7 +21,7 @@ import org.dldyou.rovenfall.Rovenfall;
 /** Persistent quest state, deliberately separate from platform, economy, and RPG roots. */
 public final class QuestPlayerSavedData extends SavedData {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
-    public static final int CURRENT_SCHEMA_VERSION = 5;
+    public static final int CURRENT_SCHEMA_VERSION = 6;
     public static final int MAX_PLAYERS = 100_000;
     static final long PROCESSED_EVIDENCE_OWNER_RETENTION_MILLIS = Duration.ofDays(30).toMillis();
     static final long PROCESSED_EVIDENCE_RETIRE_CONFIRMATION_MILLIS = Duration.ofDays(30).toMillis();
@@ -48,7 +48,8 @@ public final class QuestPlayerSavedData extends SavedData {
             1, state -> state.atVersion(2),
             2, state -> state.atVersion(3),
             3, state -> state.atVersion(4),
-            4, state -> state.atVersion(5));
+            4, state -> state.atVersion(5),
+            5, state -> state.atVersion(6));
 
     private final int schemaVersion;
     private final boolean writable;
@@ -194,7 +195,8 @@ public final class QuestPlayerSavedData extends SavedData {
             return 0;
         }
         return commit(playerId, current, new QuestPlayerState(
-                current.quests(), processed, current.contracts(), current.initializedContractWindows()))
+                current.quests(), processed, current.contracts(), current.initializedContractWindows(),
+                current.trackedJourney()))
                 ? changed : 0;
     }
 
