@@ -49,6 +49,7 @@ public final class PlayerDashboardMenu extends ChestMenu {
         OPEN_CLAIMS,
         OPEN_RPG,
         OPEN_QUESTS,
+        OPEN_PORTALS,
         BACK,
         REFRESH
     }
@@ -120,6 +121,10 @@ public final class PlayerDashboardMenu extends ChestMenu {
                 PlayerQuestMenu.open(viewer);
                 return;
             }
+            case OPEN_PORTALS -> {
+                PlayerPortalMenu.open(viewer);
+                return;
+            }
             case BACK -> page = Page.HOME;
             case REFRESH, NONE -> {
             }
@@ -148,6 +153,7 @@ public final class PlayerDashboardMenu extends ChestMenu {
             case HOME -> switch (slot) {
                 case 10 -> Action.OPEN_ECONOMY;
                 case 13 -> Action.OPEN_CLAIMS;
+                case 14 -> Action.OPEN_PORTALS;
                 case 16 -> Action.OPEN_RPG;
                 case 17 -> Action.OPEN_QUESTS;
                 default -> Action.NONE;
@@ -224,6 +230,11 @@ public final class PlayerDashboardMenu extends ChestMenu {
                 Component.translatable("gui.rovenfall.player.claims"),
                 Component.translatable("gui.rovenfall.player.owned_claims", snapshot.ownedClaims()),
                 claimStatus(snapshot),
+                Component.translatable("gui.rovenfall.player.click")));
+        dashboard.setItem(14, icon(
+                Items.ENDER_EYE,
+                Component.translatable("gui.rovenfall.portal.dashboard"),
+                Component.translatable("gui.rovenfall.portal.dashboard.summary"),
                 Component.translatable("gui.rovenfall.player.click")));
         dashboard.setItem(16, icon(
                 Items.EXPERIENCE_BOTTLE,

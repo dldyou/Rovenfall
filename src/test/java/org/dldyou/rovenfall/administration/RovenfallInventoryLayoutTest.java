@@ -10,16 +10,16 @@ import org.junit.jupiter.api.Test;
 final class RovenfallInventoryLayoutTest {
     @Test
     void tabsStayOnScreenAndWrapAtNarrowWidths() {
-        var wide = RovenfallInventoryLayout.tabs(320, 37, 7);
-        assertEquals(7, wide.columns());
+        var wide = RovenfallInventoryLayout.tabs(320, 37, 8);
+        assertEquals(8, wide.columns());
         assertEquals(1, wide.rows());
         assertTrue(wide.x() >= 0);
         assertTrue(wide.right() <= 320);
-        assertTrue(wide.xFor(6) >= wide.x());
-        assertTrue(wide.xFor(6) + wide.tabWidth() <= wide.right());
-        assertTrue(wide.yFor(6) + RovenfallInventoryLayout.TAB_HEIGHT <= wide.bottom());
+        assertTrue(wide.xFor(7) >= wide.x());
+        assertTrue(wide.xFor(7) + wide.tabWidth() <= wide.right());
+        assertTrue(wide.yFor(7) + RovenfallInventoryLayout.TAB_HEIGHT <= wide.bottom());
 
-        var narrow = RovenfallInventoryLayout.tabs(240, 67, 7);
+        var narrow = RovenfallInventoryLayout.tabs(240, 67, 8);
         assertEquals(3, narrow.columns());
         assertEquals(3, narrow.rows());
         assertTrue(narrow.x() >= 0);
@@ -28,9 +28,9 @@ final class RovenfallInventoryLayoutTest {
         assertTrue(narrow.bottom() <= 67);
         assertEquals(narrow.x(), narrow.xFor(3));
         assertTrue(narrow.yFor(3) > narrow.yFor(0));
-        assertTrue(narrow.xFor(6) >= narrow.x());
-        assertTrue(narrow.xFor(6) + narrow.tabWidth() <= narrow.right());
-        assertTrue(narrow.yFor(6) + RovenfallInventoryLayout.TAB_HEIGHT <= narrow.bottom());
+        assertTrue(narrow.xFor(7) >= narrow.x());
+        assertTrue(narrow.xFor(7) + narrow.tabWidth() <= narrow.right());
+        assertTrue(narrow.yFor(7) + RovenfallInventoryLayout.TAB_HEIGHT <= narrow.bottom());
     }
 
     @Test
@@ -58,15 +58,15 @@ final class RovenfallInventoryLayoutTest {
                 new int[]{854, 480}, new int[]{1_920, 1_080})) {
             int inventoryLeft = (size[0] - 176) / 2;
             int inventoryTop = (size[1] - 166) / 2;
-            var tabs = RovenfallInventoryLayout.tabs(size[0], inventoryTop, 7);
+            var tabs = RovenfallInventoryLayout.tabs(size[0], inventoryTop, 8);
             var summary = RovenfallInventoryLayout.summary(size[0], inventoryLeft, inventoryTop, 176);
             assertTrue(tabs.x() >= 0);
             assertTrue(tabs.right() <= size[0]);
             assertTrue(tabs.y() >= 0);
             assertTrue(tabs.bottom() <= size[1]);
-            assertTrue(tabs.xFor(6) >= tabs.x());
-            assertTrue(tabs.xFor(6) + tabs.tabWidth() <= tabs.right());
-            assertTrue(tabs.yFor(6) + RovenfallInventoryLayout.TAB_HEIGHT <= tabs.bottom());
+            assertTrue(tabs.xFor(7) >= tabs.x());
+            assertTrue(tabs.xFor(7) + tabs.tabWidth() <= tabs.right());
+            assertTrue(tabs.yFor(7) + RovenfallInventoryLayout.TAB_HEIGHT <= tabs.bottom());
             assertTrue(summary.x() >= 0);
             assertTrue(summary.right() <= size[0]);
             assertTrue(summary.y() >= 0);

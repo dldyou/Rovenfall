@@ -35,7 +35,7 @@ public final class PortalEvents {
         var result = PortalTravelService.travel(state, player, portalId, now, UUID.randomUUID());
         if (result.status() == PortalTravelService.Status.SUCCESS) {
             if (player.connection != null) {
-                player.sendSystemMessage(Component.translatable("portal.rovenfall.travel.success", portalId.toString()));
+                player.sendSystemMessage(Component.translatable("gui.rovenfall.portal.travel.success"));
             }
             event.setCancellationResult(InteractionResult.SUCCESS);
         } else if (result.status() == PortalTravelService.Status.COOLDOWN

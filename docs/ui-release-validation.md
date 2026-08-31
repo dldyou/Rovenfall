@@ -90,6 +90,23 @@ do not show raw identifiers or technical positions.
 | Navigation | Set and clear a waypoint, then select another world | The locator-bar marker appears and clears in the current world; another-world navigation explains the limit without loading the remote area. |
 | Stale selection | Change land ownership, permission, or availability before activating a shown card | The server rejects the stale selection, refreshes the atlas, and performs no unintended mutation. |
 
+## Issue #117 portal-explorer release checks
+
+Before an Issue #117 release, repeat the standard client matrix for the Travel tab and Portal
+Explorer in `ko_kr`, `en_us`, and `ja_jp`. Normal portal cards must use player language and must
+not show raw IDs or coordinates; Technical information may show the focused diagnostic values.
+
+| Case | Required state | Expected result |
+| --- | --- | --- |
+| Search and paging | Seed more than one page of visible portals | An origin/destination world search, Previous/Next, keyboard focus, and narration remain usable; server results stay within the page and query bounds. |
+| Stale edit or delete | Change or delete a portal/protection after its card is shown | The activation refreshes the explorer and does not set navigation or travel. |
+| Wrong world | Select a portal whose entrance is in another world | The card explains the world limit; it creates no remote marker and loads no remote area. |
+| On-site range | Stand outside, then within 8 blocks of a portal entrance | Use is unavailable outside range and succeeds only after the server confirms the on-site position. |
+| Travel safeguards | Exercise cooldown, combat lock, and an unsafe destination | Each case remains in place with its localized reason; only a safe, permitted arrival teleports. |
+| Marker isolation | Set, replace, and clear portal navigation, then use the Land Atlas marker | The two menus update only their own marker and clearing either leaves no stale marker. |
+| Accessibility | Repeat at minimum, standard, and large GUI scales with narration enabled | Travel tab, search, cards, disabled states, confirmation, and keyboard guidance remain visible and narrated without color-only meaning. |
+| Locales | Repeat the standard Travel flow in all three shipped locales | `ko_kr`, `en_us`, and `ja_jp` show the same controls and placeholder values with no missing translation. |
+
 ## Issue #101 release-candidate result
 
 The 2026-08-30 release-candidate run used the Gradle-managed Eclipse Temurin 25.0.4 daemon and

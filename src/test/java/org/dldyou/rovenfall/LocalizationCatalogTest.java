@@ -111,6 +111,39 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.inventory.shops",
             "gui.rovenfall.inventory.admin",
             "gui.rovenfall.inventory.journey",
+            "gui.rovenfall.inventory.travel",
+            "gui.rovenfall.portal.dashboard",
+            "gui.rovenfall.portal.dashboard.summary",
+            "gui.rovenfall.portal.title",
+            "gui.rovenfall.portal.search",
+            "gui.rovenfall.portal.search.submit",
+            "gui.rovenfall.portal.search.hint",
+            "gui.rovenfall.portal.summary",
+            "gui.rovenfall.portal.empty",
+            "gui.rovenfall.portal.empty.hint",
+            "gui.rovenfall.portal.origin",
+            "gui.rovenfall.portal.destination",
+            "gui.rovenfall.portal.distance",
+            "gui.rovenfall.portal.distance.other_world",
+            "gui.rovenfall.portal.card",
+            "gui.rovenfall.portal.technical",
+            "gui.rovenfall.portal.navigation.clear",
+            "gui.rovenfall.portal.navigation.start",
+            "gui.rovenfall.portal.navigation.other_world",
+            "gui.rovenfall.portal.navigation.started",
+            "gui.rovenfall.portal.navigation.cleared",
+            "gui.rovenfall.portal.travel",
+            "gui.rovenfall.portal.travel.confirm",
+            "gui.rovenfall.portal.travel.success",
+            "gui.rovenfall.portal.stale",
+            "gui.rovenfall.portal.status.ready",
+            "gui.rovenfall.portal.status.other_world",
+            "gui.rovenfall.portal.status.guidance",
+            "gui.rovenfall.portal.world.hub",
+            "gui.rovenfall.portal.world.wilderness",
+            "gui.rovenfall.portal.world.nether",
+            "gui.rovenfall.portal.world.end",
+            "gui.rovenfall.portal.world.other",
             "gui.rovenfall.inventory.current_tab",
             "gui.rovenfall.inventory.open_tab",
             "gui.rovenfall.menu.slot_position",
@@ -263,6 +296,7 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.admin.world.field.warning_value",
             "gui.rovenfall.admin.world.preview.transaction",
             "gui.rovenfall.claim.atlas.technical.position",
+            "gui.rovenfall.portal.technical",
             "gui.rovenfall.quest.technical.quest_id",
             "gui.rovenfall.quest.technical.objective_id");
 
@@ -375,6 +409,9 @@ final class LocalizationCatalogTest {
         assertEquals("토지 도감", korean.get("gui.rovenfall.claim.atlas.title").getAsString());
         assertEquals("토지 검색", korean.get("gui.rovenfall.claim.atlas.search").getAsString());
         assertEquals("길찾기 설정", korean.get("gui.rovenfall.claim.atlas.navigation.start").getAsString());
+        assertEquals("포털 탐색", korean.get("gui.rovenfall.portal.title").getAsString());
+        assertEquals("포털 검색", korean.get("gui.rovenfall.portal.search").getAsString());
+        assertEquals("길찾기 시작", korean.get("gui.rovenfall.portal.navigation.start").getAsString());
 
         var english = catalog("en_us");
         assertEquals("Land", english.get("gui.rovenfall.player.claims").getAsString());
@@ -385,6 +422,8 @@ final class LocalizationCatalogTest {
         assertEquals("Land Atlas", english.get("gui.rovenfall.claim.atlas.title").getAsString());
         assertEquals("Search land", english.get("gui.rovenfall.claim.atlas.search").getAsString());
         assertEquals("Set Waypoint", english.get("gui.rovenfall.claim.atlas.navigation.start").getAsString());
+        assertEquals("Portal Explorer", english.get("gui.rovenfall.portal.title").getAsString());
+        assertEquals("Start navigation", english.get("gui.rovenfall.portal.navigation.start").getAsString());
 
         var japanese = catalog("ja_jp");
         assertEquals("土地", japanese.get("gui.rovenfall.player.claims").getAsString());
@@ -395,6 +434,8 @@ final class LocalizationCatalogTest {
         assertEquals("土地図鑑", japanese.get("gui.rovenfall.claim.atlas.title").getAsString());
         assertEquals("土地を検索", japanese.get("gui.rovenfall.claim.atlas.search").getAsString());
         assertEquals("道案内を設定", japanese.get("gui.rovenfall.claim.atlas.navigation.start").getAsString());
+        assertEquals("ポータル探索", japanese.get("gui.rovenfall.portal.title").getAsString());
+        assertEquals("道案内を始める", japanese.get("gui.rovenfall.portal.navigation.start").getAsString());
 
         assertOrdinaryGuiAvoids(
                 "ko_kr",

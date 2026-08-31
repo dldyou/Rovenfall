@@ -63,6 +63,8 @@ final class PlayerDashboardMenuTest {
                 PlayerDashboardMenu.actionAt(PlayerDashboardMenu.Page.HOME, 10));
         assertEquals(PlayerDashboardMenu.Action.OPEN_CLAIMS,
                 PlayerDashboardMenu.actionAt(PlayerDashboardMenu.Page.HOME, 13));
+        assertEquals(PlayerDashboardMenu.Action.OPEN_PORTALS,
+                PlayerDashboardMenu.actionAt(PlayerDashboardMenu.Page.HOME, 14));
         assertEquals(PlayerDashboardMenu.Action.OPEN_RPG,
                 PlayerDashboardMenu.actionAt(PlayerDashboardMenu.Page.HOME, 16));
         assertEquals(PlayerDashboardMenu.Action.OPEN_QUESTS,

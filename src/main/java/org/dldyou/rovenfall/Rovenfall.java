@@ -86,6 +86,7 @@ import org.dldyou.rovenfall.administration.AdministrationReadViewService;
 import org.dldyou.rovenfall.administration.AdministrationRpgBossMenu;
 import org.dldyou.rovenfall.administration.AdministrationWorldMenu;
 import org.dldyou.rovenfall.administration.AdminRole;
+import org.dldyou.rovenfall.administration.AuditQuery;
 import org.dldyou.rovenfall.administration.BossRewardService;
 import org.dldyou.rovenfall.administration.BossAdministrationService;
 import org.dldyou.rovenfall.administration.PlatformSavedData;
@@ -94,6 +95,7 @@ import org.dldyou.rovenfall.administration.PlayerRecordService;
 import org.dldyou.rovenfall.administration.PlayerMenuNetwork;
 import org.dldyou.rovenfall.administration.PlayerClaimMenu;
 import org.dldyou.rovenfall.administration.PlayerDashboardMenu;
+import org.dldyou.rovenfall.administration.PlayerPortalMenu;
 import org.dldyou.rovenfall.administration.PlayerQuestMenu;
 import org.dldyou.rovenfall.administration.PlayerRpgMenu;
 import org.dldyou.rovenfall.administration.PlayerShopMenu;
@@ -217,6 +219,8 @@ public final class Rovenfall {
                 id("active_skill"), new TestEnvironmentDefinition.AllOf(List.of()));
         var landAtlasEnvironment = event.registerEnvironment(
                 id("land_atlas"), new TestEnvironmentDefinition.AllOf(List.of()));
+        var portalExplorerEnvironment = event.registerEnvironment(
+                id("portal_explorer"), new TestEnvironmentDefinition.AllOf(List.of()));
         var questEnvironment = event.registerEnvironment(
                 id("quest"), new TestEnvironmentDefinition.AllOf(List.of()));
         var testData = new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 1, 0, true);
@@ -330,6 +334,129 @@ public final class Rovenfall {
                     player.discard();
                     helper.succeed();
                 });
+            }
+        });
+        event.registerTest(id("player_portal_explorer_travel"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS,
+                new TestData<>(portalExplorerEnvironment, Identifier.withDefaultNamespace("empty"), 20, 0, true)) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var level = helper.getLevel();
+                var platform = PlatformSavedData.get(level.getServer());
+                var player = helper.makeMockServerPlayerInLevel();
+                BlockPos origin = helper.absolutePos(new BlockPos(1, 2, 1));
+                BlockPos destination = helper.absolutePos(new BlockPos(5, 2, 5));
+                level.setBlock(destination.below(), Blocks.STONE.defaultBlockState(), 3);
+                level.setBlock(destination, Blocks.AIR.defaultBlockState(), 3);
+                level.setBlock(destination.above(), Blocks.AIR.defaultBlockState(), 3);
+                player.setPos(origin.getX() + 0.5D, origin.getY(), origin.getZ() + 0.5D);
+
+                Identifier portalId = id("gametest_explorer_" + UUID.randomUUID());
+                long timestamp = System.currentTimeMillis();
+                PortalDefinition definition = new PortalDefinition(
+                        AdministrationService.SYSTEM_ACTOR,
+                        new PortalDefinition.Endpoint(level.dimension(), origin),
+                        new PortalDefinition.Endpoint(level.dimension(), destination),
+                        0,
+                        5_000L,
+                        PortalDefinition.SafeArrivalPolicy.EXACT,
+                        true);
+                helper.assertTrue(PortalService.create(
+                                platform,
+                                AdministrationService.SYSTEM_ACTOR,
+                                true,
+                                portalId,
+                                definition,
+                                endpoint -> level.dimension().equals(endpoint.dimension())
+                                        && level.isInWorldBounds(endpoint.position()),
+                                "gametest portal explorer",
+                                timestamp,
+                                UUID.randomUUID()).status() == PortalService.Status.SUCCESS,
+                        "Portal explorer GameTest setup failed");
+                long auditUntil = Math.addExact(timestamp, 60_000L);
+                AuditQuery portalAuditQuery = new AuditQuery(
+                        timestamp,
+                        auditUntil,
+                        Optional.empty(),
+                        Optional.empty(),
+                        Optional.of(portalId.toString()),
+                        Optional.empty());
+                int portalAuditsBeforeNavigation = platform.auditPage(portalAuditQuery, 0, 1).totalEntries();
+                long cooldownBeforeNavigation = platform.portalCooldownUntil(player.getUUID(), portalId);
+                Runnable cleanup = () -> {
+                    if (platform.portalDefinition(portalId).isPresent()) {
+                        PortalService.delete(
+                                platform,
+                                AdministrationService.SYSTEM_ACTOR,
+                                true,
+                                portalId,
+                                "gametest portal explorer cleanup",
+                                System.currentTimeMillis(),
+                                UUID.randomUUID());
+                    }
+                    player.discard();
+                };
+
+                try {
+                    PlayerDashboardMenu.open(player);
+                    player.containerMenu.clicked(14, 0, ContainerInput.PICKUP, player);
+                    helper.assertTrue(player.containerMenu instanceof PlayerPortalMenu,
+                            "Portal card did not open the custom portal explorer");
+                    player.containerMenu.clicked(9, 0, ContainerInput.PICKUP, player);
+                    helper.runAfterDelay(1, () -> {
+                        try {
+                            player.containerMenu.clicked(49, 0, ContainerInput.PICKUP, player);
+                            helper.assertTrue(player.containerMenu == player.inventoryMenu,
+                                    "Starting native portal navigation did not close the explorer");
+                            helper.assertTrue(platform.portalDefinition(portalId).equals(Optional.of(definition))
+                                            && platform.auditPage(portalAuditQuery, 0, 1).totalEntries()
+                                            == portalAuditsBeforeNavigation
+                                            && platform.portalCooldownUntil(player.getUUID(), portalId)
+                                            == cooldownBeforeNavigation,
+                                    "Read-only portal navigation mutated its definition, cooldown, or audit evidence");
+
+                            PlayerPortalMenu.open(player);
+                            player.containerMenu.clicked(9, 0, ContainerInput.PICKUP, player);
+                            helper.runAfterDelay(1, () -> {
+                                try {
+                                    player.containerMenu.clicked(50, 0, ContainerInput.PICKUP, player);
+                                    helper.assertTrue(player.containerMenu == player.inventoryMenu,
+                                            "Successful portal travel did not close the explorer");
+                                    helper.assertTrue(player.blockPosition().equals(destination),
+                                            "Portal explorer travel did not use the server-resolved safe arrival");
+                                    helper.assertTrue(
+                                            platform.portalCooldownUntil(player.getUUID(), portalId) > timestamp,
+                                            "Portal explorer travel did not persist cooldown receipt evidence");
+                                    AuditQuery travelAuditQuery = new AuditQuery(
+                                            timestamp,
+                                            auditUntil,
+                                            Optional.of(player.getUUID()),
+                                            Optional.of(id("portal_travel")),
+                                            Optional.of(portalId.toString()),
+                                            Optional.empty());
+                                    var travelAudits = platform.auditPage(travelAuditQuery, 0, 2);
+                                    helper.assertTrue(travelAudits.totalEntries() == 1,
+                                            "Portal explorer travel did not append exactly one matching audit entry");
+                                    var travelAudit = travelAudits.entries().getFirst();
+                                    helper.assertTrue(travelAudit.target().equals(portalId.toString())
+                                                    && travelAudit.position().equals(Optional.of(destination)),
+                                            "Portal explorer travel audit did not preserve its target and arrival");
+                                } finally {
+                                    cleanup.run();
+                                }
+                                helper.assertTrue(platform.portalDefinition(portalId).isEmpty(),
+                                        "Portal explorer GameTest cleanup failed");
+                                helper.succeed();
+                            });
+                        } catch (RuntimeException | Error exception) {
+                            cleanup.run();
+                            throw exception;
+                        }
+                    });
+                } catch (RuntimeException | Error exception) {
+                    cleanup.run();
+                    throw exception;
+                }
             }
         });
         event.registerTest(id("admin_gui_role_revalidation"), new FunctionGameTestInstance(

@@ -24,6 +24,7 @@ import org.lwjgl.glfw.GLFW;
 /** Card-based client view over the existing server-authoritative chest menu. */
 final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
     private final List<RovenfallMenuCardButton> cards = new ArrayList<>();
+    private final PlayerMenuNetwork.MenuKind kind;
     private RovenfallPlayerMenuLayout.Layout layout;
     private Button technicalButton;
     private EditBox query;
@@ -43,6 +44,7 @@ final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
         if (kind.isAdministration()) {
             throw new IllegalArgumentException("Administration menus use RovenfallAdministrationMenuScreen");
         }
+        this.kind = kind;
     }
 
     @Override
@@ -115,7 +117,9 @@ final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
         }
         queryValue = shorten(previousQuery);
         var field = layout.searchField();
-        Component label = Component.translatable("gui.rovenfall.claim.atlas.search");
+        Component label = Component.translatable(kind == PlayerMenuNetwork.MenuKind.PORTAL
+                ? "gui.rovenfall.portal.search"
+                : "gui.rovenfall.claim.atlas.search");
         query = addRenderableWidget(new EditBox(
                 font, field.x(), field.y(), field.width(), field.height(), label));
         query.setBordered(false);
@@ -126,7 +130,9 @@ final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
         query.setValue(queryValue);
         var submit = layout.searchButton();
         addRenderableWidget(Button.builder(
-                        Component.translatable("gui.rovenfall.claim.atlas.search.submit"), ignored -> submitQuery())
+                        Component.translatable(kind == PlayerMenuNetwork.MenuKind.PORTAL
+                                ? "gui.rovenfall.portal.search.submit"
+                                : "gui.rovenfall.claim.atlas.search.submit"), ignored -> submitQuery())
                 .bounds(submit.x(), submit.y(), submit.width(), submit.height())
                 .build(RovenfallButton::new));
     }

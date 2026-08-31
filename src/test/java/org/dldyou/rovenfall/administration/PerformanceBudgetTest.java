@@ -86,6 +86,9 @@ final class PerformanceBudgetTest {
         assertEquals(36, ClaimAtlasView.PAGE_SIZE);
         assertEquals(64, ClaimAtlasView.MAX_QUERY_LENGTH);
         assertEquals(8, ClaimAtlasView.NEARBY_RADIUS);
+        assertEquals(36, PlayerPortalView.PAGE_SIZE);
+        assertEquals(64, PlayerPortalView.MAX_QUERY_LENGTH);
+        assertEquals(PortalState.MAX_DEFINITIONS, PlayerPortalView.MAX_SCANNED_DEFINITIONS);
     }
 
     private static ScenarioResult runScenario(int playerCount) {
@@ -139,6 +142,16 @@ final class PerformanceBudgetTest {
             atlasRows += atlas.entries().size();
         }
         long atlasNanos = System.nanoTime() - start;
+
+        start = System.nanoTime();
+        int portalViewRows = 0;
+        for (int index = 0; index < playerCount; index++) {
+            PlayerPortalView portals = PlayerPortalView.create(
+                    platform, WorldTopology.HUB, Vec3.atCenterOf(ORIGIN.position()), "", 0);
+            assertTrue(portals.entries().size() <= PlayerPortalView.PAGE_SIZE);
+            portalViewRows += portals.entries().size();
+        }
+        long portalViewNanos = System.nanoTime() - start;
 
         start = System.nanoTime();
         for (int index = 0; index < playerCount; index++) {
@@ -207,8 +220,10 @@ final class PerformanceBudgetTest {
         return new ScenarioResult(
                 playerCount, platform.economyAccountCount(), platform.claimCount(), rpg.playerCount(),
                 playerCount, encounter.contributions().size(), mutationEvaluations,
-                bossRewards.pendingOperations().size(), atlasRows, balances.entries().size(), audits.entries().size(),
-                economyNanos, claimsNanos, atlasNanos, rpgNanos, portalsNanos, bossesNanos, administrationNanos);
+                bossRewards.pendingOperations().size(), atlasRows, portalViewRows,
+                balances.entries().size(), audits.entries().size(),
+                economyNanos, claimsNanos, atlasNanos, portalViewNanos,
+                rpgNanos, portalsNanos, bossesNanos, administrationNanos);
     }
 
     private static void assertScenario(ScenarioResult result) {
@@ -221,6 +236,8 @@ final class PerformanceBudgetTest {
         assertEquals(result.players(), result.pendingBossRewards());
         assertTrue(result.atlasRows() > 0
                 && result.atlasRows() <= result.players() * ClaimAtlasView.PAGE_SIZE);
+        assertTrue(result.portalViewRows() > 0
+                && result.portalViewRows() <= result.players() * PlayerPortalView.PAGE_SIZE);
         assertEquals(result.players(), result.balanceRows());
         assertTrue(result.auditRows() > 0 && result.auditRows() <= PlatformSavedData.MAX_AUDIT_PAGE_SIZE);
         assertTrue(result.totalNanos() >= 0); // Diagnostic only; never a machine-specific time gate.
@@ -247,12 +264,13 @@ final class PerformanceBudgetTest {
                 Deterministic structural assertions passed for the repository-native 20/50-player load fixture.
                 Wall-clock measurements are diagnostics from this runner and never fail the build.
 
-                | Players | Accounts | Claims | RPG | Portal travels | Boss contributors | Mutation evaluations | Boss rewards | Atlas rows | Admin balance rows | Admin audit rows | Economy ms | Claims ms | Atlas ms | RPG ms | Portals ms | Boss ms | Admin ms | Total ms |
-                | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+                | Players | Accounts | Claims | RPG | Portal travels | Boss contributors | Mutation evaluations | Boss rewards | Atlas rows | Portal explorer rows | Admin balance rows | Admin audit rows | Economy ms | Claims ms | Atlas ms | Portal explorer ms | RPG ms | Portals ms | Boss ms | Admin ms | Total ms |
+                | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
                 %s
                 %s
 
-                Structural budgets: land atlas 36 rows/page over an 8-area radius; admin pages 50 rows;
+                Structural budgets: land atlas and portal explorer 36 rows/page; portal scans 64 definitions;
+                land nearby radius 8 areas; admin pages 50 rows;
                 boss tick encounters 32; skill requests 20/player/s;
                 activate/state packets 128/64 bytes; recovery journals 10,000 boss operations,
                 8 Wilderness snapshots, and 64 Wilderness evidence records.
@@ -269,21 +287,22 @@ final class PerformanceBudgetTest {
 
     private record ScenarioResult(
             int players, int accounts, int claims, int rpgPlayers, int portalTravels,
-            int bossContributors, int mutationEvaluations, int pendingBossRewards, int atlasRows,
+            int bossContributors, int mutationEvaluations, int pendingBossRewards, int atlasRows, int portalViewRows,
             int balanceRows, int auditRows,
-            long economyNanos, long claimsNanos, long atlasNanos, long rpgNanos,
+            long economyNanos, long claimsNanos, long atlasNanos, long portalViewNanos, long rpgNanos,
             long portalsNanos, long bossesNanos, long administrationNanos) {
         long totalNanos() {
-            return economyNanos + claimsNanos + atlasNanos + rpgNanos
+            return economyNanos + claimsNanos + atlasNanos + portalViewNanos + rpgNanos
                     + portalsNanos + bossesNanos + administrationNanos;
         }
 
         String markdown() {
-            return "| %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f |".formatted(
+            return "| %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f | %.3f |".formatted(
                     players, accounts, claims, rpgPlayers, portalTravels, bossContributors,
-                    mutationEvaluations, pendingBossRewards, atlasRows, balanceRows, auditRows,
-                    millis(economyNanos), millis(claimsNanos), millis(atlasNanos), millis(rpgNanos), millis(portalsNanos),
-                    millis(bossesNanos), millis(administrationNanos), millis(totalNanos()));
+                    mutationEvaluations, pendingBossRewards, atlasRows, portalViewRows, balanceRows, auditRows,
+                    millis(economyNanos), millis(claimsNanos), millis(atlasNanos), millis(portalViewNanos),
+                    millis(rpgNanos), millis(portalsNanos), millis(bossesNanos),
+                    millis(administrationNanos), millis(totalNanos()));
         }
 
         private static double millis(long nanos) {
