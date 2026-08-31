@@ -1,12 +1,14 @@
 # Player GUI
 
-Rovenfall turns the ordinary survival inventory into the primary player entry point. Opening the inventory shows the normal Minecraft inventory plus seven compact tabs: Inventory, Overview, Land, Skills, Shops, Admin, and Journey. The server opens Admin only for players with an administration role. Creative and spectator inventories are deliberately left unchanged.
+Rovenfall turns the ordinary survival inventory into the primary player entry point. Opening the inventory shows the normal Minecraft inventory plus eight compact tabs: Inventory, Overview, Land, Travel, Skills, Shops, Journey, and Admin. The server opens Admin only for players with an administration role. Creative and spectator inventories are deliberately left unchanged.
 
 ## Interaction model
 
 - Overview uses a three-row menu. Land, Skills, Shops, and Journey use six-row menus.
 - Land opens the Land Atlas: Current Land, My Land, Nearby Land, and Available Land. The atlas is a bounded, server-filtered list; restricted land and owner names are never sent to players who cannot view them. Search is limited to visible land and uses an owner name rather than a raw identifier.
 - A land card can set a locator-bar waypoint in the current world. Clearing the waypoint is available from the atlas. The atlas never loads remote areas, and purchase remains available only while standing on the selected available land.
+- Travel opens the Portal Explorer. It lists server-approved portal cards with an origin/destination world search, bounded pages, origin world, destination world, distance, and a current-world navigation marker. Portal IDs and coordinates stay in Technical information only. Navigation never loads a remote world.
+- Portal use is an on-site action: the server rechecks the selected portal, protection, current dimension, 8-block entrance distance, cooldown, combat lock, and safe arrival at activation time. A changed portal refreshes the card instead of travelling the player.
 - Journey is the quest board. It shows at most 28 journeys on a page, a plain-language status and reward preview, then one server-selected next step. The Overview card opens the same board, so players never need a command, UUID, or definition identifier to find their first journey.
 - The first journey introduces the opening loop: gain Mining activity progress, trade at a shop, then buy a piece of land. It is guidance rather than a timer; all progress and any reward remain server-owned.
 - Mouse users activate an item with the primary (left) button. Shift-click, drag, number-key swaps, secondary clicks, and other inventory gestures cannot invoke an action.
@@ -40,7 +42,7 @@ compatibility checks, and manual capture procedure.
 - `/rovenfall career promote|switch ...`
 - `/rovenfall skill learn|bind|unbind|reset ...`
 
-Remote land management is available from the atlas only when the server grants the viewer the existing owner, manager, or pending-recipient permission. Purchase still requires standing on the land, and the server rechecks the selected land before every action. `/rovenfall portal use <portal_id>` remains command-only until a player portal browser exists.
+Remote land management is available from the atlas only when the server grants the viewer the existing owner, manager, or pending-recipient permission. Purchase still requires standing on the land, and the server rechecks the selected land before every action. The Travel tab is the normal portal path; `/rovenfall portal use <portal_id>` remains an operator, recovery, and automation fallback using the same server checks.
 
 The Admin tab is the normal operator path. `/rovenfall admin gui` and the other `/rovenfall admin ...` commands remain permission-gated fallbacks for automation, recovery, and records outside bounded GUI result windows.
 

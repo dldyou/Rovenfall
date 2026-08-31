@@ -10,7 +10,7 @@ import net.minecraft.world.inventory.Slot;
 
 /** Vanilla inventory behavior with compact RPG navigation layered above it. */
 public final class RovenfallInventoryScreen extends InventoryScreen {
-    private static final int TAB_COUNT = 7;
+    private static final int TAB_COUNT = 8;
     private RovenfallInventoryLayout.TabLayout tabLayout;
 
     public RovenfallInventoryScreen(Player player) {
@@ -26,10 +26,11 @@ public final class RovenfallInventoryScreen extends InventoryScreen {
         inventory.active = false;
         addTab(1, "gui.rovenfall.inventory.overview", PlayerMenuNetwork.MenuTarget.OVERVIEW);
         addTab(2, "gui.rovenfall.inventory.claims", PlayerMenuNetwork.MenuTarget.CLAIMS);
-        addTab(3, "gui.rovenfall.inventory.skills", PlayerMenuNetwork.MenuTarget.SKILLS);
-        addTab(4, "gui.rovenfall.inventory.shops", PlayerMenuNetwork.MenuTarget.SHOPS);
-        addTab(5, "gui.rovenfall.inventory.admin", PlayerMenuNetwork.MenuTarget.ADMIN);
+        addTab(3, "gui.rovenfall.inventory.travel", PlayerMenuNetwork.MenuTarget.PORTALS);
+        addTab(4, "gui.rovenfall.inventory.skills", PlayerMenuNetwork.MenuTarget.SKILLS);
+        addTab(5, "gui.rovenfall.inventory.shops", PlayerMenuNetwork.MenuTarget.SHOPS);
         addTab(6, "gui.rovenfall.inventory.journey", PlayerMenuNetwork.MenuTarget.QUESTS);
+        addTab(7, "gui.rovenfall.inventory.admin", PlayerMenuNetwork.MenuTarget.ADMIN);
         RovenfallInventoryClient.requestSummary();
     }
 

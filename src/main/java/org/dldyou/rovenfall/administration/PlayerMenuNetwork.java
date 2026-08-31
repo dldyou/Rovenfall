@@ -27,7 +27,7 @@ import org.slf4j.Logger;
 
 /** Server-authoritative entry points requested by the RPG inventory shell. */
 public final class PlayerMenuNetwork {
-    static final int PACKET_REVISION = 2;
+    static final int PACKET_REVISION = 3;
     static final int MIN_OPEN_INTERVAL_TICKS = 5;
     static final int MIN_MUTATION_INTERVAL_TICKS = 20;
     static final int MAX_OPEN_PACKET_BYTES = 10;
@@ -36,7 +36,7 @@ public final class PlayerMenuNetwork {
     static final int MAX_INVENTORY_SUMMARY_REQUEST_PACKET_BYTES = 6;
     static final int MAX_INVENTORY_SUMMARY_PACKET_BYTES = 660;
     static final int MAX_CAREER_TRANSLATION_KEY_LENGTH = 160;
-    static final String NETWORK_VERSION = "2";
+    static final String NETWORK_VERSION = "3";
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final Map<UUID, Long> LAST_OPEN_TICK = new HashMap<>();
     private static final Map<UUID, Long> LAST_MUTATION_TICK = new HashMap<>();
@@ -258,6 +258,7 @@ public final class PlayerMenuNetwork {
             case SHOPS -> PlayerShopMenu.open(player);
             case ADMIN -> AdministrationControlCenterMenu.open(player);
             case QUESTS -> PlayerQuestMenu.open(player);
+            case PORTALS -> PlayerPortalMenu.open(player);
         }
     }
 
@@ -277,7 +278,8 @@ public final class PlayerMenuNetwork {
         SKILLS(2),
         SHOPS(3),
         ADMIN(4),
-        QUESTS(5);
+        QUESTS(5),
+        PORTALS(6);
 
         private final int wireId;
 
@@ -309,7 +311,8 @@ public final class PlayerMenuNetwork {
         ADMIN_WORLD(6, true, true),
         ADMIN_RPG_BOSS(7, true, true),
         ADMIN_OPERATIONS(8, true, true),
-        QUEST(9, false, false);
+        QUEST(9, false, false),
+        PORTAL(10, false, false);
 
         private final int wireId;
         private final boolean administration;
@@ -352,6 +355,7 @@ public final class PlayerMenuNetwork {
                 case PlayerClaimMenu ignored -> CLAIM;
                 case PlayerRpgMenu ignored -> RPG;
                 case PlayerQuestMenu ignored -> QUEST;
+                case PlayerPortalMenu ignored -> PORTAL;
                 case AdministrationControlCenterMenu ignored -> ADMIN_HOME;
                 case AdministrationEconomyMenu ignored -> ADMIN_ECONOMY;
                 case AdministrationWorldMenu ignored -> ADMIN_WORLD;
