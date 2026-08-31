@@ -107,6 +107,25 @@ not show raw IDs or coordinates; Technical information may show the focused diag
 | Accessibility | Repeat at minimum, standard, and large GUI scales with narration enabled | Travel tab, search, cards, disabled states, confirmation, and keyboard guidance remain visible and narrated without color-only meaning. |
 | Locales | Repeat the standard Travel flow in all three shipped locales | `ko_kr`, `en_us`, and `ja_jp` show the same controls and placeholder values with no missing translation. |
 
+## Issue #118 daily and weekly request release checks
+
+Before an Issue #118 release, repeat the standard client matrix for **Journey → Requests** in
+`ko_kr`, `en_us`, and `ja_jp`. Korean labels must use `의뢰`, `일일 의뢰`, and `주간 의뢰`.
+Normal cards must not show template identifiers or UTC window numbers; Technical information may
+show the focused diagnostic values.
+
+| Case | Required state | Expected result |
+| --- | --- | --- |
+| Current roster | Open Requests with at least four daily and two weekly templates loaded | Exactly two daily cards and one weekly card are shown; reopening and Refresh do not reroll them. |
+| UTC boundary | Keep the screen open across daily 00:00 UTC and Monday 00:00 UTC | Refresh shows only the newly assigned current roster; old cards do not remain in the player view. |
+| Progress | Produce one matching server-observed outcome | The matching story journey and request update after Refresh without a completion button or client-authored count. |
+| Definition reload | Change or remove an assigned template before Refresh | The card shows a localized changed/unavailable state and does not invent a replacement for the persisted roster. |
+| Read-only state | Load the quest root in recovery read-only mode | Existing current progress stays visible, the read-only explanation is narrated, and no mutation is attempted. |
+| Empty roster | Load no eligible templates for one or both cadences | The screen remains usable, bounded, and narrated; it explains when new requests refresh. |
+| Technical information | Toggle ordinary and advanced details on the same focused card | Ordinary details contain no raw identifier/window value; advanced details reveal only the focused diagnostic reference. |
+| Accessibility | Repeat at minimum, standard, and large GUI scales with narration enabled | Requests toggle, three cards, status, objective, reward, refresh schedule, Back, and Refresh remain visible and understandable without color-only meaning. |
+| Locales | Repeat the flow in all three shipped locales | All controls and content names are translated with equal placeholders and natural player-facing terms. |
+
 ## Issue #101 release-candidate result
 
 The 2026-08-30 release-candidate run used the Gradle-managed Eclipse Temurin 25.0.4 daemon and

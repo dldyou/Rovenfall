@@ -123,6 +123,30 @@ final class QuestJourneyViewTest {
                 definitions, QuestPlayerState.EMPTY, 1, true, 0, QuestJourneyView.MAX_PAGE_SIZE + 1));
     }
 
+    @Test
+    void storyBoardRetainsAClassificationChangedLegacyEntryWithoutListingNewContracts() {
+        QuestDefinition contract = new QuestDefinition(
+                "quest.rovenfall.contract.daily",
+                "quest.rovenfall.contract.daily.description",
+                1,
+                List.of(),
+                List.of(new QuestDefinition.Objective(
+                        id("contract/objective"), QuestDefinition.Kind.SHOP_TRADE, Optional.empty(), 1)),
+                QuestDefinition.Rewards.NONE,
+                Optional.of(new QuestDefinition.Contract(QuestDefinition.Cadence.DAILY)));
+        QuestDefinitionSnapshot definitions = definitions(
+                quest("story", 1, List.of(), 0, 1), source("contract", contract));
+        QuestPlayerState legacy = new QuestPlayerState(Map.of(
+                id("contract"), progress("contract", 1, 1)));
+
+        QuestJourneyView view = QuestJourneyView.create(definitions, legacy, 1, true, 0, 28);
+
+        assertEquals(List.of(id("contract"), id("story")),
+                view.entries().stream().map(QuestJourneyView.QuestRow::id).toList());
+        assertEquals(QuestJourneyView.Status.DEFINITION_CHANGED, view.entries().getFirst().status());
+        assertEquals(2, view.totalEntries());
+    }
+
     private static QuestDefinitionSnapshot definitions(QuestDefinitionSnapshot.Source... sources) {
         return QuestDefinitionSnapshot.compile(List.of(sources));
     }

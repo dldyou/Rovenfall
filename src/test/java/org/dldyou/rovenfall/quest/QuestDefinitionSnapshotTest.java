@@ -12,6 +12,7 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import net.minecraft.resources.Identifier;
 import org.junit.jupiter.api.Test;
 
@@ -30,6 +31,62 @@ class QuestDefinitionSnapshotTest {
         } catch (java.io.IOException exception) {
             throw new AssertionError(exception);
         }
+    }
+
+    @Test
+    void codecAndSnapshotSeparateBoundedContractTemplatesFromStoryQuests() {
+        QuestDefinition daily = QuestDefinition.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseString("""
+                {"translation_key":"quest.rovenfall.daily_trade",
+                 "description_translation_key":"quest.rovenfall.daily_trade.description",
+                 "version":1,
+                 "objectives":[{"id":"rovenfall:objectives/daily_trade","kind":"shop_trade","required_count":1}],
+                 "contract":{"cadence":"daily"}}
+                """)).getOrThrow();
+        QuestDefinition story = definition(List.of(), List.of(
+                objective("story", QuestDefinition.Kind.SHOP_TRADE, Optional.empty())));
+        var snapshot = QuestDefinitionSnapshot.compile(List.of(
+                new QuestDefinitionSnapshot.Source(file("daily_trade"), "test", id("daily_trade"), daily),
+                new QuestDefinitionSnapshot.Source(file("story"), "test", id("story"), story)));
+
+        assertEquals(2, QuestDefinition.Cadence.DAILY.slots());
+        assertEquals(1, QuestDefinition.Cadence.WEEKLY.slots());
+        assertEquals(1, snapshot.contractCount());
+        assertEquals(Set.of(id("story")), snapshot.storyQuests().keySet());
+        assertEquals(Set.of(id("daily_trade")),
+                snapshot.contractTemplates(QuestDefinition.Cadence.DAILY).keySet());
+        assertTrue(snapshot.contractTemplates(QuestDefinition.Cadence.WEEKLY).isEmpty());
+        assertTrue(story.contract().isEmpty());
+    }
+
+    @Test
+    void rejectsContractPrerequisitesMultipleObjectivesStoryDependenciesAndCatalogOverflow() {
+        QuestDefinition contract = contract(
+                QuestDefinition.Cadence.DAILY,
+                List.of(id("story")),
+                List.of(
+                        objective("contract_one", QuestDefinition.Kind.SHOP_TRADE, Optional.empty()),
+                        objective("contract_two", QuestDefinition.Kind.SHOP_TRADE, Optional.empty())));
+        QuestDefinition story = definition(List.of(id("contract")), List.of(
+                objective("story", QuestDefinition.Kind.SHOP_TRADE, Optional.empty())));
+        var invalid = assertThrows(QuestDefinitionSnapshot.ValidationException.class, () ->
+                QuestDefinitionSnapshot.compile(List.of(
+                        new QuestDefinitionSnapshot.Source(file("contract"), "test", id("contract"), contract),
+                        new QuestDefinitionSnapshot.Source(file("story"), "test", id("story"), story))));
+
+        assertTrue(invalid.getMessage().contains("contract cannot define prerequisites"));
+        assertTrue(invalid.getMessage().contains("contract must define exactly one objective"));
+        assertTrue(invalid.getMessage().contains("story quest cannot require contract"));
+
+        List<QuestDefinitionSnapshot.Source> tooMany = java.util.stream.IntStream
+                .rangeClosed(0, QuestDefinitionSnapshot.MAX_CONTRACT_DEFINITIONS)
+                .mapToObj(index -> new QuestDefinitionSnapshot.Source(
+                        file("contract_" + index), "test", id("contract_" + index),
+                        contract(QuestDefinition.Cadence.DAILY, List.of(), List.of(
+                                objective("bounded_" + index, QuestDefinition.Kind.SHOP_TRADE, Optional.empty())))))
+                .toList();
+        var overflow = assertThrows(QuestDefinitionSnapshot.ValidationException.class,
+                () -> QuestDefinitionSnapshot.compile(tooMany));
+        assertTrue(overflow.getMessage().contains("contract definition count exceeds"));
     }
 
     @Test
@@ -163,6 +220,16 @@ class QuestDefinitionSnapshotTest {
             List<Identifier> prerequisites, List<QuestDefinition.Objective> objectives) {
         return new QuestDefinition(
                 "quest.rovenfall.test", "quest.rovenfall.test.description", 1, prerequisites, objectives);
+    }
+
+    private static QuestDefinition contract(
+            QuestDefinition.Cadence cadence,
+            List<Identifier> prerequisites,
+            List<QuestDefinition.Objective> objectives) {
+        return new QuestDefinition(
+                "quest.rovenfall.contract", "quest.rovenfall.contract.description", 1,
+                prerequisites, objectives, QuestDefinition.Rewards.NONE,
+                Optional.of(new QuestDefinition.Contract(cadence)));
     }
 
     private static QuestDefinition.Objective objective(

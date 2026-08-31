@@ -19,10 +19,13 @@ import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import org.dldyou.rovenfall.quest.ContractJourneyView;
+import org.dldyou.rovenfall.quest.QuestDefinition;
 import org.dldyou.rovenfall.quest.QuestDefinitionReloadListener;
 import org.dldyou.rovenfall.quest.QuestJourneyView;
 import org.dldyou.rovenfall.quest.QuestPlayerSavedData;
 import org.dldyou.rovenfall.quest.QuestPlayerState;
+import org.dldyou.rovenfall.quest.RepeatableContractService;
 import org.dldyou.rovenfall.rpg.RpgDefinitionReloadListener;
 import org.dldyou.rovenfall.rpg.RpgDefinitionSnapshot;
 
@@ -37,6 +40,8 @@ public final class PlayerQuestMenu extends ChestMenu {
             37, 38, 39, 40, 41, 42, 43
     };
     private static final int BACK_SLOT = 45;
+    private static final int CONTRACTS_SLOT = 46;
+    private static final int[] CONTRACT_SLOTS = {20, 22, 24};
     private static final int PREVIOUS_SLOT = 48;
     private static final int GUIDE_SLOT = 49;
     private static final int NEXT_SLOT = 50;
@@ -44,13 +49,15 @@ public final class PlayerQuestMenu extends ChestMenu {
 
     enum Page {
         LIST,
-        DETAIL
+        DETAIL,
+        CONTRACTS
     }
 
     enum Action {
         NONE,
         SELECT,
         BACK,
+        CONTRACTS,
         PREVIOUS,
         GUIDE,
         NEXT,
@@ -66,6 +73,7 @@ public final class PlayerQuestMenu extends ChestMenu {
     private QuestJourneyView.QuestRow selected;
     private List<QuestJourneyView.QuestRow> displayedRows = List.of();
     private QuestJourneyView renderedView;
+    private ContractJourneyView renderedContracts;
     private long renderedRevision;
     private QuestPlayerState renderedState = QuestPlayerState.EMPTY;
     private boolean renderedWritable;
@@ -109,7 +117,9 @@ public final class PlayerQuestMenu extends ChestMenu {
         }
         lastHandledGameTime = gameTime;
         if (action == Action.REFRESH) {
-            resetToList();
+            if (page != Page.CONTRACTS) {
+                resetToList();
+            }
             render();
             return;
         }
@@ -123,6 +133,7 @@ public final class PlayerQuestMenu extends ChestMenu {
         }
         switch (action) {
             case SELECT -> select(slotIndex);
+            case CONTRACTS -> toggleContracts();
             case PREVIOUS -> previous();
             case GUIDE -> openNextStep();
             case NEXT -> next();
@@ -145,6 +156,15 @@ public final class PlayerQuestMenu extends ChestMenu {
         if (slot == BACK_SLOT) {
             return Action.BACK;
         }
+        if (slot == CONTRACTS_SLOT && page != Page.DETAIL) {
+            return Action.CONTRACTS;
+        }
+        if (slot == REFRESH_SLOT) {
+            return Action.REFRESH;
+        }
+        if (page == Page.CONTRACTS) {
+            return Action.NONE;
+        }
         if (slot == PREVIOUS_SLOT) {
             return Action.PREVIOUS;
         }
@@ -153,9 +173,6 @@ public final class PlayerQuestMenu extends ChestMenu {
         }
         if (slot == NEXT_SLOT) {
             return Action.NEXT;
-        }
-        if (slot == REFRESH_SLOT) {
-            return Action.REFRESH;
         }
         return page == Page.LIST && contentOffset(slot) >= 0 ? Action.SELECT : Action.NONE;
     }
@@ -175,6 +192,10 @@ public final class PlayerQuestMenu extends ChestMenu {
     static int boundedPage(int page, int entries) {
         int last = entries == 0 ? 0 : (entries - 1) / PAGE_SIZE;
         return Math.clamp(page, 0, last);
+    }
+
+    static boolean shouldEnsureAssignments(Page page) {
+        return page == Page.CONTRACTS;
     }
 
     static String statusKey(QuestJourneyView.Status status) {
@@ -260,6 +281,17 @@ public final class PlayerQuestMenu extends ChestMenu {
         render();
     }
 
+    private void toggleContracts() {
+        if (page == Page.CONTRACTS) {
+            resetToList();
+        } else {
+            page = Page.CONTRACTS;
+            selected = null;
+            detailPage = 0;
+        }
+        render();
+    }
+
     private void openNextStep() {
         if (!renderedWritable) {
             viewer.sendOverlayMessage(Component.translatable("gui.rovenfall.quest.read_only"));
@@ -279,7 +311,7 @@ public final class PlayerQuestMenu extends ChestMenu {
     }
 
     private void back() {
-        if (page == Page.DETAIL) {
+        if (page == Page.DETAIL || page == Page.CONTRACTS) {
             page = Page.LIST;
             selected = null;
             detailPage = 0;
@@ -316,8 +348,17 @@ public final class PlayerQuestMenu extends ChestMenu {
         QuestDefinitionReloadListener.VersionedSnapshot versioned =
                 QuestDefinitionReloadListener.versioned(server);
         QuestPlayerSavedData saved = QuestPlayerSavedData.get(server);
+        long now = System.currentTimeMillis();
+        RepeatableContractService.AssignmentResult assignment = null;
+        if (shouldEnsureAssignments(page)) {
+            assignment = RepeatableContractService.ensureAssignments(
+                    saved, versioned.snapshot(), viewerId, now);
+        }
         QuestPlayerState state = saved.state(viewerId);
         boolean writable = saved.isWritable();
+        boolean contractsWritable = writable && (assignment == null
+                || assignment.status() == RepeatableContractService.AssignmentStatus.SUCCESS
+                || assignment.status() == RepeatableContractService.AssignmentStatus.UNCHANGED);
         if (page == Page.DETAIL && selected != null && renderedView != null
                 && !isCurrent(renderedRevision, renderedState, renderedWritable,
                         versioned.revision(), state, writable)) {
@@ -326,16 +367,21 @@ public final class PlayerQuestMenu extends ChestMenu {
 
         renderedView = QuestJourneyView.create(
                 versioned.snapshot(), state, versioned.revision(), writable, listPage, PAGE_SIZE);
+        renderedContracts = ContractJourneyView.create(
+                versioned.snapshot(), state, versioned.revision(), contractsWritable, now);
         renderedRevision = versioned.revision();
         renderedState = state;
         renderedWritable = writable;
         listPage = renderedView.page();
 
         content.clearContent();
-        if (page == Page.LIST) {
-            renderList();
-        } else {
-            renderDetail();
+        switch (page) {
+            case LIST -> renderList();
+            case DETAIL -> renderDetail();
+            case CONTRACTS -> renderContracts();
+        }
+        if (page != Page.DETAIL) {
+            addContractsToggle();
         }
         content.setItem(REFRESH_SLOT, icon(
                 Items.CLOCK,
@@ -387,6 +433,76 @@ public final class PlayerQuestMenu extends ChestMenu {
             content.setItem(CONTENT_SLOTS[index - from], objectiveIcon(objectives.get(index), rpgDefinitions));
         }
         addNavigation(detailPage, objectives.size());
+    }
+
+    private void renderContracts() {
+        displayedRows = List.of();
+        List<Component> header = new ArrayList<>();
+        header.add(Component.translatable("gui.rovenfall.quest.contracts.summary"));
+        header.add(Component.translatable(
+                "gui.rovenfall.quest.contracts.count", renderedContracts.entries().size()));
+        if (!renderedContracts.writable()) {
+            header.add(Component.translatable("gui.rovenfall.quest.contract.read_only"));
+        }
+        content.setItem(4, PlayerDashboardMenu.icon(
+                Items.FILLED_MAP,
+                Component.translatable("gui.rovenfall.quest.contracts"),
+                header.toArray(Component[]::new)));
+        for (int index = 0; index < renderedContracts.entries().size(); index++) {
+            content.setItem(CONTRACT_SLOTS[index], contractIcon(renderedContracts.entries().get(index)));
+        }
+        if (renderedContracts.entries().isEmpty()) {
+            content.setItem(22, icon(
+                    Items.PAPER,
+                    "gui.rovenfall.quest.contracts.empty",
+                    Component.translatable("gui.rovenfall.quest.contracts.refresh_hint")));
+        }
+        addBack();
+    }
+
+    private ItemStack contractIcon(ContractJourneyView.ContractRow row) {
+        List<Component> lore = new ArrayList<>();
+        row.descriptionTranslationKey().ifPresent(key -> lore.add(Component.translatable(key)));
+        lore.add(Component.translatable(cadenceKey(row.key().window().cadence())));
+        lore.add(Component.translatable(
+                "gui.rovenfall.quest.status", Component.translatable(statusKey(row.status()))));
+        RpgDefinitionSnapshot rpgDefinitions = RpgDefinitionReloadListener.snapshot(viewer.level().getServer());
+        row.objective().ifPresent(objective -> lore.add(objectiveLine(objective, rpgDefinitions)));
+        addRewardLines(lore, row.status(), row.rewardPreview(), rpgDefinitions);
+        lore.add(Component.translatable(refreshKey(row.key().window().cadence())));
+        lore.add(Component.translatable(
+                "gui.rovenfall.quest.contract.technical",
+                row.key().templateId().toString(), row.key().window().windowStartEpochDay()));
+        return PlayerDashboardMenu.icon(
+                statusItem(row.status()),
+                row.translationKey().<Component>map(Component::translatable)
+                        .orElseGet(() -> Component.translatable("gui.rovenfall.quest.unavailable_content")),
+                lore.toArray(Component[]::new));
+    }
+
+    private void addContractsToggle() {
+        boolean contracts = page == Page.CONTRACTS;
+        content.setItem(CONTRACTS_SLOT, PlayerDashboardMenu.icon(
+                contracts ? Items.WRITABLE_BOOK : Items.FILLED_MAP,
+                Component.translatable(contracts
+                        ? "gui.rovenfall.quest.story"
+                        : "gui.rovenfall.quest.contracts"),
+                Component.translatable(contracts
+                        ? "gui.rovenfall.quest.story.hint"
+                        : "gui.rovenfall.quest.contracts.hint"),
+                Component.translatable("gui.rovenfall.player.click")));
+    }
+
+    private static String cadenceKey(QuestDefinition.Cadence cadence) {
+        return cadence == QuestDefinition.Cadence.DAILY
+                ? "gui.rovenfall.quest.contract.daily"
+                : "gui.rovenfall.quest.contract.weekly";
+    }
+
+    private static String refreshKey(QuestDefinition.Cadence cadence) {
+        return cadence == QuestDefinition.Cadence.DAILY
+                ? "gui.rovenfall.quest.contract.refresh.daily"
+                : "gui.rovenfall.quest.contract.refresh.weekly";
     }
 
     private ItemStack questIcon(QuestJourneyView.QuestRow row, boolean clickable) {
@@ -458,10 +574,7 @@ public final class PlayerQuestMenu extends ChestMenu {
     }
 
     private void addNavigation(int currentPage, int entries) {
-        content.setItem(BACK_SLOT, icon(
-                Items.ARROW,
-                "gui.rovenfall.player.back",
-                Component.translatable("gui.rovenfall.player.click")));
+        addBack();
         if (currentPage > 0) {
             content.setItem(PREVIOUS_SLOT, icon(Items.ARROW, "gui.rovenfall.player.previous"));
         }
@@ -480,6 +593,13 @@ public final class PlayerQuestMenu extends ChestMenu {
                         Component.translatable(renderedWritable
                                 ? "gui.rovenfall.player.click"
                                 : "gui.rovenfall.quest.read_only"))));
+    }
+
+    private void addBack() {
+        content.setItem(BACK_SLOT, icon(
+                Items.ARROW,
+                "gui.rovenfall.player.back",
+                Component.translatable("gui.rovenfall.player.click")));
     }
 
     private static Component activityName(

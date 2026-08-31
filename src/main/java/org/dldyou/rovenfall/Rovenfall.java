@@ -303,6 +303,35 @@ public final class Rovenfall {
                 });
             }
         });
+        event.registerTest(id("player_contract_navigation"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS,
+                new TestData<>(questEnvironment, Identifier.withDefaultNamespace("empty"), 10, 0, true)) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var player = helper.makeMockServerPlayerInLevel();
+                var quests = QuestPlayerSavedData.get(player.level().getServer());
+                var before = quests.state(player.getUUID());
+                PlayerQuestMenu.open(player);
+                helper.assertTrue(player.containerMenu instanceof PlayerQuestMenu
+                                && quests.state(player.getUUID()).equals(before),
+                        "Opening the story journey mutated repeatable contract state");
+
+                player.containerMenu.clicked(46, 0, ContainerInput.PICKUP, player);
+                helper.runAfterDelay(1, () -> {
+                    var assigned = quests.state(player.getUUID());
+                    long visibleCards = java.util.stream.IntStream.of(20, 22, 24)
+                            .filter(slot -> player.containerMenu.getSlot(slot).hasItem())
+                            .count();
+                    helper.assertTrue(player.containerMenu instanceof PlayerQuestMenu
+                                    && assigned.contracts().size() == 3
+                                    && assigned.initializedContractWindows().size() == 2
+                                    && visibleCards == 3,
+                            "Journey requests were not assigned and projected as three bounded custom cards");
+                    player.discard();
+                    helper.succeed();
+                });
+            }
+        });
         event.registerTest(id("player_land_atlas_navigation"), new FunctionGameTestInstance(
                 BuiltinTestFunctions.ALWAYS_PASS,
                 new TestData<>(landAtlasEnvironment, Identifier.withDefaultNamespace("empty"), 10, 0, true)) {

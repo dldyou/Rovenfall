@@ -36,7 +36,7 @@ public record QuestJourneyView(
             throw new IllegalArgumentException("invalid quest journey view request");
         }
 
-        TreeSet<Identifier> ids = new TreeSet<>(definitions.quests().keySet());
+        TreeSet<Identifier> ids = new TreeSet<>(definitions.storyQuests().keySet());
         ids.addAll(state.quests().keySet());
         int totalEntries = ids.size();
         int totalPages = totalEntries == 0 ? 0 : (totalEntries + pageSize - 1) / pageSize;
@@ -77,7 +77,8 @@ public record QuestJourneyView(
 
         Optional<Integer> currentVersion = Optional.of(definition.version());
         Optional<Integer> retainedVersion = optionalVersion(retained);
-        if (retained != null && retained.definitionVersion() != definition.version()) {
+        if (retained != null && (retained.definitionVersion() != definition.version()
+                || definition.contract().isPresent())) {
             return new QuestRow(
                     id, Optional.of(definition.translationKey()), Optional.of(definition.descriptionTranslationKey()),
                     Status.DEFINITION_CHANGED, currentVersion, retainedVersion,
@@ -165,7 +166,7 @@ public record QuestJourneyView(
     private static Optional<NextStep> nextStep(
             QuestDefinitionSnapshot definitions, QuestPlayerState state) {
         NextStep available = null;
-        Set<Identifier> ids = new TreeSet<>(definitions.quests().keySet());
+        Set<Identifier> ids = new TreeSet<>(definitions.storyQuests().keySet());
         for (Identifier id : ids) {
             QuestRow row = row(id, definitions, state);
             if (row.status() != Status.AVAILABLE && row.status() != Status.IN_PROGRESS) {

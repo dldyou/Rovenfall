@@ -185,7 +185,8 @@ final class AdministrationContentReloadService {
                 + ";careers=" + rpg.careers().size()
                 + ";skills=" + rpg.skills().size()
                 + ";quest_revision=" + QuestDefinitionReloadListener.revision(server)
-                + ";quests=" + quests.size()
+                + ";quests=" + quests.storyQuests().size()
+                + ";contracts=" + quests.contractCount()
                 + ";mob_content=" + mobs.size();
     }
 

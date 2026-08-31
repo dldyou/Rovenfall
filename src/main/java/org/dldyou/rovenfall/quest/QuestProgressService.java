@@ -2,9 +2,11 @@ package org.dldyou.rovenfall.quest;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -47,15 +49,34 @@ public final class QuestProgressService {
         if (!state.isWritable()) {
             return new ProgressResult(ProgressStatus.READ_ONLY, 0, 0, false);
         }
+        if (state.state(playerId).processedEvidence().containsKey(evidence.sourceTransactionId())) {
+            return new ProgressResult(ProgressStatus.DUPLICATE, 0, 0, false);
+        }
+        if (hasStaleMatchingDefinition(state.state(playerId), definitions, evidence)) {
+            return new ProgressResult(ProgressStatus.STALE_DEFINITION, 0, 0, false);
+        }
+        RepeatableContractService.AssignmentResult assignment = RepeatableContractService.ensureAssignments(
+                state, definitions, playerId, evidence.timestampEpochMillis());
+        if (assignment.status() == RepeatableContractService.AssignmentStatus.STATE_FULL) {
+            return new ProgressResult(ProgressStatus.STATE_FULL, 0, 0, false);
+        }
+        if (assignment.status() == RepeatableContractService.AssignmentStatus.CONCURRENT_CHANGE) {
+            return new ProgressResult(ProgressStatus.CONCURRENT_CHANGE, 0, 0, false);
+        }
+        if (assignment.status() == RepeatableContractService.AssignmentStatus.INVALID) {
+            return new ProgressResult(ProgressStatus.INVALID, 0, 0, false);
+        }
         QuestPlayerState current = state.state(playerId);
         if (current.processedEvidence().containsKey(evidence.sourceTransactionId())) {
             return new ProgressResult(ProgressStatus.DUPLICATE, 0, 0, false);
         }
 
         Map<Identifier, QuestPlayerState.QuestEntry> quests = new HashMap<>(current.quests());
+        Map<QuestPlayerState.ContractKey, QuestPlayerState.QuestEntry> contracts =
+                new HashMap<>(current.contracts());
         int updatedQuests = 0;
         int completedQuests = 0;
-        for (Map.Entry<Identifier, QuestDefinition> definitionEntry : definitions.quests().entrySet().stream()
+        for (Map.Entry<Identifier, QuestDefinition> definitionEntry : definitions.storyQuests().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey()).toList()) {
             Identifier questId = definitionEntry.getKey();
             QuestDefinition definition = definitionEntry.getValue();
@@ -103,6 +124,55 @@ public final class QuestProgressService {
                     definition.version(), progress, pending, Optional.empty()));
             updatedQuests++;
         }
+        for (Map.Entry<QuestPlayerState.ContractKey, QuestPlayerState.QuestEntry> contractEntry
+                : current.contracts().entrySet()) {
+            QuestPlayerState.ContractKey key = contractEntry.getKey();
+            if (!RepeatableContractService.contains(key.window(), evidence.timestampEpochMillis())) {
+                continue;
+            }
+            QuestDefinition definition = definitions.quest(key.templateId()).orElse(null);
+            if (definition == null || definition.contract()
+                    .filter(contract -> contract.cadence() == key.window().cadence()).isEmpty()) {
+                continue;
+            }
+            QuestPlayerState.QuestEntry retained = contractEntry.getValue();
+            if (retained.definitionVersion() != definition.version()
+                    && retained.completion().isEmpty() && matches(definition, evidence)) {
+                return new ProgressResult(ProgressStatus.STALE_DEFINITION, 0, 0, false);
+            }
+            if (retained.completion().isPresent() || retained.pendingReward().isPresent()) {
+                continue;
+            }
+            Map<Identifier, Long> progress = new HashMap<>(retained.objectiveProgress());
+            boolean changed = false;
+            for (QuestDefinition.Objective objective : definition.objectives()) {
+                if (!matches(objective, evidence)) {
+                    continue;
+                }
+                long before = progress.getOrDefault(objective.id(), 0L);
+                long after = Math.min(objective.requiredCount(), saturatingAdd(before, evidence.count()));
+                if (after != before) {
+                    progress.put(objective.id(), after);
+                    changed = true;
+                }
+            }
+            if (!changed) {
+                continue;
+            }
+            Optional<QuestPlayerState.RewardOperation> pending = Optional.empty();
+            if (complete(definition, progress)) {
+                QuestDefinition.Rewards rewards = definition.rewards();
+                pending = Optional.of(new QuestPlayerState.RewardOperation(
+                        definition.version(), completionTransaction(playerId, key, definition.version()),
+                        rewards.currency(), rewards.activityXp().map(QuestDefinition.ActivityXpReward::activity),
+                        rewards.activityXp().map(QuestDefinition.ActivityXpReward::amount).orElse(0L),
+                        evidence.timestampEpochMillis(), QuestPlayerState.RewardOperation.Phase.CAPTURED));
+                completedQuests++;
+            }
+            contracts.put(key, new QuestPlayerState.QuestEntry(
+                    definition.version(), progress, pending, Optional.empty()));
+            updatedQuests++;
+        }
         if (updatedQuests == 0) {
             return new ProgressResult(ProgressStatus.IGNORED, 0, 0, false);
         }
@@ -114,7 +184,8 @@ public final class QuestProgressService {
         }
         processed.put(evidence.sourceTransactionId(), new QuestPlayerState.ProcessedEvidence(
                 evidence.timestampEpochMillis(), evidence.kind()));
-        QuestPlayerState updated = new QuestPlayerState(quests, processed);
+        QuestPlayerState updated = new QuestPlayerState(
+                quests, processed, contracts, current.initializedContractWindows());
         boolean committed = state.commit(playerId, current, updated);
         return new ProgressResult(
                 committed ? (completedQuests > 0 ? ProgressStatus.REWARD_PENDING : ProgressStatus.SUCCESS)
@@ -188,20 +259,21 @@ public final class QuestProgressService {
             return new RewardResult(RewardStatus.INVALID, 0);
         }
         int completed = 0;
-        Set<Identifier> failedQuests = new HashSet<>();
+        Set<RewardKey> failedQuests = new HashSet<>();
         RewardStatus firstFailure = null;
         int steps = 0;
         for (; steps < MAX_REWARD_STEPS_PER_RECOVERY; steps++) {
             QuestPlayerState current = quests.state(playerId);
-            Map.Entry<Identifier, QuestPlayerState.QuestEntry> pending = nextPendingReward(
+            RewardCandidate pending = nextPendingReward(
                     current, failedQuests, cursor.pendingAfter);
             if (pending == null) {
                 cursor.pendingAfter = null;
                 break;
             }
-            Identifier questId = pending.getKey();
-            cursor.pendingAfter = questId;
-            QuestPlayerState.QuestEntry entry = pending.getValue();
+            RewardKey rewardKey = pending.key();
+            Identifier questId = rewardKey.questId();
+            cursor.pendingAfter = rewardKey;
+            QuestPlayerState.QuestEntry entry = pending.entry();
             QuestPlayerState.RewardOperation operation = entry.pendingReward().orElseThrow();
             RewardStep step = applyRewardStep(
                     platform, rpg, rpgDefinitions, playerId, questId, operation, timestampEpochMillis,
@@ -212,26 +284,36 @@ public final class QuestProgressService {
                             step.status().name().toLowerCase(java.util.Locale.ROOT),
                             operation.startedAtEpochMillis());
                 }
-                failedQuests.add(questId);
+                failedQuests.add(rewardKey);
                 if (firstFailure == null) {
                     firstFailure = step.status();
                 }
                 continue;
             }
             Map<Identifier, QuestPlayerState.QuestEntry> updatedQuests = new HashMap<>(current.quests());
+            Map<QuestPlayerState.ContractKey, QuestPlayerState.QuestEntry> updatedContracts =
+                    new HashMap<>(current.contracts());
             boolean completedStep = step.completed();
+            QuestPlayerState.QuestEntry updatedEntry;
             if (step.completed()) {
                 long completedAt = Math.max(timestampEpochMillis, operation.startedAtEpochMillis());
-                updatedQuests.put(questId, new QuestPlayerState.QuestEntry(
+                updatedEntry = new QuestPlayerState.QuestEntry(
                         entry.definitionVersion(), entry.objectiveProgress(), Optional.empty(),
                         Optional.of(new QuestPlayerState.CompletionReceipt(
-                                entry.definitionVersion(), operation.transactionId(), completedAt, operation))));
+                                entry.definitionVersion(), operation.transactionId(), completedAt, operation)));
             } else {
-                updatedQuests.put(questId, new QuestPlayerState.QuestEntry(
+                updatedEntry = new QuestPlayerState.QuestEntry(
                         entry.definitionVersion(), entry.objectiveProgress(),
-                        Optional.of(operation.atPhase(step.nextPhase())), Optional.empty()));
+                        Optional.of(operation.atPhase(step.nextPhase())), Optional.empty());
             }
-            if (!quests.commit(playerId, current, new QuestPlayerState(updatedQuests, current.processedEvidence()))) {
+            if (rewardKey.contractKey().isPresent()) {
+                updatedContracts.put(rewardKey.contractKey().orElseThrow(), updatedEntry);
+            } else {
+                updatedQuests.put(questId, updatedEntry);
+            }
+            if (!quests.commit(playerId, current, new QuestPlayerState(
+                    updatedQuests, current.processedEvidence(), updatedContracts,
+                    current.initializedContractWindows()))) {
                 return new RewardResult(RewardStatus.CONCURRENT_CHANGE, completed);
             }
             if (completedStep) {
@@ -261,16 +343,16 @@ public final class QuestProgressService {
             RecoveryCursor cursor) {
         int repaired = 0;
         RewardStatus firstFailure = null;
-        java.util.List<Map.Entry<Identifier, QuestPlayerState.QuestEntry>> candidates =
+        java.util.List<RewardCandidate> candidates =
                 completedReconciliationBatch(state, cursor.completedAfter);
-        for (Map.Entry<Identifier, QuestPlayerState.QuestEntry> quest : candidates) {
-            Optional<QuestPlayerState.CompletionReceipt> completion = quest.getValue().completion();
+        for (RewardCandidate quest : candidates) {
+            Optional<QuestPlayerState.CompletionReceipt> completion = quest.entry().completion();
             if (completion.isEmpty() || completion.orElseThrow().rewardOperation().isEmpty()) {
                 continue;
             }
             QuestPlayerState.RewardOperation operation = completion.orElseThrow().rewardOperation().orElseThrow();
             Reconciliation result = reconcileRewardEffects(
-                    platform, rpg, rpgDefinitions, playerId, quest.getKey(), operation, timestamp,
+                    platform, rpg, rpgDefinitions, playerId, quest.key().questId(), operation, timestamp,
                     initialBalance, maximumBalance, true, true, true);
             if (!result.applied()) {
                 if (!auditExpired(operation.startedAtEpochMillis(), timestamp)) {
@@ -287,54 +369,66 @@ public final class QuestProgressService {
                 repaired++;
             }
         }
-        cursor.completedAfter = candidates.isEmpty() ? null : candidates.getLast().getKey();
+        cursor.completedAfter = candidates.isEmpty() ? null : candidates.getLast().key();
         return new CompletedReconciliation(repaired, Optional.ofNullable(firstFailure));
     }
 
-    private static Map.Entry<Identifier, QuestPlayerState.QuestEntry> nextPendingReward(
-            QuestPlayerState state, Set<Identifier> excluded, Identifier afterExclusive) {
-        @SuppressWarnings("unchecked")
-        java.util.NavigableMap<Identifier, QuestPlayerState.QuestEntry> ordered =
-                (java.util.NavigableMap<Identifier, QuestPlayerState.QuestEntry>) state.quests();
+    private static RewardCandidate nextPendingReward(
+            QuestPlayerState state, Set<RewardKey> excluded, RewardKey afterExclusive) {
+        List<RewardCandidate> ordered = rewardCandidates(state).stream()
+                .filter(candidate -> candidate.entry().pendingReward().isPresent())
+                .filter(candidate -> !excluded.contains(candidate.key()))
+                .toList();
         if (ordered.isEmpty()) {
             return null;
         }
-        java.util.NavigableMap<Identifier, QuestPlayerState.QuestEntry> tail = afterExclusive == null
-                ? ordered : ordered.tailMap(afterExclusive, false);
-        Map.Entry<Identifier, QuestPlayerState.QuestEntry> after = tail
-                .entrySet().stream()
-                .filter(entry -> entry.getValue().pendingReward().isPresent())
-                .filter(entry -> !excluded.contains(entry.getKey()))
-                .findFirst().orElse(null);
-        if (after != null || afterExclusive == null) {
-            return after;
+        if (afterExclusive != null) {
+            RewardCandidate after = ordered.stream()
+                    .filter(candidate -> candidate.key().compareTo(afterExclusive) > 0)
+                    .findFirst().orElse(null);
+            if (after != null) {
+                return after;
+            }
         }
-        return ordered.headMap(afterExclusive, true).entrySet().stream()
-                .filter(entry -> entry.getValue().pendingReward().isPresent())
-                .filter(entry -> !excluded.contains(entry.getKey()))
-                .findFirst().orElse(null);
+        return ordered.getFirst();
     }
 
-    private static java.util.List<Map.Entry<Identifier, QuestPlayerState.QuestEntry>> completedReconciliationBatch(
-            QuestPlayerState state, Identifier afterExclusive) {
-        @SuppressWarnings("unchecked")
-        java.util.NavigableMap<Identifier, QuestPlayerState.QuestEntry> ordered =
-                (java.util.NavigableMap<Identifier, QuestPlayerState.QuestEntry>) state.quests();
-        java.util.List<Map.Entry<Identifier, QuestPlayerState.QuestEntry>> result = new java.util.ArrayList<>(
+    private static List<RewardCandidate> completedReconciliationBatch(
+            QuestPlayerState state, RewardKey afterExclusive) {
+        List<RewardCandidate> ordered = rewardCandidates(state).stream()
+                .filter(candidate -> candidate.entry().completion()
+                        .flatMap(QuestPlayerState.CompletionReceipt::rewardOperation).isPresent())
+                .toList();
+        if (ordered.isEmpty()) {
+            return List.of();
+        }
+        List<RewardCandidate> result = new java.util.ArrayList<>(
                 MAX_COMPLETED_RECONCILIATIONS_PER_RECOVERY);
-        java.util.function.Predicate<Map.Entry<Identifier, QuestPlayerState.QuestEntry>> completed = entry ->
-                entry.getValue().completion().flatMap(QuestPlayerState.CompletionReceipt::rewardOperation).isPresent();
-        java.util.NavigableMap<Identifier, QuestPlayerState.QuestEntry> tail = afterExclusive == null
-                ? ordered : ordered.tailMap(afterExclusive, false);
-        tail.entrySet().stream().filter(completed)
-                .limit(MAX_COMPLETED_RECONCILIATIONS_PER_RECOVERY)
-                .forEach(result::add);
-        if (afterExclusive != null && result.size() < MAX_COMPLETED_RECONCILIATIONS_PER_RECOVERY) {
-            ordered.headMap(afterExclusive, true).entrySet().stream().filter(completed)
+        if (afterExclusive != null) {
+            ordered.stream()
+                    .filter(candidate -> candidate.key().compareTo(afterExclusive) > 0)
+                    .limit(MAX_COMPLETED_RECONCILIATIONS_PER_RECOVERY)
+                    .forEach(result::add);
+        }
+        if (result.size() < MAX_COMPLETED_RECONCILIATIONS_PER_RECOVERY) {
+            ordered.stream()
+                    .filter(candidate -> afterExclusive == null
+                            || candidate.key().compareTo(afterExclusive) <= 0)
                     .limit(MAX_COMPLETED_RECONCILIATIONS_PER_RECOVERY - result.size())
                     .forEach(result::add);
         }
-        return java.util.List.copyOf(result);
+        return List.copyOf(result);
+    }
+
+    private static List<RewardCandidate> rewardCandidates(QuestPlayerState state) {
+        List<RewardCandidate> result = new java.util.ArrayList<>(
+                state.quests().size() + state.contracts().size());
+        state.quests().forEach((id, entry) -> result.add(
+                new RewardCandidate(RewardKey.story(id), entry)));
+        state.contracts().forEach((key, entry) -> result.add(
+                new RewardCandidate(RewardKey.contract(key), entry)));
+        result.sort(Comparator.comparing(RewardCandidate::key));
+        return List.copyOf(result);
     }
 
     public static Optional<Evidence> evidence(UUID transactionId, EconomyTransactionReceipt receipt) {
@@ -369,12 +463,24 @@ public final class QuestProgressService {
             QuestDefinitionSnapshot definitions,
             UUID playerId,
             Identifier activityId) {
+        return shouldCaptureActivity(
+                state, definitions, playerId, activityId, System.currentTimeMillis());
+    }
+
+    static boolean shouldCaptureActivity(
+            QuestPlayerSavedData state,
+            QuestDefinitionSnapshot definitions,
+            UUID playerId,
+            Identifier activityId,
+            long timestampEpochMillis) {
         if (state == null || definitions == null || playerId == null || ZERO_UUID.equals(playerId)
-                || activityId == null) {
+                || activityId == null || timestampEpochMillis < 0) {
             return false;
         }
+        RepeatableContractService.ensureAssignments(
+                state, definitions, playerId, timestampEpochMillis);
         QuestPlayerState current = state.state(playerId);
-        for (Map.Entry<Identifier, QuestDefinition> definitionEntry : definitions.quests().entrySet()) {
+        for (Map.Entry<Identifier, QuestDefinition> definitionEntry : definitions.storyQuests().entrySet()) {
             QuestDefinition definition = definitionEntry.getValue();
             QuestPlayerState.QuestEntry retained = current.quests().get(definitionEntry.getKey());
             if (retained != null && (retained.completion().isPresent() || retained.pendingReward().isPresent())) {
@@ -383,15 +489,38 @@ public final class QuestProgressService {
             if (!prerequisitesCompleted(definition, definitions, current.quests())) {
                 continue;
             }
-            for (QuestDefinition.Objective objective : definition.objectives()) {
-                long progress = retained == null
-                        ? 0L
-                        : retained.objectiveProgress().getOrDefault(objective.id(), 0L);
-                if (objective.kind() == QuestDefinition.Kind.ACTIVITY
-                        && objective.target().filter(activityId::equals).isPresent()
-                        && progress < objective.requiredCount()) {
-                    return true;
-                }
+            if (capturesActivity(definition, retained, activityId)) {
+                return true;
+            }
+        }
+        for (QuestPlayerState.ContractKey key
+                : RepeatableContractService.currentKeys(current, timestampEpochMillis)) {
+            QuestPlayerState.QuestEntry retained = current.contracts().get(key);
+            if (retained.completion().isPresent() || retained.pendingReward().isPresent()) {
+                continue;
+            }
+            QuestDefinition definition = definitions.quest(key.templateId()).orElse(null);
+            if (definition != null && definition.contract()
+                    .filter(contract -> contract.cadence() == key.window().cadence()).isPresent()
+                    && capturesActivity(definition, retained, activityId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean capturesActivity(
+            QuestDefinition definition,
+            QuestPlayerState.QuestEntry retained,
+            Identifier activityId) {
+        for (QuestDefinition.Objective objective : definition.objectives()) {
+            long progress = retained == null
+                    ? 0L
+                    : retained.objectiveProgress().getOrDefault(objective.id(), 0L);
+            if (objective.kind() == QuestDefinition.Kind.ACTIVITY
+                    && objective.target().filter(activityId::equals).isPresent()
+                    && progress < objective.requiredCount()) {
+                return true;
             }
         }
         return false;
@@ -577,6 +706,36 @@ public final class QuestProgressService {
         return definition.objectives().stream().anyMatch(objective -> matches(objective, evidence));
     }
 
+    private static boolean hasStaleMatchingDefinition(
+            QuestPlayerState state,
+            QuestDefinitionSnapshot definitions,
+            Evidence evidence) {
+        for (Map.Entry<Identifier, QuestDefinition> entry : definitions.storyQuests().entrySet()) {
+            QuestPlayerState.QuestEntry retained = state.quests().get(entry.getKey());
+            if (retained != null && retained.definitionVersion() != entry.getValue().version()
+                    && retained.completion().isEmpty() && matches(entry.getValue(), evidence)) {
+                return true;
+            }
+        }
+        for (Map.Entry<QuestPlayerState.ContractKey, QuestPlayerState.QuestEntry> entry
+                : state.contracts().entrySet()) {
+            if (!RepeatableContractService.contains(
+                    entry.getKey().window(), evidence.timestampEpochMillis())) {
+                continue;
+            }
+            QuestDefinition definition = definitions.quest(entry.getKey().templateId()).orElse(null);
+            if (definition != null
+                    && definition.contract().filter(contract ->
+                            contract.cadence() == entry.getKey().window().cadence()).isPresent()
+                    && entry.getValue().definitionVersion() != definition.version()
+                    && entry.getValue().completion().isEmpty()
+                    && matches(definition, evidence)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean matches(QuestDefinition.Objective objective, Evidence evidence) {
         return objective.kind() == evidence.kind()
                 && objective.target().map(target -> evidence.target().filter(target::equals).isPresent()).orElse(true);
@@ -609,6 +768,13 @@ public final class QuestProgressService {
 
     private static UUID completionTransaction(UUID playerId, Identifier questId, int version) {
         return namedTransaction("completion:" + playerId + ":" + questId + ":" + version);
+    }
+
+    private static UUID completionTransaction(
+            UUID playerId, QuestPlayerState.ContractKey key, int version) {
+        return namedTransaction("contract_completion:" + playerId + ":"
+                + key.window().cadence().getSerializedName() + ":"
+                + key.window().windowStartEpochDay() + ":" + key.templateId() + ":" + version);
     }
 
     static UUID childTransaction(UUID parent, String kind) {
@@ -658,8 +824,8 @@ public final class QuestProgressService {
     }
 
     static final class RecoveryCursor {
-        private Identifier pendingAfter;
-        private Identifier completedAfter;
+        private RewardKey pendingAfter;
+        private RewardKey completedAfter;
     }
 
     public record Evidence(
@@ -678,6 +844,34 @@ public final class QuestProgressService {
                     && !ZERO_UUID.equals(sourceTransactionId)
                     && (kind != QuestDefinition.Kind.ACTIVITY || target.isPresent())
                     && (kind != QuestDefinition.Kind.CLAIM_PURCHASE || target.isEmpty());
+        }
+    }
+
+    private record RewardCandidate(RewardKey key, QuestPlayerState.QuestEntry entry) {
+    }
+
+    private record RewardKey(Optional<QuestPlayerState.ContractKey> contractKey, Identifier questId)
+            implements Comparable<RewardKey> {
+        RewardKey {
+            contractKey = contractKey == null ? Optional.empty() : contractKey;
+        }
+
+        static RewardKey story(Identifier questId) {
+            return new RewardKey(Optional.empty(), questId);
+        }
+
+        static RewardKey contract(QuestPlayerState.ContractKey key) {
+            return new RewardKey(Optional.of(key), key.templateId());
+        }
+
+        @Override
+        public int compareTo(RewardKey other) {
+            if (contractKey.isEmpty() != other.contractKey.isEmpty()) {
+                return contractKey.isEmpty() ? -1 : 1;
+            }
+            return contractKey.isPresent()
+                    ? contractKey.orElseThrow().compareTo(other.contractKey.orElseThrow())
+                    : questId.compareTo(other.questId);
         }
     }
 

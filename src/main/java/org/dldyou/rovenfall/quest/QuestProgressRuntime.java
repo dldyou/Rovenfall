@@ -23,6 +23,8 @@ public final class QuestProgressRuntime {
     private static final int ACTIVITY_BATCH = 64;
     private static final int BOSS_BATCH = 64;
     private static final int ECONOMY_BATCH = 64;
+    static final long FUTURE_EVIDENCE_SKEW_MILLIS =
+            RepeatableContractService.FUTURE_TIMESTAMP_SKEW_MILLIS;
     private static final Map<MinecraftServer, Cursor> CURSORS = new WeakHashMap<>();
 
     private QuestProgressRuntime() {
@@ -50,10 +52,20 @@ public final class QuestProgressRuntime {
     /** Server-thread activation check used only to decide whether RPG must retain an activity outcome. */
     public static boolean shouldCaptureActivityEvidence(
             MinecraftServer server, UUID playerId, Identifier activityId) {
+        return shouldCaptureActivityEvidence(
+                server, playerId, activityId, System.currentTimeMillis());
+    }
+
+    /** Uses the same observed timestamp that will be written to the RPG owner evidence. */
+    public static boolean shouldCaptureActivityEvidence(
+            MinecraftServer server,
+            UUID playerId,
+            Identifier activityId,
+            long timestampEpochMillis) {
         return server != null && server.isSameThread()
                 && QuestProgressService.shouldCaptureActivity(
                         QuestPlayerSavedData.get(server), QuestDefinitionReloadListener.snapshot(server),
-                        playerId, activityId);
+                        playerId, activityId, timestampEpochMillis);
     }
 
     /** Reclaims only owner-confirmed outcomes before an observed activity needs outbox capacity. */
@@ -169,6 +181,14 @@ public final class QuestProgressRuntime {
 
     private static QuestProgressService.ProgressResult accept(
             MinecraftServer server, UUID playerId, QuestProgressService.Evidence evidence) {
+        if (evidence == null) {
+            return new QuestProgressService.ProgressResult(
+                    QuestProgressService.ProgressStatus.INVALID, 0, 0, false);
+        }
+        if (!withinReplayWindow(evidence.timestampEpochMillis(), System.currentTimeMillis())) {
+            return new QuestProgressService.ProgressResult(
+                    QuestProgressService.ProgressStatus.IGNORED, 0, 0, false);
+        }
         QuestProgressService.ProgressResult result = QuestProgressService.applyEvidence(
                 QuestPlayerSavedData.get(server), QuestDefinitionReloadListener.snapshot(server),
                 PlatformSavedData.get(server), playerId, evidence);
@@ -281,9 +301,16 @@ public final class QuestProgressRuntime {
     }
 
     static boolean withinReplayWindow(long evidenceTimestamp, long timestampEpochMillis) {
-        return timestampEpochMillis <= QuestPlayerSavedData.PROCESSED_EVIDENCE_REPLAY_MILLIS
-                || evidenceTimestamp >= timestampEpochMillis
-                        - QuestPlayerSavedData.PROCESSED_EVIDENCE_REPLAY_MILLIS;
+        if (evidenceTimestamp < 0 || timestampEpochMillis < 0) {
+            return false;
+        }
+        long latest = timestampEpochMillis > Long.MAX_VALUE - FUTURE_EVIDENCE_SKEW_MILLIS
+                ? Long.MAX_VALUE
+                : timestampEpochMillis + FUTURE_EVIDENCE_SKEW_MILLIS;
+        return evidenceTimestamp <= latest
+                && (timestampEpochMillis <= QuestPlayerSavedData.PROCESSED_EVIDENCE_REPLAY_MILLIS
+                        || evidenceTimestamp >= timestampEpochMillis
+                                - QuestPlayerSavedData.PROCESSED_EVIDENCE_REPLAY_MILLIS);
     }
 
     static boolean shouldDeliverActivityEvidence(

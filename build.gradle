@@ -211,9 +211,17 @@ def inspectReleaseJar = tasks.register('inspectReleaseJar') {
                     'org/dldyou/rovenfall/administration/RovenfallInventoryScreen.class',
                     'org/dldyou/rovenfall/administration/RovenfallAdministrationMenuScreen.class',
                     'org/dldyou/rovenfall/administration/RovenfallAdministrationMenus.class',
+                    'org/dldyou/rovenfall/quest/ContractJourneyView.class',
+                    'org/dldyou/rovenfall/quest/RepeatableContractService.class',
                     'assets/rovenfall/lang/en_us.json',
                     'assets/rovenfall/lang/ja_jp.json',
-                    'assets/rovenfall/lang/ko_kr.json'
+                    'assets/rovenfall/lang/ko_kr.json',
+                    'data/rovenfall/rovenfall/quests/contracts/daily_combat_drill.json',
+                    'data/rovenfall/rovenfall/quests/contracts/daily_hunt_patrol.json',
+                    'data/rovenfall/rovenfall/quests/contracts/daily_market_delivery.json',
+                    'data/rovenfall/rovenfall/quests/contracts/daily_mining_survey.json',
+                    'data/rovenfall/rovenfall/quests/contracts/weekly_mining_expedition.json',
+                    'data/rovenfall/rovenfall/quests/contracts/weekly_rift_hunt.json'
             ]
             def missing = required.findAll { !entries.contains(it) }
             if (!missing.isEmpty()) {
