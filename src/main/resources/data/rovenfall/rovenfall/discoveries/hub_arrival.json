@@ -1,0 +1,10 @@
+{
+  "title_translation_key": "discovery.rovenfall.hub_arrival",
+  "description_translation_key": "discovery.rovenfall.hub_arrival.description",
+  "version": 1,
+  "dimension": "minecraft:overworld",
+  "position": [0, 64, 0],
+  "radius": 48,
+  "public_guidance": true,
+  "activity_xp": 10
+}

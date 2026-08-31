@@ -126,6 +126,26 @@ show the focused diagnostic values.
 | Accessibility | Repeat at minimum, standard, and large GUI scales with narration enabled | Requests toggle, three cards, status, objective, reward, refresh schedule, Back, and Refresh remain visible and understandable without color-only meaning. |
 | Locales | Repeat the flow in all three shipped locales | All controls and content names are translated with equal placeholders and natural player-facing terms. |
 
+## Issue #119 exploration-journal release checks
+
+Before an Issue #119 release, repeat the standard client matrix for **Journey → Exploration
+Journal** in `ko_kr`, `en_us`, and `ja_jp`. Korean labels must use natural terms such as `탐험 기록`,
+`발견`, and `길찾기`. A private undiscovered card must not expose a raw identifier, localization
+key, world, coordinate, radius, version, or reward in ordinary or advanced details.
+
+| Case | Required state | Expected result |
+| --- | --- | --- |
+| Server observation | Walk from outside to inside a configured area | The place is recorded once from the server position; reopening, re-entry, duplicate delivery, and restart do not grant the reward twice. |
+| Private placeholder | Load an undiscovered private place | Only an anonymous hidden-place card and bounded count appear; synchronized lore contains none of the private definition fields. |
+| Public destination | Load an undiscovered place with public guidance | Its localized public card is visible and may guide only while the player is in the same world. |
+| Region filter | Cycle All, Hub, and Wilderness | Counts, paging, focus, and narration update within the selected bounded region without revealing hidden fields. |
+| Definition reload | Change the position and increment the version while a card is open | The stale action refreshes. An old receipt cannot guide to the changed place until the server observes the player in its current area. |
+| Reward recovery | Interrupt between the discovery receipt and activity XP delivery | Bounded recovery applies the captured reward once and marks it delivered without using the changed definition. |
+| Wrong world | Select a public or discovered destination in another world | The card explains the world limit and sends no marker or remote-load request. |
+| Marker isolation | Set and clear exploration guidance, then use Land and Travel guidance | Each menu changes only its own marker UUID and leaves the other markers untouched. |
+| Accessibility | Repeat at minimum, standard, and large GUI scales with narration enabled | Filter, hidden status, discovery status, cards, detail, guidance, Clear, Back, and Refresh remain understandable without color-only meaning. |
+| Locales | Repeat the flow in all three shipped locales | All labels and landmark content have matching placeholders and natural player-facing translations. |
+
 ## Issue #101 release-candidate result
 
 The 2026-08-30 release-candidate run used the Gradle-managed Eclipse Temurin 25.0.4 daemon and

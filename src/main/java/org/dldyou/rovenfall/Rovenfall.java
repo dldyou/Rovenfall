@@ -122,6 +122,13 @@ import org.dldyou.rovenfall.claims.ClaimSettings;
 import org.dldyou.rovenfall.definition.TestDefinitionReloadListener;
 import org.dldyou.rovenfall.economy.ShopTemplateReloadListener;
 import org.dldyou.rovenfall.economy.ShopInstance;
+import org.dldyou.rovenfall.exploration.ExplorationDefinitionReloadListener;
+import org.dldyou.rovenfall.exploration.ExplorationDefinition;
+import org.dldyou.rovenfall.exploration.ExplorationDefinitionSnapshot;
+import org.dldyou.rovenfall.exploration.ExplorationDiscoveryService;
+import org.dldyou.rovenfall.exploration.ExplorationPlayerSavedData;
+import org.dldyou.rovenfall.exploration.ExplorationPlayerState;
+import org.dldyou.rovenfall.exploration.ExplorationRuntime;
 import org.dldyou.rovenfall.mobs.MobContentReloadListener;
 import org.dldyou.rovenfall.mobs.MobContentCatalog;
 import org.dldyou.rovenfall.mobs.MobContentSnapshot;
@@ -166,6 +173,8 @@ public final class Rovenfall {
     private final MobContentReloadListener mobContent = new MobContentReloadListener();
     private final RpgDefinitionReloadListener rpgDefinitions = new RpgDefinitionReloadListener();
     private final QuestDefinitionReloadListener questDefinitions = new QuestDefinitionReloadListener();
+    private final ExplorationDefinitionReloadListener explorationDefinitions =
+            new ExplorationDefinitionReloadListener();
 
     public Rovenfall(IEventBus modBus, ModContainer modContainer) {
         RovenfallMobEntities.register(modBus);
@@ -198,6 +207,7 @@ public final class Rovenfall {
         MobMutationRuntime.register(NeoForge.EVENT_BUS);
         BossEncounterRuntime.register(NeoForge.EVENT_BUS);
         QuestProgressRuntime.register(NeoForge.EVENT_BUS);
+        ExplorationRuntime.register(NeoForge.EVENT_BUS);
         NeoForge.EVENT_BUS.addListener(this::addServerReloadListeners);
         NeoForge.EVENT_BUS.addListener(shopTemplates::onDefaultDataComponentsBound);
         NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onDamage);
@@ -327,6 +337,65 @@ public final class Rovenfall {
                                     && assigned.initializedContractWindows().size() == 2
                                     && visibleCards == 3,
                             "Journey requests were not assigned and projected as three bounded custom cards");
+                    player.discard();
+                    helper.succeed();
+                });
+            }
+        });
+        event.registerTest(id("player_exploration_journal"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS,
+                new TestData<>(questEnvironment, Identifier.withDefaultNamespace("empty"), 10, 0, true)) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var player = helper.makeMockServerPlayerInLevel();
+                var server = player.level().getServer();
+                var exploration = ExplorationPlayerSavedData.get(server);
+                var rpg = RpgPlayerSavedData.get(server);
+                Identifier discoveryId = id("gametest_discovery");
+                ExplorationDefinitionSnapshot definitions = ExplorationDefinitionSnapshot.compile(List.of(
+                        new ExplorationDefinitionSnapshot.Source(
+                                id("gametest/discovery.json"), "gametest", discoveryId,
+                                new ExplorationDefinition(
+                                        "discovery.rovenfall.hub_arrival",
+                                        "discovery.rovenfall.hub_arrival.description",
+                                        1, player.level().dimension(), player.blockPosition(), 4,
+                                        false, Optional.of(7L)))));
+                long beforeXp = rpg.state(player.getUUID()).activityXp()
+                        .getOrDefault(ExplorationDiscoveryService.EXPLORATION_ACTIVITY, 0L);
+                long now = Math.max(1L, System.currentTimeMillis());
+                var observed = ExplorationDiscoveryService.observe(
+                        exploration, definitions, rpg, RpgDefinitionReloadListener.snapshot(server),
+                        player.getUUID(), player.level().dimension(), player.blockPosition(), now, now);
+                ExplorationPlayerState after = exploration.state(player.getUUID());
+                helper.assertTrue(observed.status() == ExplorationDiscoveryService.Status.SUCCESS
+                                && observed.discovered() == 1 && observed.rewardsApplied() == 1
+                                && after.discovery(discoveryId).flatMap(
+                                        ExplorationPlayerState.DiscoveryReceipt::rewardOperation)
+                                        .filter(operation -> operation.phase()
+                                                == ExplorationPlayerState.RewardOperation.Phase.APPLIED)
+                                        .isPresent()
+                                && rpg.state(player.getUUID()).activityXp()
+                                        .getOrDefault(ExplorationDiscoveryService.EXPLORATION_ACTIVITY, 0L)
+                                        == beforeXp + 7L,
+                        "Server-observed exploration did not persist one versioned receipt and reward");
+
+                var duplicate = ExplorationDiscoveryService.observe(
+                        exploration, definitions, rpg, RpgDefinitionReloadListener.snapshot(server),
+                        player.getUUID(), player.level().dimension(), player.blockPosition(), now + 1L, now + 1L);
+                helper.assertTrue(duplicate.status() == ExplorationDiscoveryService.Status.NO_CHANGE
+                                && exploration.state(player.getUUID()).equals(after)
+                                && rpg.state(player.getUUID()).activityXp()
+                                        .getOrDefault(ExplorationDiscoveryService.EXPLORATION_ACTIVITY, 0L)
+                                        == beforeXp + 7L,
+                        "Duplicate exploration entry changed the receipt or awarded XP twice");
+
+                PlayerQuestMenu.open(player);
+                player.containerMenu.clicked(47, 0, ContainerInput.PICKUP, player);
+                helper.runAfterDelay(1, () -> {
+                    helper.assertTrue(player.containerMenu instanceof PlayerQuestMenu
+                                    && player.containerMenu.getSlot(10).hasItem()
+                                    && exploration.state(player.getUUID()).equals(after),
+                            "Journey exploration journal did not open as a read-only custom card page");
                     player.discard();
                     helper.succeed();
                 });
@@ -3225,6 +3294,7 @@ public final class Rovenfall {
         event.addRetainedListener(MobContentReloadListener.KEY, mobContent);
         event.addRetainedListener(RpgDefinitionReloadListener.KEY, rpgDefinitions);
         event.addRetainedListener(QuestDefinitionReloadListener.KEY, questDefinitions);
+        event.addRetainedListener(ExplorationDefinitionReloadListener.KEY, explorationDefinitions);
     }
 
     private static Identifier id(String path) {

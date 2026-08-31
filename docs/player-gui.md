@@ -9,7 +9,7 @@ Rovenfall turns the ordinary survival inventory into the primary player entry po
 - A land card can set a locator-bar waypoint in the current world. Clearing the waypoint is available from the atlas. The atlas never loads remote areas, and purchase remains available only while standing on the selected available land.
 - Travel opens the Portal Explorer. It lists server-approved portal cards with an origin/destination world search, bounded pages, origin world, destination world, distance, and a current-world navigation marker. Portal IDs and coordinates stay in Technical information only. Navigation never loads a remote world.
 - Portal use is an on-site action: the server rechecks the selected portal, protection, current dimension, 8-block entrance distance, cooldown, combat lock, and safe arrival at activation time. A changed portal refreshes the card instead of travelling the player.
-- Journey is the quest board. It shows at most 28 journeys on a page, a plain-language status and reward preview, then one server-selected next step. Its Requests sub-screen shows at most two daily requests and one weekly request. The Overview card opens the same board, so players never need a command, UUID, or definition identifier to find their next activity.
+- Journey is the quest board. It shows at most 28 journeys on a page, a plain-language status and reward preview, then one server-selected next step. Its Requests sub-screen shows at most two daily requests and one weekly request. Its Exploration Journal shows public destinations and places the player has discovered without revealing secret coordinates. The Overview card opens the same board, so players never need a command, UUID, or definition identifier to find their next activity.
 - The first journey introduces the opening loop: gain Mining activity progress, trade at a shop, then buy a piece of land. It is guidance rather than a timer; all progress and any reward remain server-owned.
 - Mouse users activate an item with the primary (left) button. Shift-click, drag, number-key swaps, secondary clicks, and other inventory gestures cannot invoke an action.
 - Keyboard users move the visible slot outline with the arrow keys, then activate the focused item with `Enter` or `Space`. In administration views, `Tab` moves focus into or out of the search/form field and `Enter` submits it.
@@ -37,6 +37,25 @@ Open **Journey**, then select **Requests** in slot 46. The server initializes th
 - Normal details never show a template ID or UTC window number. **Technical information** may reveal those values for diagnostics.
 - Refresh rereads the current roster without rerolling it. Back returns to the journey board.
 - An empty or read-only roster remains a usable, narrated screen and never asks the client to create progress.
+
+## Exploration journal
+
+Open **Journey**, then select **Exploration Journal** in slot 47. The journal can show all places,
+Hub places, or Wilderness places. Public destinations are visible before discovery; a private
+undiscovered destination is an anonymous placeholder with no title, description, identifier,
+world, position, radius, version, or reward data.
+
+- Discovery occurs only when the server observes the player inside the configured area.
+- A versioned receipt survives restart and reload. Moving a definition requires entering its new
+  area, but its one-time activity XP reward is never granted twice.
+- A visible card can set a native waypoint only when the destination is in the player's current
+  world and is either public or discovered under the current definition version.
+- Clear removes only the Exploration Journal marker. Land and Travel markers use separate stable
+  marker identifiers.
+- Waypoints never teleport, reveal another-world coordinates, or load remote chunks.
+
+See [Exploration definitions](exploration-definitions.md) for the data-pack schema and privacy
+boundary.
 
 ## Recovery and command fallbacks
 
