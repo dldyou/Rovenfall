@@ -108,6 +108,11 @@ public final class QuestDefinitionReloadListener
         return store.revision();
     }
 
+    public VersionedSnapshot versioned() {
+        QuestDefinitionStore.VersionedSnapshot current = store.versioned();
+        return new VersionedSnapshot(current.snapshot(), current.revision());
+    }
+
     public List<QuestDefinitionSnapshot.Problem> lastProblems() {
         return lastProblems.get();
     }
@@ -126,6 +131,13 @@ public final class QuestDefinitionReloadListener
         return listener == null ? 0 : listener.revision();
     }
 
+    public static VersionedSnapshot versioned(MinecraftServer server) {
+        QuestDefinitionReloadListener listener = server.getServerResources().managers().getListener(KEY);
+        return listener == null
+                ? new VersionedSnapshot(QuestDefinitionSnapshot.empty(), 0)
+                : listener.versioned();
+    }
+
     public static List<QuestDefinitionSnapshot.Problem> lastProblems(MinecraftServer server) {
         QuestDefinitionReloadListener listener = server.getServerResources().managers().getListener(KEY);
         return listener == null ? List.of() : listener.lastProblems();
@@ -136,5 +148,8 @@ public final class QuestDefinitionReloadListener
         if (listener != null) {
             listener.beginValidationAttempt();
         }
+    }
+
+    public record VersionedSnapshot(QuestDefinitionSnapshot snapshot, long revision) {
     }
 }

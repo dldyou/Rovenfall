@@ -33,12 +33,19 @@ class QuestDefinitionReloadListenerTest {
         listener.apply(listener.prepare(valid, null), valid, null);
         QuestDefinitionSnapshot previous = listener.snapshot();
         long revision = listener.revision();
+        QuestDefinitionReloadListener.VersionedSnapshot versioned = listener.versioned();
+
+        assertSame(previous, versioned.snapshot());
+        assertEquals(revision, versioned.revision());
 
         var error = assertThrows(QuestDefinitionSnapshot.ValidationException.class,
                 () -> listener.prepare(resourceManager(Optional.empty()), null));
 
         assertSame(previous, listener.snapshot());
         assertEquals(revision, listener.revision());
+        QuestDefinitionReloadListener.VersionedSnapshot afterFailure = listener.versioned();
+        assertSame(previous, afterFailure.snapshot());
+        assertEquals(revision, afterFailure.revision());
         assertTrue(error.problems().stream().anyMatch(problem -> problem.file().equals(questFile())
                 && problem.definitionId().equals(id("first_steps"))
                 && problem.cause().contains("requires target")));

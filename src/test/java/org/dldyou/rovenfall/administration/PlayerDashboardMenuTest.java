@@ -65,6 +65,9 @@ final class PlayerDashboardMenuTest {
                 PlayerDashboardMenu.actionAt(PlayerDashboardMenu.Page.HOME, 13));
         assertEquals(PlayerDashboardMenu.Action.OPEN_RPG,
                 PlayerDashboardMenu.actionAt(PlayerDashboardMenu.Page.HOME, 16));
+        assertEquals(PlayerDashboardMenu.Action.OPEN_QUESTS,
+                PlayerDashboardMenu.actionAt(PlayerDashboardMenu.Page.HOME, 17));
+        assertFalse(RovenfallPlayerMenuLayout.isToolbarSlot(3, 17));
         assertEquals(PlayerDashboardMenu.Action.OPEN_SHOPS,
                 PlayerDashboardMenu.actionAt(PlayerDashboardMenu.Page.ECONOMY, 15));
         assertEquals(PlayerDashboardMenu.Action.BACK,

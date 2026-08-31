@@ -1,21 +1,24 @@
 # Player GUI
 
-Rovenfall turns the ordinary survival inventory into the primary player entry point. Opening the inventory shows the normal Minecraft inventory plus six compact tabs: Inventory, Overview, Claims, Skills, Shops, and Admin. The server opens Admin only for players with an administration role. Creative and spectator inventories are deliberately left unchanged.
+Rovenfall turns the ordinary survival inventory into the primary player entry point. Opening the inventory shows the normal Minecraft inventory plus seven compact tabs: Inventory, Overview, Land, Skills, Shops, Admin, and Journey. The server opens Admin only for players with an administration role. Creative and spectator inventories are deliberately left unchanged.
 
 ## Interaction model
 
-- Overview uses a three-row menu. Claims, Skills, and Shops use six-row menus.
+- Overview uses a three-row menu. Land, Skills, Shops, and Journey use six-row menus.
+- Journey is the quest board. It shows at most 28 journeys on a page, a plain-language status and reward preview, then one server-selected next step. The Overview card opens the same board, so players never need a command, UUID, or definition identifier to find their first journey.
+- The first journey introduces the opening loop: gain Mining activity progress, trade at a shop, then buy a piece of land. It is guidance rather than a timer; all progress and any reward remain server-owned.
 - Mouse users activate an item with the primary (left) button. Shift-click, drag, number-key swaps, secondary clicks, and other inventory gestures cannot invoke an action.
 - Keyboard users move the visible slot outline with the arrow keys, then activate the focused item with `Enter` or `Space`. In administration views, `Tab` moves focus into or out of the search/form field and `Enter` submits it.
 - Screen narration announces the focused item, its menu position, and the activation keys. Empty positions are skipped.
 - Back always returns one level, Refresh discards any open confirmation before rereading server state, and Previous/Next use the same labels in every paged menu.
+- A changed quest definition or player state makes a Journey page stale. The board refreshes from the server instead of accepting a stale interaction. If quest data is temporarily read-only, it keeps the existing progress visible and explains that no update can be made.
 - Destructive or paid actions show a confirmation page. A changed permission, price, definition, claim, balance, or RPG state makes that confirmation stale and prevents the mutation.
 - Unavailable management controls are represented by a barrier with a written permission explanation; meaning never relies on item color alone.
 
 Keyboard focus uses a bright outer ring with a dark inner edge, distinct from mouse hover.
 Every visible action is a native focusable button. Both main Enter and keypad Enter submit a
 focused administration search or typed form. Player cards hide UUIDs, namespaced identifiers,
-and long evidence hashes by default; the focusable **Advanced details** button reveals and can
+quest and objective references, and long evidence hashes by default; the focusable **Advanced details** button reveals and can
 narrate that technical information when it is needed.
 
 The server remains authoritative. The client sends only an open-tab request or a vanilla container click. Menu identity, session state, button type, permissions, prices, inventory contents, balances, definitions, and transaction results are validated on the server.

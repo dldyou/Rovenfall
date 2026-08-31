@@ -99,6 +99,8 @@ final class PlayerMenuNetworkTest {
         assertTrue(PlayerMenuNetwork.MenuTarget.fromWireId(0).isPresent());
         assertTrue(PlayerMenuNetwork.MenuTarget.fromWireId(3).isPresent());
         assertTrue(PlayerMenuNetwork.MenuTarget.fromWireId(4).isPresent());
+        assertEquals(PlayerMenuNetwork.MenuTarget.QUESTS,
+                PlayerMenuNetwork.MenuTarget.fromWireId(5).orElseThrow());
         assertTrue(PlayerMenuNetwork.MenuTarget.fromWireId(99).isEmpty());
 
         assertTrue(PlayerMenuNetwork.canOpen(null, 100));
@@ -136,11 +138,14 @@ final class PlayerMenuNetworkTest {
                 PlayerMenuNetwork.MenuKind.fromWireId(0).orElseThrow());
         assertEquals(PlayerMenuNetwork.MenuKind.ADMIN_OPERATIONS,
                 PlayerMenuNetwork.MenuKind.fromWireId(8).orElseThrow());
+        assertEquals(PlayerMenuNetwork.MenuKind.QUEST,
+                PlayerMenuNetwork.MenuKind.fromWireId(9).orElseThrow());
         assertTrue(PlayerMenuNetwork.MenuKind.fromWireId(99).isEmpty());
         assertFalse(PlayerMenuNetwork.MenuKind.DASHBOARD.isAdministration());
         assertFalse(PlayerMenuNetwork.MenuKind.SHOP.isAdministration());
         assertFalse(PlayerMenuNetwork.MenuKind.CLAIM.isAdministration());
         assertFalse(PlayerMenuNetwork.MenuKind.RPG.isAdministration());
+        assertFalse(PlayerMenuNetwork.MenuKind.QUEST.isAdministration());
         assertTrue(PlayerMenuNetwork.MenuKind.ADMIN_HOME.isAdministration());
         assertTrue(PlayerMenuNetwork.MenuKind.ADMIN_ECONOMY.isAdministration());
         assertTrue(PlayerMenuNetwork.MenuKind.ADMIN_WORLD.isAdministration());
@@ -149,6 +154,12 @@ final class PlayerMenuNetworkTest {
         assertFalse(PlayerMenuNetwork.MenuKind.ADMIN_HOME.usesLongTextInput());
         assertTrue(PlayerMenuNetwork.MenuKind.ADMIN_ECONOMY.usesLongTextInput());
         assertFalse(PlayerMenuNetwork.isPlayerMenu(null));
+    }
+
+    @Test
+    void bumpsTheStrictProtocolForTheExtendedMenuWireEnums() {
+        assertEquals(2, PlayerMenuNetwork.PACKET_REVISION);
+        assertEquals("2", PlayerMenuNetwork.NETWORK_VERSION);
     }
 
     @Test

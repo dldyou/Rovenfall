@@ -94,6 +94,7 @@ import org.dldyou.rovenfall.administration.PlayerRecordService;
 import org.dldyou.rovenfall.administration.PlayerMenuNetwork;
 import org.dldyou.rovenfall.administration.PlayerClaimMenu;
 import org.dldyou.rovenfall.administration.PlayerDashboardMenu;
+import org.dldyou.rovenfall.administration.PlayerQuestMenu;
 import org.dldyou.rovenfall.administration.PlayerRpgMenu;
 import org.dldyou.rovenfall.administration.PlayerShopMenu;
 import org.dldyou.rovenfall.administration.RovenfallInventoryClient;
@@ -257,6 +258,31 @@ public final class Rovenfall {
 
                 helper.assertTrue(player.containerMenu instanceof PlayerDashboardMenu,
                         "RPG back action did not reopen the overview");
+                var journeyBefore = QuestPlayerSavedData.get(player.level().getServer())
+                        .state(player.getUUID());
+                player.containerMenu.clicked(17, 0, ContainerInput.PICKUP, player);
+                helper.assertTrue(player.containerMenu instanceof PlayerQuestMenu
+                                && ((net.minecraft.world.inventory.ChestMenu) player.containerMenu)
+                                        .getRowCount() == 6,
+                        "Journey card did not open the custom quest board");
+                int questState = player.containerMenu.getStateId();
+                player.connection.handleContainerClick(playerMenuClick(
+                        player.containerMenu, 10, questState, ContainerInput.QUICK_MOVE));
+                player.connection.handleContainerClick(playerMenuClick(
+                        player.containerMenu, 10, questState - 1, ContainerInput.PICKUP));
+                helper.assertTrue(player.containerMenu instanceof PlayerQuestMenu
+                                && QuestPlayerSavedData.get(player.level().getServer())
+                                        .state(player.getUUID()).equals(journeyBefore),
+                        "Rejected quest-board input changed quest state");
+                player.containerMenu.clicked(49, 0, ContainerInput.PICKUP, player);
+                helper.assertTrue(player.containerMenu instanceof PlayerRpgMenu,
+                        "First-journey activity guidance did not deep-link to RPG progress");
+                helper.assertTrue(QuestPlayerSavedData.get(player.level().getServer())
+                                .state(player.getUUID()).equals(journeyBefore),
+                        "Opening quest guidance mutated player quest evidence");
+                player.containerMenu.clicked(45, 0, ContainerInput.PICKUP, player);
+                helper.assertTrue(player.containerMenu instanceof PlayerDashboardMenu,
+                        "Guidance target did not return to the overview");
                 player.containerMenu.clicked(10, 0, ContainerInput.PICKUP, player);
                 helper.runAfterDelay(1, () -> {
                     player.containerMenu.clicked(15, 0, ContainerInput.PICKUP, player);

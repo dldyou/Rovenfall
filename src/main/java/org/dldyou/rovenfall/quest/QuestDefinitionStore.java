@@ -15,6 +15,10 @@ final class QuestDefinitionStore {
         return current.get().revision();
     }
 
+    VersionedSnapshot versioned() {
+        return current.get();
+    }
+
     QuestDefinitionSnapshot replace(Collection<QuestDefinitionSnapshot.Source> candidates) {
         QuestDefinitionSnapshot prepared = QuestDefinitionSnapshot.compile(candidates);
         install(prepared);

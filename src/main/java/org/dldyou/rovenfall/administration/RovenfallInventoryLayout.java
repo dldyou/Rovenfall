@@ -12,9 +12,12 @@ final class RovenfallInventoryLayout {
     private RovenfallInventoryLayout() {
     }
 
-    static TabLayout tabs(int screenWidth, int inventoryTop) {
-        int columns = screenWidth >= 268 ? 6 : 3;
-        int rows = 6 / columns;
+    static TabLayout tabs(int screenWidth, int inventoryTop, int tabCount) {
+        if (tabCount < 1) {
+            throw new IllegalArgumentException("tabCount must be positive");
+        }
+        int columns = screenWidth >= 268 ? tabCount : Math.min(3, tabCount);
+        int rows = Math.ceilDiv(tabCount, columns);
         int available = Math.max(columns * 24, screenWidth - EDGE * 2 - TAB_GAP * (columns - 1));
         int tabWidth = Math.min(72, available / columns);
         int rowWidth = tabWidth * columns + TAB_GAP * (columns - 1);
