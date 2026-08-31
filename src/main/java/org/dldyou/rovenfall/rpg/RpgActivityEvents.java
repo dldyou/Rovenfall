@@ -285,7 +285,7 @@ public final class RpgActivityEvents {
         RpgPlayerSavedData state = RpgPlayerSavedData.get(server);
         RpgDefinitionSnapshot definitions = RpgDefinitionReloadListener.snapshot(server);
         boolean retainQuestEvidence = QuestProgressRuntime.shouldCaptureActivityEvidence(
-                server, playerId, activity);
+                server, playerId, activity, timestamp);
         if (retainQuestEvidence) {
             QuestProgressRuntime.prepareActivityEvidenceCapacity(server, playerId, timestamp);
         }

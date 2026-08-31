@@ -20,6 +20,12 @@ final class PlayerQuestMenuTest {
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DETAIL, 10));
         assertEquals(PlayerQuestMenu.Action.BACK,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 45));
+        assertEquals(PlayerQuestMenu.Action.CONTRACTS,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 46));
+        assertEquals(PlayerQuestMenu.Action.CONTRACTS,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.CONTRACTS, 46));
+        assertEquals(PlayerQuestMenu.Action.NONE,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DETAIL, 46));
         assertEquals(PlayerQuestMenu.Action.PREVIOUS,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 48));
         assertEquals(PlayerQuestMenu.Action.GUIDE,
@@ -30,6 +36,12 @@ final class PlayerQuestMenuTest {
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 53));
         assertEquals(PlayerQuestMenu.Action.NONE,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 0));
+        assertEquals(PlayerQuestMenu.Action.NONE,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.CONTRACTS, 20));
+        assertEquals(PlayerQuestMenu.Action.NONE,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.CONTRACTS, 48));
+        assertEquals(PlayerQuestMenu.Action.REFRESH,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.CONTRACTS, 53));
     }
 
     @Test
@@ -47,6 +59,13 @@ final class PlayerQuestMenuTest {
         assertEquals(0, PlayerQuestMenu.boundedPage(-1, 0));
         assertEquals(0, PlayerQuestMenu.boundedPage(99, PlayerQuestMenu.PAGE_SIZE));
         assertEquals(1, PlayerQuestMenu.boundedPage(99, PlayerQuestMenu.PAGE_SIZE + 1));
+    }
+
+    @Test
+    void onlyOpeningTheRequestsPageMayInitializeAssignments() {
+        assertFalse(PlayerQuestMenu.shouldEnsureAssignments(PlayerQuestMenu.Page.LIST));
+        assertFalse(PlayerQuestMenu.shouldEnsureAssignments(PlayerQuestMenu.Page.DETAIL));
+        assertTrue(PlayerQuestMenu.shouldEnsureAssignments(PlayerQuestMenu.Page.CONTRACTS));
     }
 
     @Test

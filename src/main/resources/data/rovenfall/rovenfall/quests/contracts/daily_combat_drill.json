@@ -1,0 +1,24 @@
+{
+  "translation_key": "quest.rovenfall.contract.daily_combat_drill",
+  "description_translation_key": "quest.rovenfall.contract.daily_combat_drill.description",
+  "version": 1,
+  "prerequisites": [],
+  "contract": {
+    "cadence": "daily"
+  },
+  "objectives": [
+    {
+      "id": "rovenfall:contracts/daily_combat_drill/objective",
+      "kind": "activity",
+      "target": "rovenfall:combat",
+      "required_count": 20
+    }
+  ],
+  "rewards": {
+    "currency": 25,
+    "activity_xp": {
+      "activity": "rovenfall:combat",
+      "amount": 5
+    }
+  }
+}

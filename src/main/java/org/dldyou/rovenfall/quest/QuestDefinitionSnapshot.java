@@ -17,6 +17,7 @@ import org.dldyou.rovenfall.Rovenfall;
 
 public final class QuestDefinitionSnapshot {
     public static final int MAX_DEFINITIONS = 4_096;
+    public static final int MAX_CONTRACT_DEFINITIONS = 128;
     private static final Pattern TRANSLATION_KEY = Pattern.compile("[a-z0-9_.-]{1,160}");
     private static final Identifier CATALOG_FILE =
             Identifier.fromNamespaceAndPath(Rovenfall.MOD_ID, "quest_definition_catalog");
@@ -56,6 +57,13 @@ public final class QuestDefinitionSnapshot {
 
         Map<Identifier, Source> unique = new LinkedHashMap<>();
         sources.forEach(source -> unique.putIfAbsent(source.id(), source));
+        long contractCount = unique.values().stream()
+                .filter(source -> source.definition().contract().isPresent())
+                .count();
+        if (contractCount > MAX_CONTRACT_DEFINITIONS) {
+            problems.add(new Problem(CATALOG_FILE, CATALOG_FILE,
+                    "contract definition count exceeds " + MAX_CONTRACT_DEFINITIONS));
+        }
         Set<Identifier> objectiveIds = new HashSet<>();
         for (Source source : sources) {
             validate(source, unique, objectiveIds, problems);
@@ -93,7 +101,22 @@ public final class QuestDefinitionSnapshot {
                     problems.add(problem(source, "duplicate prerequisite quest ID: " + prerequisite));
                 } else if (!quests.containsKey(prerequisite)) {
                     problems.add(problem(source, "missing prerequisite quest: " + prerequisite));
+                } else if (definition.contract().isEmpty()
+                        && quests.get(prerequisite).definition().contract().isPresent()) {
+                    problems.add(problem(source, "story quest cannot require contract: " + prerequisite));
                 }
+            }
+        }
+
+        if (definition.contract().isPresent()) {
+            if (definition.contract().orElseThrow().cadence() == null) {
+                problems.add(problem(source, "contract cadence is invalid"));
+            }
+            if (definition.prerequisites() == null || !definition.prerequisites().isEmpty()) {
+                problems.add(problem(source, "contract cannot define prerequisites"));
+            }
+            if (definition.objectives() == null || definition.objectives().size() != 1) {
+                problems.add(problem(source, "contract must define exactly one objective"));
             }
         }
 
@@ -186,6 +209,27 @@ public final class QuestDefinitionSnapshot {
 
     public Map<Identifier, QuestDefinition> quests() {
         return quests;
+    }
+
+    public Map<Identifier, QuestDefinition> storyQuests() {
+        return quests.entrySet().stream()
+                .filter(entry -> entry.getValue().contract().isEmpty())
+                .collect(java.util.stream.Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue));
+    }
+
+    public Map<Identifier, QuestDefinition> contractTemplates(QuestDefinition.Cadence cadence) {
+        if (cadence == null) {
+            return Map.of();
+        }
+        return quests.entrySet().stream()
+                .filter(entry -> entry.getValue().contract()
+                        .filter(contract -> contract.cadence() == cadence)
+                        .isPresent())
+                .collect(java.util.stream.Collectors.toUnmodifiableMap(Map.Entry::getKey, Map.Entry::getValue));
+    }
+
+    public int contractCount() {
+        return Math.toIntExact(quests.values().stream().filter(quest -> quest.contract().isPresent()).count());
     }
 
     public int size() {

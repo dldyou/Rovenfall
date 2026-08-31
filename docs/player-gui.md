@@ -9,13 +9,13 @@ Rovenfall turns the ordinary survival inventory into the primary player entry po
 - A land card can set a locator-bar waypoint in the current world. Clearing the waypoint is available from the atlas. The atlas never loads remote areas, and purchase remains available only while standing on the selected available land.
 - Travel opens the Portal Explorer. It lists server-approved portal cards with an origin/destination world search, bounded pages, origin world, destination world, distance, and a current-world navigation marker. Portal IDs and coordinates stay in Technical information only. Navigation never loads a remote world.
 - Portal use is an on-site action: the server rechecks the selected portal, protection, current dimension, 8-block entrance distance, cooldown, combat lock, and safe arrival at activation time. A changed portal refreshes the card instead of travelling the player.
-- Journey is the quest board. It shows at most 28 journeys on a page, a plain-language status and reward preview, then one server-selected next step. The Overview card opens the same board, so players never need a command, UUID, or definition identifier to find their first journey.
+- Journey is the quest board. It shows at most 28 journeys on a page, a plain-language status and reward preview, then one server-selected next step. Its Requests sub-screen shows at most two daily requests and one weekly request. The Overview card opens the same board, so players never need a command, UUID, or definition identifier to find their next activity.
 - The first journey introduces the opening loop: gain Mining activity progress, trade at a shop, then buy a piece of land. It is guidance rather than a timer; all progress and any reward remain server-owned.
 - Mouse users activate an item with the primary (left) button. Shift-click, drag, number-key swaps, secondary clicks, and other inventory gestures cannot invoke an action.
 - Keyboard users move the visible slot outline with the arrow keys, then activate the focused item with `Enter` or `Space`. In administration views, `Tab` moves focus into or out of the search/form field and `Enter` submits it.
 - Screen narration announces the focused item, its menu position, and the activation keys. Empty positions are skipped.
 - Back always returns one level, Refresh discards any open confirmation before rereading server state, and Previous/Next use the same labels in every paged menu.
-- A changed quest definition or player state makes a Journey page stale. The board refreshes from the server instead of accepting a stale interaction. If quest data is temporarily read-only, it keeps the existing progress visible and explains that no update can be made.
+- A changed quest definition or player state makes a Journey page stale. The board refreshes from the server instead of accepting a stale interaction. If quest data is temporarily read-only, journeys and current requests keep their existing progress visible and explain that no update can be made.
 - Destructive or paid actions show a confirmation page. A changed permission, price, definition, claim, balance, or RPG state makes that confirmation stale and prevents the mutation.
 - Unavailable management controls are represented by a barrier with a written permission explanation; meaning never relies on item color alone.
 
@@ -26,6 +26,17 @@ quest and objective references, and long evidence hashes by default; the focusab
 narrate that technical information when it is needed.
 
 The server remains authoritative. The client sends only an open-tab request or a vanilla container click. Menu identity, session state, button type, permissions, prices, inventory contents, balances, definitions, and transaction results are validated on the server.
+
+## Daily and weekly requests
+
+Open **Journey**, then select **Requests** in slot 46. The server initializes the current UTC roster before projecting the screen; the menu itself is read-only and contains no completion or reward button. Cards use the same server-observed activity, shop, and boss outcomes as journeys.
+
+- Daily requests refresh at 00:00 UTC and weekly requests refresh on Monday at 00:00 UTC.
+- A player sees at most three cards: two daily and one weekly.
+- Each card shows its plain-language name, one objective, current progress, reward preview, and refresh schedule.
+- Normal details never show a template ID or UTC window number. **Technical information** may reveal those values for diagnostics.
+- Refresh rereads the current roster without rerolling it. Back returns to the journey board.
+- An empty or read-only roster remains a usable, narrated screen and never asks the client to create progress.
 
 ## Recovery and command fallbacks
 

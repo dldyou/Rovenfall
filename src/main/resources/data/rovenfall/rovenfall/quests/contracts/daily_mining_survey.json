@@ -1,0 +1,24 @@
+{
+  "translation_key": "quest.rovenfall.contract.daily_mining_survey",
+  "description_translation_key": "quest.rovenfall.contract.daily_mining_survey.description",
+  "version": 1,
+  "prerequisites": [],
+  "contract": {
+    "cadence": "daily"
+  },
+  "objectives": [
+    {
+      "id": "rovenfall:contracts/daily_mining_survey/objective",
+      "kind": "activity",
+      "target": "rovenfall:mining",
+      "required_count": 16
+    }
+  ],
+  "rewards": {
+    "currency": 20,
+    "activity_xp": {
+      "activity": "rovenfall:mining",
+      "amount": 4
+    }
+  }
+}

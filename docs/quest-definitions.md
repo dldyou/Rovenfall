@@ -45,6 +45,54 @@ IDs never depend on the player's language.
 Add both translation keys to `ko_kr`, `en_us`, and `ja_jp` for built-in content.
 External data packs own their own language resources.
 
+## Repeatable contracts
+
+Contract templates live below `quests/contracts/`. They use the ordinary quest
+schema plus a required contract extension:
+
+```json
+{
+  "translation_key": "quest.rovenfall.contract.daily_mining_survey",
+  "description_translation_key": "quest.rovenfall.contract.daily_mining_survey.description",
+  "version": 1,
+  "prerequisites": [],
+  "contract": {"cadence": "daily"},
+  "objectives": [
+    {
+      "id": "rovenfall:contracts/daily_mining_survey/objective",
+      "kind": "activity",
+      "target": "rovenfall:mining",
+      "required_count": 16
+    }
+  ],
+  "rewards": {
+    "currency": 20,
+    "activity_xp": {"activity": "rovenfall:mining", "amount": 4}
+  }
+}
+```
+
+- `contract.cadence` is exactly `daily` or `weekly`.
+- Contracts have no prerequisites and exactly one objective. That objective
+  uses an existing server-observed quest kind (`activity`, `shop_trade`,
+  `claim_purchase`, or `boss_defeat`) and still obeys the ordinary target and
+  count rules above.
+- Contract objective IDs remain globally unique, including against permanent
+  quests. Rewards use existing activity IDs and remain deliberately modest.
+- A UTC day is the daily window. A UTC week starts on Monday. For each window,
+  the server deterministically assigns two daily templates and one weekly
+  template from the validated pool to a player.
+- The selected roster and its progress are persisted. A content reload that
+  changes a selected template marks that roster entry stale; it is not silently
+  replaced or rewarded. Even an empty or undersized selection is persisted, so
+  a reload cannot backfill the same window. Daily roster evidence is retained
+  for 90 days and weekly evidence for 52 weeks; an older pending reward is kept
+  until recovery completes.
+- One server-owned outcome can advance a permanent journey and every matching
+  assigned contract in one quest-state commit. Players track the resulting
+  maximum of three cards in the custom Journey UI. Commands and raw stable IDs
+  are not required for normal play; IDs remain technical data and audit keys.
+
 ## Reload and player evidence
 
 `QuestDefinitionReloadListener` prepares and validates the complete candidate

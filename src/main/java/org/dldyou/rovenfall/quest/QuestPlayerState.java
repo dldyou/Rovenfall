@@ -3,13 +3,18 @@ package org.dldyou.rovenfall.quest;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.NavigableSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import java.util.UUID;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.resources.Identifier;
@@ -18,13 +23,17 @@ import net.minecraft.util.StringRepresentable;
 /** Immutable, server-owned quest evidence for one player. */
 public record QuestPlayerState(
         Map<Identifier, QuestEntry> quests,
-        Map<UUID, ProcessedEvidence> processedEvidence) {
+        Map<UUID, ProcessedEvidence> processedEvidence,
+        Map<ContractKey, QuestEntry> contracts,
+        Set<ContractWindow> initializedContractWindows) {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
     public static final int MAX_QUESTS = 4_096;
     public static final int MAX_OBJECTIVES_PER_QUEST = QuestDefinition.MAX_OBJECTIVES;
     public static final long MAX_OBJECTIVE_PROGRESS = QuestDefinition.MAX_REQUIRED_COUNT;
     public static final int MAX_DEFINITION_VERSION = QuestDefinition.MAX_VERSION;
     public static final int MAX_PROCESSED_EVIDENCE = 4_096;
+    public static final int MAX_CONTRACTS = 256;
+    public static final int MAX_INITIALIZED_CONTRACT_WINDOWS = 160;
 
     private static final Codec<Map<Identifier, QuestEntry>> QUESTS_CODEC = QuestEntryMapEntry.CODEC
             .listOf(0, MAX_QUESTS)
@@ -32,23 +41,41 @@ public record QuestPlayerState(
     private static final Codec<Map<UUID, ProcessedEvidence>> PROCESSED_EVIDENCE_CODEC = ProcessedEvidenceEntry.CODEC
             .listOf(0, MAX_PROCESSED_EVIDENCE)
             .flatXmap(QuestPlayerState::processedFromEntries, QuestPlayerState::processedEntries);
+    private static final Codec<Map<ContractKey, QuestEntry>> CONTRACTS_CODEC = ContractEntry.CODEC
+            .listOf(0, MAX_CONTRACTS)
+            .flatXmap(QuestPlayerState::contractsFromEntries, QuestPlayerState::contractEntries);
+    private static final Codec<Set<ContractWindow>> INITIALIZED_CONTRACT_WINDOWS_CODEC = ContractWindow.CODEC
+            .listOf(0, MAX_INITIALIZED_CONTRACT_WINDOWS)
+            .flatXmap(QuestPlayerState::windowsFromEntries, QuestPlayerState::windowEntries);
 
     public static final Codec<QuestPlayerState> CODEC = RecordCodecBuilder.<QuestPlayerState>create(instance -> instance.group(
             QUESTS_CODEC.optionalFieldOf("quests", Map.of()).forGetter(QuestPlayerState::quests),
             PROCESSED_EVIDENCE_CODEC.optionalFieldOf("processed_evidence", Map.of())
-                    .forGetter(QuestPlayerState::processedEvidence)
+                    .forGetter(QuestPlayerState::processedEvidence),
+            CONTRACTS_CODEC.optionalFieldOf("contracts", Map.of()).forGetter(QuestPlayerState::contracts),
+            INITIALIZED_CONTRACT_WINDOWS_CODEC.optionalFieldOf("initialized_contract_windows", Set.of())
+                    .forGetter(QuestPlayerState::initializedContractWindows)
     ).apply(instance, QuestPlayerState::new)).validate(QuestPlayerState::validate);
 
-    public static final QuestPlayerState EMPTY = new QuestPlayerState(Map.of(), Map.of());
+    public static final QuestPlayerState EMPTY = new QuestPlayerState(Map.of(), Map.of(), Map.of(), Set.of());
 
     public QuestPlayerState {
         NavigableMap<Identifier, QuestEntry> orderedQuests = new TreeMap<>(quests);
-        quests = java.util.Collections.unmodifiableNavigableMap(orderedQuests);
+        quests = Collections.unmodifiableNavigableMap(orderedQuests);
         processedEvidence = Map.copyOf(processedEvidence);
+        contracts = Collections.unmodifiableNavigableMap(new TreeMap<>(contracts));
+        initializedContractWindows = Collections.unmodifiableNavigableSet(
+                new TreeSet<>(initializedContractWindows));
+    }
+
+    public QuestPlayerState(
+            Map<Identifier, QuestEntry> quests,
+            Map<UUID, ProcessedEvidence> processedEvidence) {
+        this(quests, processedEvidence, Map.of(), Set.of());
     }
 
     public QuestPlayerState(Map<Identifier, QuestEntry> quests) {
-        this(quests, Map.of());
+        this(quests, Map.of(), Map.of(), Set.of());
     }
 
     public boolean isValid() {
@@ -72,7 +99,8 @@ public record QuestPlayerState(
         }
         return quests.entrySet().stream()
                 .filter(entry -> definitions.quest(entry.getKey())
-                        .map(definition -> definition.version() != entry.getValue().definitionVersion())
+                        .map(definition -> definition.contract().isPresent()
+                                || definition.version() != entry.getValue().definitionVersion())
                         .orElse(false))
                 .map(Map.Entry::getKey)
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
@@ -84,22 +112,37 @@ public record QuestPlayerState(
     }
 
     private static Optional<String> validationError(QuestPlayerState state) {
-        if (state.quests().size() > MAX_QUESTS || state.processedEvidence().size() > MAX_PROCESSED_EVIDENCE) {
+        if (state.quests().size() > MAX_QUESTS || state.processedEvidence().size() > MAX_PROCESSED_EVIDENCE
+                || state.contracts().size() > MAX_CONTRACTS
+                || state.initializedContractWindows().size() > MAX_INITIALIZED_CONTRACT_WINDOWS) {
             return Optional.of("Quest player state exceeds the quest limit");
         }
-        Set<UUID> transactions = java.util.HashSet.newHashSet(state.quests().size());
+        Set<UUID> transactions = java.util.HashSet.newHashSet(state.quests().size() + state.contracts().size());
         for (Map.Entry<Identifier, QuestEntry> entry : state.quests().entrySet()) {
             if (entry.getKey() == null || entry.getValue() == null || !entry.getValue().isValid()) {
                 return Optional.of("Quest player state contains invalid quest evidence");
             }
-            if (entry.getValue().completion().isPresent()
-                    && !transactions.add(entry.getValue().completion().orElseThrow().transactionId())) {
-                return Optional.of("Quest player state contains a duplicate completion transaction");
+            if (!addTransactions(entry.getValue(), transactions)) {
+                return Optional.of("Quest player state contains a duplicate quest transaction");
             }
-            if (entry.getValue().pendingReward().isPresent()
-                    && !transactions.add(entry.getValue().pendingReward().orElseThrow().transactionId())) {
-                return Optional.of("Quest player state contains a duplicate reward transaction");
+        }
+        Map<ContractWindow, Integer> contractsPerWindow = new TreeMap<>();
+        for (Map.Entry<ContractKey, QuestEntry> entry : state.contracts().entrySet()) {
+            ContractKey key = entry.getKey();
+            if (key == null || !key.isValid() || entry.getValue() == null || !entry.getValue().isValid()
+                    || !state.initializedContractWindows().contains(key.window())) {
+                return Optional.of("Quest player state contains invalid contract evidence");
             }
+            int count = contractsPerWindow.merge(key.window(), 1, Integer::sum);
+            if (count > key.window().cadence().slots()) {
+                return Optional.of("Quest player state exceeds the contract slots for a window");
+            }
+            if (!addTransactions(entry.getValue(), transactions)) {
+                return Optional.of("Quest player state contains a duplicate quest transaction");
+            }
+        }
+        if (state.initializedContractWindows().stream().anyMatch(window -> window == null || !window.isValid())) {
+            return Optional.of("Quest player state contains an invalid initialized contract window");
         }
         for (Map.Entry<UUID, ProcessedEvidence> entry : state.processedEvidence().entrySet()) {
             if (entry.getKey() == null || ZERO_UUID.equals(entry.getKey())
@@ -108,6 +151,15 @@ public record QuestPlayerState(
             }
         }
         return Optional.empty();
+    }
+
+    private static boolean addTransactions(QuestEntry entry, Set<UUID> transactions) {
+        if (entry.completion().isPresent()
+                && !transactions.add(entry.completion().orElseThrow().transactionId())) {
+            return false;
+        }
+        return entry.pendingReward().isEmpty()
+                || transactions.add(entry.pendingReward().orElseThrow().transactionId());
     }
 
     private static DataResult<Map<Identifier, QuestEntry>> questsFromEntries(List<QuestEntryMapEntry> entries) {
@@ -149,6 +201,95 @@ public record QuestPlayerState(
                         entry.getKey(), entry.getValue().timestampEpochMillis(), entry.getValue().kind(),
                         entry.getValue().ownerEvidenceMissingSinceEpochMillis()))
                 .toList());
+    }
+
+    private static DataResult<Map<ContractKey, QuestEntry>> contractsFromEntries(List<ContractEntry> entries) {
+        Map<ContractKey, QuestEntry> result = new TreeMap<>();
+        for (ContractEntry entry : entries) {
+            if (result.putIfAbsent(entry.key(), entry.value()) != null) {
+                return DataResult.error(() -> "Duplicate contract key " + entry.key());
+            }
+        }
+        return DataResult.success(Collections.unmodifiableNavigableMap(new TreeMap<>(result)));
+    }
+
+    private static DataResult<List<ContractEntry>> contractEntries(Map<ContractKey, QuestEntry> values) {
+        return DataResult.success(values.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> new ContractEntry(entry.getKey(), entry.getValue()))
+                .toList());
+    }
+
+    private static DataResult<Set<ContractWindow>> windowsFromEntries(List<ContractWindow> entries) {
+        Set<ContractWindow> result = new TreeSet<>();
+        for (ContractWindow entry : entries) {
+            if (!result.add(entry)) {
+                return DataResult.error(() -> "Duplicate initialized contract window " + entry);
+            }
+        }
+        return DataResult.success(Collections.unmodifiableNavigableSet(new TreeSet<>(result)));
+    }
+
+    private static DataResult<List<ContractWindow>> windowEntries(Set<ContractWindow> values) {
+        return DataResult.success(values.stream().sorted().toList());
+    }
+
+    public record ContractWindow(QuestDefinition.Cadence cadence, long windowStartEpochDay)
+            implements Comparable<ContractWindow> {
+        private static final Codec<Long> EPOCH_DAY_CODEC = Codec.LONG.validate(value ->
+                value >= LocalDate.MIN.toEpochDay() && value <= LocalDate.MAX.toEpochDay()
+                        ? DataResult.success(value)
+                        : DataResult.error(() -> "Contract window epoch day is invalid"));
+        public static final Codec<ContractWindow> CODEC = RecordCodecBuilder.<ContractWindow>create(instance ->
+                instance.group(
+                        QuestDefinition.Cadence.CODEC.fieldOf("cadence").forGetter(ContractWindow::cadence),
+                        EPOCH_DAY_CODEC.fieldOf("window_start_epoch_day")
+                                .forGetter(ContractWindow::windowStartEpochDay)
+                ).apply(instance, ContractWindow::new)).validate(ContractWindow::validate);
+
+        public boolean isValid() {
+            if (cadence == null || windowStartEpochDay < LocalDate.MIN.toEpochDay()
+                    || windowStartEpochDay > LocalDate.MAX.toEpochDay()) {
+                return false;
+            }
+            return cadence != QuestDefinition.Cadence.WEEKLY
+                    || LocalDate.ofEpochDay(windowStartEpochDay).getDayOfWeek() == DayOfWeek.MONDAY;
+        }
+
+        @Override
+        public int compareTo(ContractWindow other) {
+            int cadenceOrder = cadence.compareTo(other.cadence);
+            return cadenceOrder != 0 ? cadenceOrder
+                    : Long.compare(windowStartEpochDay, other.windowStartEpochDay);
+        }
+
+        private static DataResult<ContractWindow> validate(ContractWindow window) {
+            return window.isValid() ? DataResult.success(window)
+                    : DataResult.error(() -> "Contract window is invalid or weekly start is not Monday");
+        }
+    }
+
+    public record ContractKey(ContractWindow window, Identifier templateId) implements Comparable<ContractKey> {
+        public static final Codec<ContractKey> CODEC = RecordCodecBuilder.<ContractKey>create(instance ->
+                instance.group(
+                        ContractWindow.CODEC.fieldOf("window").forGetter(ContractKey::window),
+                        Identifier.CODEC.fieldOf("template_id").forGetter(ContractKey::templateId)
+                ).apply(instance, ContractKey::new)).validate(ContractKey::validate);
+
+        public boolean isValid() {
+            return window != null && window.isValid() && templateId != null;
+        }
+
+        @Override
+        public int compareTo(ContractKey other) {
+            int windowOrder = window.compareTo(other.window);
+            return windowOrder != 0 ? windowOrder : templateId.compareTo(other.templateId);
+        }
+
+        private static DataResult<ContractKey> validate(ContractKey key) {
+            return key.isValid() ? DataResult.success(key)
+                    : DataResult.error(() -> "Contract key is invalid");
+        }
     }
 
     public record ProcessedEvidence(
@@ -391,6 +532,13 @@ public record QuestPlayerState(
                 Identifier.CODEC.fieldOf("id").forGetter(QuestEntryMapEntry::id),
                 QuestEntry.CODEC.fieldOf("value").forGetter(QuestEntryMapEntry::value)
         ).apply(instance, QuestEntryMapEntry::new));
+    }
+
+    private record ContractEntry(ContractKey key, QuestEntry value) {
+        private static final Codec<ContractEntry> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                ContractKey.CODEC.fieldOf("key").forGetter(ContractEntry::key),
+                QuestEntry.CODEC.fieldOf("value").forGetter(ContractEntry::value)
+        ).apply(instance, ContractEntry::new));
     }
 
     private record ObjectiveProgressEntry(Identifier id, long progress) {

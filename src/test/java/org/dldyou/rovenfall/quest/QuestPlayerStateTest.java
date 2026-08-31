@@ -50,6 +50,94 @@ final class QuestPlayerStateTest {
     }
 
     @Test
+    void contractAssignmentsRoundTripInStableOrderIncludingPreEpochWeeklyWindow() {
+        var daily = new QuestPlayerState.ContractWindow(QuestDefinition.Cadence.DAILY, 20_000);
+        var firstUtcWeek = new QuestPlayerState.ContractWindow(QuestDefinition.Cadence.WEEKLY, -3);
+        var dailyKey = new QuestPlayerState.ContractKey(daily, id("daily_trade"));
+        var weeklyKey = new QuestPlayerState.ContractKey(firstUtcWeek, id("weekly_boss"));
+        QuestPlayerState state = new QuestPlayerState(
+                Map.of(), Map.of(),
+                Map.of(weeklyKey, openEntry(), dailyKey, openEntry()),
+                Set.of(firstUtcWeek, daily));
+
+        var encoded = QuestPlayerState.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow();
+        QuestPlayerState restarted = roundTrip(QuestPlayerState.CODEC, state);
+
+        assertTrue(firstUtcWeek.isValid());
+        assertEquals(state, restarted);
+        assertEquals(encoded, QuestPlayerState.CODEC.encodeStart(NbtOps.INSTANCE, restarted).getOrThrow());
+        assertEquals(List.of(dailyKey, weeklyKey), restarted.contracts().keySet().stream().toList());
+    }
+
+    @Test
+    void contractStateRejectsMissingMarkersSlotOverflowMisalignedWeeksAndCrossDomainTransactions() {
+        var daily = new QuestPlayerState.ContractWindow(QuestDefinition.Cadence.DAILY, 20_000);
+        var invalidWeek = new QuestPlayerState.ContractWindow(QuestDefinition.Cadence.WEEKLY, 0);
+        var first = new QuestPlayerState.ContractKey(daily, id("daily_one"));
+        var second = new QuestPlayerState.ContractKey(daily, id("daily_two"));
+        var third = new QuestPlayerState.ContractKey(daily, id("daily_three"));
+
+        assertFalse(new QuestPlayerState(Map.of(), Map.of(), Map.of(first, openEntry()), Set.of()).isValid());
+        assertFalse(new QuestPlayerState(
+                Map.of(), Map.of(),
+                Map.of(first, openEntry(), second, openEntry(), third, openEntry()), Set.of(daily)).isValid());
+        assertFalse(invalidWeek.isValid());
+        assertTrue(QuestPlayerState.ContractWindow.CODEC.encodeStart(NbtOps.INSTANCE, invalidWeek)
+                .error().isPresent());
+
+        QuestPlayerState duplicateTransaction = new QuestPlayerState(
+                Map.of(FIRST_STEPS, entry(1, Map.of(), 77)),
+                Map.of(),
+                Map.of(first, entry(1, Map.of(), 77)),
+                Set.of(daily));
+        assertFalse(duplicateTransaction.isValid());
+        assertTrue(QuestPlayerState.CODEC.encodeStart(NbtOps.INSTANCE, duplicateTransaction)
+                .error().isPresent());
+    }
+
+    @Test
+    void contractCodecsRejectDuplicateKeysAndWindowMarkers() {
+        var daily = new QuestPlayerState.ContractWindow(QuestDefinition.Cadence.DAILY, 20_000);
+        var key = new QuestPlayerState.ContractKey(daily, id("daily_trade"));
+        QuestPlayerState state = new QuestPlayerState(
+                Map.of(), Map.of(), Map.of(key, openEntry()), Set.of(daily));
+        CompoundTag duplicateContract = (CompoundTag) QuestPlayerState.CODEC
+                .encodeStart(NbtOps.INSTANCE, state).getOrThrow();
+        duplicateContract.getListOrEmpty("contracts")
+                .add(duplicateContract.getListOrEmpty("contracts").getFirst().copy());
+        assertTrue(QuestPlayerState.CODEC.parse(NbtOps.INSTANCE, duplicateContract).error().isPresent());
+
+        CompoundTag duplicateWindow = (CompoundTag) QuestPlayerState.CODEC
+                .encodeStart(NbtOps.INSTANCE, state).getOrThrow();
+        duplicateWindow.getListOrEmpty("initialized_contract_windows")
+                .add(duplicateWindow.getListOrEmpty("initialized_contract_windows").getFirst().copy());
+        assertTrue(QuestPlayerState.CODEC.parse(NbtOps.INSTANCE, duplicateWindow).error().isPresent());
+    }
+
+    @Test
+    void contractStateEnforcesAssignmentAndInitializedWindowBounds() {
+        Map<QuestPlayerState.ContractKey, QuestPlayerState.QuestEntry> contracts = new java.util.LinkedHashMap<>();
+        Set<QuestPlayerState.ContractWindow> windows = new java.util.LinkedHashSet<>();
+        for (int index = 0; contracts.size() <= QuestPlayerState.MAX_CONTRACTS; index++) {
+            var window = new QuestPlayerState.ContractWindow(QuestDefinition.Cadence.DAILY, index);
+            windows.add(window);
+            contracts.put(new QuestPlayerState.ContractKey(window, id("contract_" + index + "_a")), openEntry());
+            if (contracts.size() <= QuestPlayerState.MAX_CONTRACTS) {
+                contracts.put(new QuestPlayerState.ContractKey(window, id("contract_" + index + "_b")),
+                        openEntry());
+            }
+        }
+        assertEquals(QuestPlayerState.MAX_CONTRACTS + 1, contracts.size());
+        assertFalse(new QuestPlayerState(Map.of(), Map.of(), contracts, windows).isValid());
+
+        Set<QuestPlayerState.ContractWindow> tooManyWindows = java.util.stream.LongStream
+                .rangeClosed(0, QuestPlayerState.MAX_INITIALIZED_CONTRACT_WINDOWS)
+                .mapToObj(day -> new QuestPlayerState.ContractWindow(QuestDefinition.Cadence.DAILY, day))
+                .collect(java.util.stream.Collectors.toSet());
+        assertFalse(new QuestPlayerState(Map.of(), Map.of(), Map.of(), tooManyWindows).isValid());
+    }
+
+    @Test
     void retainsUnknownQuestEvidenceWithoutPruning() {
         QuestPlayerState state = state(Map.of(
                 HIDDEN, entry(2, Map.of(), 11),
@@ -101,6 +189,39 @@ final class QuestPlayerStateTest {
         assertFalse(readOnly.isWritable());
         assertFalse(readOnly.commit(player, state, QuestPlayerState.EMPTY));
         assertEquals(state, readOnly.state(player));
+    }
+
+    @Test
+    void schemaFourMigrationDefaultsContractStateAndMaintenancePreservesCurrentContracts() {
+        UUID player = uuid(30);
+        UUID evidenceId = uuid(31);
+        var daily = new QuestPlayerState.ContractWindow(QuestDefinition.Cadence.DAILY, 20_000);
+        var key = new QuestPlayerState.ContractKey(daily, id("daily_trade"));
+        QuestPlayerState state = new QuestPlayerState(
+                Map.of(),
+                Map.of(evidenceId, new QuestPlayerState.ProcessedEvidence(1, QuestDefinition.Kind.ACTIVITY)),
+                Map.of(key, openEntry()), Set.of(daily));
+        QuestPlayerSavedData root = new QuestPlayerSavedData();
+        assertTrue(root.commit(player, QuestPlayerState.EMPTY, state));
+
+        assertEquals(1, root.maintainProcessedEvidence(
+                player, Map.of(evidenceId, false),
+                QuestPlayerSavedData.PROCESSED_EVIDENCE_OWNER_RETENTION_MILLIS + 2, 1));
+        assertEquals(state.contracts(), root.state(player).contracts());
+        assertEquals(state.initializedContractWindows(), root.state(player).initializedContractWindows());
+
+        CompoundTag schemaFour = (CompoundTag) QuestPlayerSavedData.CODEC
+                .encodeStart(NbtOps.INSTANCE, root).getOrThrow();
+        schemaFour.putInt("schema_version", 4);
+        CompoundTag oldState = schemaFour.getListOrEmpty("players").getCompoundOrEmpty(0)
+                .getCompoundOrEmpty("state");
+        oldState.remove("contracts");
+        oldState.remove("initialized_contract_windows");
+        QuestPlayerSavedData migrated = QuestPlayerSavedData.CODEC.parse(NbtOps.INSTANCE, schemaFour).getOrThrow();
+
+        assertEquals(5, migrated.schemaVersion());
+        assertTrue(migrated.state(player).contracts().isEmpty());
+        assertTrue(migrated.state(player).initializedContractWindows().isEmpty());
     }
 
     @Test
@@ -182,6 +303,10 @@ final class QuestPlayerStateTest {
                 objectiveProgress,
                 java.util.Optional.of(new QuestPlayerState.CompletionReceipt(
                         definitionVersion, uuid(transaction), transaction * 100L)));
+    }
+
+    private static QuestPlayerState.QuestEntry openEntry() {
+        return new QuestPlayerState.QuestEntry(1, Map.of(), Optional.empty());
     }
 
     private static Identifier id(String path) {

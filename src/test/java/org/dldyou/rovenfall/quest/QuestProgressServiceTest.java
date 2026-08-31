@@ -596,6 +596,13 @@ final class QuestProgressServiceTest {
         assertFalse(QuestProgressRuntime.withinOwnerRetention(evidenceTimestamp, ownerBoundary + 1));
         assertTrue(QuestProgressRuntime.withinReplayWindow(evidenceTimestamp, replayBoundary));
         assertFalse(QuestProgressRuntime.withinReplayWindow(evidenceTimestamp, replayBoundary + 1));
+        assertTrue(QuestProgressRuntime.withinReplayWindow(
+                replayBoundary + QuestProgressRuntime.FUTURE_EVIDENCE_SKEW_MILLIS,
+                replayBoundary));
+        assertFalse(QuestProgressRuntime.withinReplayWindow(
+                replayBoundary + QuestProgressRuntime.FUTURE_EVIDENCE_SKEW_MILLIS + 1,
+                replayBoundary));
+        assertFalse(QuestProgressRuntime.withinReplayWindow(-1, replayBoundary));
     }
 
     @Test
@@ -607,6 +614,123 @@ final class QuestProgressServiceTest {
         assertTrue(source.startsWith("quest_reward:"));
         assertTrue(source.length() <= 160);
         assertEquals(source, QuestProgressService.rewardSource(longQuestId));
+    }
+
+    @Test
+    void oneEvidenceAtomicallyAdvancesStoryAndCurrentContractRosters() {
+        QuestPlayerSavedData quests = new QuestPlayerSavedData();
+        long timestamp = 12 * RepeatableContractService.DAY_MILLIS;
+        var evidence = new QuestProgressService.Evidence(
+                QuestDefinition.Kind.ACTIVITY, Optional.of(MINING), 1, timestamp, uuid(70_001));
+
+        var result = QuestProgressService.applyEvidence(quests, contractDefinitions(10, 20, 30), PLAYER, evidence);
+        QuestPlayerState state = quests.state(PLAYER);
+
+        assertEquals(QuestProgressService.ProgressStatus.REWARD_PENDING, result.status());
+        assertEquals(3, result.updatedQuests());
+        assertEquals(3, result.completedQuests());
+        assertEquals(1, state.quests().size());
+        assertEquals(2, state.contracts().size());
+        assertTrue(state.quests().get(QUEST).pendingReward().isPresent());
+        assertTrue(state.contracts().values().stream().allMatch(entry -> entry.pendingReward().isPresent()));
+        assertTrue(state.processedEvidence().containsKey(evidence.sourceTransactionId()));
+
+        var duplicate = QuestProgressService.applyEvidence(quests, contractDefinitions(10, 20, 30), PLAYER, evidence);
+        assertEquals(QuestProgressService.ProgressStatus.DUPLICATE, duplicate.status());
+        assertEquals(1, state.quests().get(QUEST).objectiveProgress().get(OBJECTIVE));
+        assertTrue(quests.state(PLAYER).contracts().values().stream()
+                .allMatch(entry -> entry.objectiveProgress().values().stream().allMatch(progress -> progress == 1)));
+    }
+
+    @Test
+    void evidenceOnlyAdvancesTheUtcWindowContainingItsTimestamp() {
+        QuestPlayerSavedData quests = new QuestPlayerSavedData();
+        long firstDay = 20 * RepeatableContractService.DAY_MILLIS;
+        long secondDay = firstDay + RepeatableContractService.DAY_MILLIS;
+        QuestDefinitionSnapshot definitions = contractDefinitions(0, 0, 0);
+
+        assertEquals(QuestProgressService.ProgressStatus.REWARD_PENDING,
+                QuestProgressService.applyEvidence(quests, definitions, PLAYER,
+                        new QuestProgressService.Evidence(
+                                QuestDefinition.Kind.ACTIVITY, Optional.of(MINING), 1, firstDay, uuid(70_002)))
+                        .status());
+        QuestPlayerState.ContractWindow firstDaily = RepeatableContractService.windowAt(
+                QuestDefinition.Cadence.DAILY, firstDay);
+        QuestPlayerState.ContractKey oldDaily = quests.state(PLAYER).contracts().keySet().stream()
+                .filter(key -> key.window().equals(firstDaily)).findFirst().orElseThrow();
+
+        assertEquals(QuestProgressService.ProgressStatus.REWARD_PENDING,
+                QuestProgressService.applyEvidence(quests, definitions, PLAYER,
+                        new QuestProgressService.Evidence(
+                                QuestDefinition.Kind.ACTIVITY, Optional.of(MINING), 1, secondDay, uuid(70_003)))
+                        .status());
+
+        QuestPlayerState state = quests.state(PLAYER);
+        assertEquals(1, state.contracts().get(oldDaily).objectiveProgress().get(DAILY_OBJECTIVE));
+        QuestPlayerState.ContractWindow secondDaily = RepeatableContractService.windowAt(
+                QuestDefinition.Cadence.DAILY, secondDay);
+        QuestPlayerState.ContractKey currentDaily = state.contracts().keySet().stream()
+                .filter(key -> key.window().equals(secondDaily)).findFirst().orElseThrow();
+        assertEquals(1, state.contracts().get(currentDaily).objectiveProgress().get(DAILY_OBJECTIVE));
+    }
+
+    @Test
+    void contractCompletionTransactionIsStableAcrossRestartAndDuplicateDelivery() {
+        QuestDefinitionSnapshot definitions = contractDefinitions(0, 25, 50);
+        long timestamp = 35 * RepeatableContractService.DAY_MILLIS;
+        var evidence = new QuestProgressService.Evidence(
+                QuestDefinition.Kind.ACTIVITY, Optional.of(MINING), 1, timestamp, uuid(70_004));
+        QuestPlayerSavedData first = new QuestPlayerSavedData();
+        assertEquals(QuestProgressService.ProgressStatus.REWARD_PENDING,
+                QuestProgressService.applyEvidence(first, definitions, PLAYER, evidence).status());
+        UUID firstTransaction = dailyContract(first.state(PLAYER), timestamp).pendingReward().orElseThrow()
+                .transactionId();
+
+        QuestPlayerSavedData restarted = roundTrip(QuestPlayerSavedData.CODEC, first);
+        assertEquals(QuestProgressService.ProgressStatus.DUPLICATE,
+                QuestProgressService.applyEvidence(restarted, definitions, PLAYER, evidence).status());
+        assertEquals(firstTransaction, dailyContract(restarted.state(PLAYER), timestamp)
+                .pendingReward().orElseThrow().transactionId());
+
+        QuestPlayerSavedData replayed = new QuestPlayerSavedData();
+        assertEquals(QuestProgressService.ProgressStatus.REWARD_PENDING,
+                QuestProgressService.applyEvidence(replayed, definitions, PLAYER, evidence).status());
+        assertEquals(firstTransaction, dailyContract(replayed.state(PLAYER), timestamp)
+                .pendingReward().orElseThrow().transactionId());
+    }
+
+    @Test
+    void pendingContractRewardsRecoverCurrencyAndXpExactlyOnce() {
+        QuestPlayerSavedData quests = new QuestPlayerSavedData();
+        PlatformSavedData platform = new PlatformSavedData();
+        RpgPlayerSavedData rpg = new RpgPlayerSavedData();
+        QuestDefinitionSnapshot definitions = contractDefinitions(0, 25, 50);
+        long timestamp = 50 * RepeatableContractService.DAY_MILLIS;
+        assertEquals(QuestProgressService.ProgressStatus.REWARD_PENDING,
+                QuestProgressService.applyEvidence(quests, definitions, PLAYER,
+                        new QuestProgressService.Evidence(
+                                QuestDefinition.Kind.ACTIVITY, Optional.of(MINING), 1, timestamp, uuid(70_005)))
+                        .status());
+
+        assertEquals(QuestProgressService.RewardStatus.RETRY_REQUIRED,
+                QuestProgressService.recoverRewards(
+                        quests, definitions, platform, rpg, rpgDefinitions(), PLAYER, timestamp + 1,
+                        0, 1_000_000).status());
+        assertEquals(QuestProgressService.RewardStatus.COMPLETED,
+                QuestProgressService.recoverRewards(
+                        quests, definitions, platform, rpg, rpgDefinitions(), PLAYER, timestamp + 2,
+                        0, 1_000_000).status());
+        assertEquals(75, platform.economyBalance(PLAYER).orElseThrow());
+        assertEquals(18, rpg.state(PLAYER).activityXp().get(MINING));
+        assertTrue(quests.state(PLAYER).contracts().values().stream()
+                .allMatch(entry -> entry.completion().isPresent() && entry.pendingReward().isEmpty()));
+
+        assertEquals(QuestProgressService.RewardStatus.NOTHING_PENDING,
+                QuestProgressService.recoverRewards(
+                        quests, definitions, platform, rpg, rpgDefinitions(), PLAYER, timestamp + 3,
+                        0, 1_000_000).status());
+        assertEquals(75, platform.economyBalance(PLAYER).orElseThrow());
+        assertEquals(18, rpg.state(PLAYER).activityXp().get(MINING));
     }
 
     private static org.dldyou.rovenfall.mobs.BossRewardOperation boss(
@@ -637,6 +761,55 @@ final class QuestProgressServiceTest {
                         : Optional.of(new QuestDefinition.ActivityXpReward(MINING, xp))));
         return QuestDefinitionSnapshot.compile(List.of(new QuestDefinitionSnapshot.Source(
                 id("rovenfall/quests/first_steps.json"), "test", QUEST, definition)));
+    }
+
+    private static final Identifier DAILY_CONTRACT = id("daily_mining");
+    private static final Identifier WEEKLY_CONTRACT = id("weekly_mining");
+    private static final Identifier DAILY_OBJECTIVE = id("daily_mining/progress");
+    private static final Identifier WEEKLY_OBJECTIVE = id("weekly_mining/progress");
+
+    private static QuestDefinitionSnapshot contractDefinitions(long storyCurrency, long dailyCurrency, long weeklyCurrency) {
+        QuestDefinition story = new QuestDefinition(
+                "quest.rovenfall.first_steps", "quest.rovenfall.first_steps.description", 1, List.of(),
+                List.of(new QuestDefinition.Objective(
+                        OBJECTIVE, QuestDefinition.Kind.ACTIVITY, Optional.of(MINING), 1)),
+                new QuestDefinition.Rewards(storyCurrency, Optional.empty()));
+        QuestDefinition daily = contractDefinition(
+                "quest.rovenfall.daily_mining", DAILY_OBJECTIVE, dailyCurrency, 7,
+                QuestDefinition.Cadence.DAILY);
+        QuestDefinition weekly = contractDefinition(
+                "quest.rovenfall.weekly_mining", WEEKLY_OBJECTIVE, weeklyCurrency, 11,
+                QuestDefinition.Cadence.WEEKLY);
+        return QuestDefinitionSnapshot.compile(List.of(
+                new QuestDefinitionSnapshot.Source(id("rovenfall/quests/first_steps.json"), "test", QUEST, story),
+                new QuestDefinitionSnapshot.Source(id("rovenfall/quests/contracts/daily_mining.json"), "test",
+                        DAILY_CONTRACT, daily),
+                new QuestDefinitionSnapshot.Source(id("rovenfall/quests/contracts/weekly_mining.json"), "test",
+                        WEEKLY_CONTRACT, weekly)));
+    }
+
+    private static QuestDefinition contractDefinition(
+            String key,
+            Identifier objective,
+            long currency,
+            long xp,
+            QuestDefinition.Cadence cadence) {
+        return new QuestDefinition(key, key + ".description", 1, List.of(),
+                List.of(new QuestDefinition.Objective(
+                        objective, QuestDefinition.Kind.ACTIVITY, Optional.of(MINING), 1)),
+                new QuestDefinition.Rewards(currency,
+                        Optional.of(new QuestDefinition.ActivityXpReward(MINING, xp))),
+                Optional.of(new QuestDefinition.Contract(cadence)));
+    }
+
+    private static QuestPlayerState.QuestEntry dailyContract(QuestPlayerState state, long timestamp) {
+        QuestPlayerState.ContractWindow window = RepeatableContractService.windowAt(
+                QuestDefinition.Cadence.DAILY, timestamp);
+        return state.contracts().entrySet().stream()
+                .filter(entry -> entry.getKey().window().equals(window))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElseThrow();
     }
 
     private static RpgDefinitionSnapshot rpgDefinitions() {

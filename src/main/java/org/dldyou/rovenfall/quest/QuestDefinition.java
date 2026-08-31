@@ -14,7 +14,8 @@ public record QuestDefinition(
         int version,
         List<Identifier> prerequisites,
         List<Objective> objectives,
-        Rewards rewards) {
+        Rewards rewards,
+        Optional<Contract> contract) {
     public static final int MAX_VERSION = 1_000_000;
     public static final int MAX_PREREQUISITES = 32;
     public static final int MAX_OBJECTIVES = 32;
@@ -31,13 +32,25 @@ public record QuestDefinition(
                     .forGetter(QuestDefinition::prerequisites),
             Objective.CODEC.listOf(1, MAX_OBJECTIVES).fieldOf("objectives")
                     .forGetter(QuestDefinition::objectives),
-            Rewards.CODEC.optionalFieldOf("rewards", Rewards.NONE).forGetter(QuestDefinition::rewards)
+            Rewards.CODEC.optionalFieldOf("rewards", Rewards.NONE).forGetter(QuestDefinition::rewards),
+            Contract.CODEC.optionalFieldOf("contract").forGetter(QuestDefinition::contract)
     ).apply(instance, QuestDefinition::new));
 
     public QuestDefinition {
         prerequisites = List.copyOf(prerequisites);
         objectives = List.copyOf(objectives);
         rewards = rewards == null ? Rewards.NONE : rewards;
+        contract = contract == null ? Optional.empty() : contract;
+    }
+
+    public QuestDefinition(
+            String translationKey,
+            String descriptionTranslationKey,
+            int version,
+            List<Identifier> prerequisites,
+            List<Objective> objectives,
+            Rewards rewards) {
+        this(translationKey, descriptionTranslationKey, version, prerequisites, objectives, rewards, Optional.empty());
     }
 
     public QuestDefinition(
@@ -46,7 +59,37 @@ public record QuestDefinition(
             int version,
             List<Identifier> prerequisites,
             List<Objective> objectives) {
-        this(translationKey, descriptionTranslationKey, version, prerequisites, objectives, Rewards.NONE);
+        this(translationKey, descriptionTranslationKey, version, prerequisites, objectives, Rewards.NONE,
+                Optional.empty());
+    }
+
+    public record Contract(Cadence cadence) {
+        public static final Codec<Contract> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                Cadence.CODEC.fieldOf("cadence").forGetter(Contract::cadence)
+        ).apply(instance, Contract::new));
+    }
+
+    public enum Cadence implements StringRepresentable {
+        DAILY("daily", 2),
+        WEEKLY("weekly", 1);
+
+        public static final Codec<Cadence> CODEC = StringRepresentable.fromEnum(Cadence::values);
+        private final String id;
+        private final int slots;
+
+        Cadence(String id, int slots) {
+            this.id = id;
+            this.slots = slots;
+        }
+
+        public int slots() {
+            return slots;
+        }
+
+        @Override
+        public String getSerializedName() {
+            return id;
+        }
     }
 
     public record Rewards(long currency, Optional<ActivityXpReward> activityXp) {
