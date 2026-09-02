@@ -61,6 +61,8 @@ final class GameplayLocalizationCatalogTest {
             "wilderness_reset_phase.rovenfall.completed",
             "message.rovenfall.activity.awarded",
             "message.rovenfall.activity.awarded_with_career",
+            "message.rovenfall.activity.level_up",
+            "message.rovenfall.career.level_up",
             "command.rovenfall.activity.header",
             "command.rovenfall.activity.line_max",
             "command.rovenfall.activity.line_unavailable",

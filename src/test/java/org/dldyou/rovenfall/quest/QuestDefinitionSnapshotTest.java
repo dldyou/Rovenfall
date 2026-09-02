@@ -18,19 +18,25 @@ import org.junit.jupiter.api.Test;
 
 class QuestDefinitionSnapshotTest {
     @Test
-    void shippedFirstStepsDefinitionDecodesAndCompiles() {
-        var stream = QuestDefinitionSnapshotTest.class.getResourceAsStream(
-                "/data/rovenfall/rovenfall/quests/first_steps.json");
-        try (var reader = new InputStreamReader(java.util.Objects.requireNonNull(stream), StandardCharsets.UTF_8)) {
-            QuestDefinition definition = QuestDefinition.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseReader(reader))
-                    .getOrThrow();
-            var snapshot = QuestDefinitionSnapshot.compile(List.of(new QuestDefinitionSnapshot.Source(
-                    file("first_steps"), "builtin", id("first_steps"), definition)));
+    void shippedFrontierChapterDecodesAndCompilesAsOneStoryGraph() {
+        var snapshot = QuestDefinitionSnapshot.compile(List.of(
+                shipped("first_steps"),
+                shipped("frontier_homestead"),
+                shipped("expedition_provisions"),
+                shipped("wilderness_patrol"),
+                shipped("rift_warden_oath")));
 
-            assertEquals(3, snapshot.quest(id("first_steps")).orElseThrow().objectives().size());
-        } catch (java.io.IOException exception) {
-            throw new AssertionError(exception);
-        }
+        assertEquals(5, snapshot.storyQuests().size());
+        assertEquals(3, snapshot.quest(id("first_steps")).orElseThrow().objectives().size());
+        var finale = snapshot.quest(id("rift_warden_oath")).orElseThrow();
+        assertEquals(List.of(
+                id("expedition_provisions"),
+                id("frontier_homestead"),
+                id("wilderness_patrol")), finale.prerequisites());
+        assertEquals(400, finale.rewards().currency());
+        assertTrue(finale.objectives().stream().anyMatch(objective ->
+                objective.kind() == QuestDefinition.Kind.BOSS_DEFEAT
+                        && objective.target().filter(id("rift_warden")::equals).isPresent()));
     }
 
     @Test
@@ -205,6 +211,18 @@ class QuestDefinitionSnapshotTest {
             List<Identifier> prerequisites,
             List<QuestDefinition.Objective> objectives) {
         return source(path, path, prerequisites, objectives);
+    }
+
+    private static QuestDefinitionSnapshot.Source shipped(String path) {
+        var stream = QuestDefinitionSnapshotTest.class.getResourceAsStream(
+                "/data/rovenfall/rovenfall/quests/" + path + ".json");
+        try (var reader = new InputStreamReader(java.util.Objects.requireNonNull(stream), StandardCharsets.UTF_8)) {
+            QuestDefinition definition = QuestDefinition.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseReader(reader))
+                    .getOrThrow();
+            return new QuestDefinitionSnapshot.Source(file(path), "builtin", id(path), definition);
+        } catch (java.io.IOException exception) {
+            throw new AssertionError(exception);
+        }
     }
 
     private static QuestDefinitionSnapshot.Source source(

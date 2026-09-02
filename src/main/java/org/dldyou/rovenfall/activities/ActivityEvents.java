@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -16,6 +17,8 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
@@ -36,6 +39,7 @@ import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 import org.dldyou.rovenfall.administration.ActivityProgressionService;
 import org.dldyou.rovenfall.administration.PlatformSavedData;
 import org.dldyou.rovenfall.activities.ActivityRewardReloadListener.ResolvedReward;
+import org.dldyou.rovenfall.careers.CareerCatalog;
 import org.dldyou.rovenfall.careers.CareerDefinitionReloadListener;
 
 public final class ActivityEvents {
@@ -379,7 +383,67 @@ public final class ActivityEvents {
                         result.awardedExperience(),
                         result.totalExperience()));
             }
+            sendLevelUpFeedback(feedbackPlayer, level, kind, result, careerCatalog);
         }
+    }
+
+    private static void sendLevelUpFeedback(
+            ServerPlayer player,
+            ServerLevel level,
+            ActivityKind kind,
+            ActivityProgressionService.AwardResult result,
+            CareerCatalog careerCatalog) {
+        boolean leveledUp = false;
+        var activityDefinition = ActivityLevelReloadListener.get(level.getServer(), kind.track());
+        if (activityDefinition.isPresent()) {
+            var definition = activityDefinition.orElseThrow();
+            int previousLevel = definition.progress(result.totalExperience() - result.awardedExperience()).level();
+            int currentLevel = definition.progress(result.totalExperience()).level();
+            if (currentLevel > previousLevel) {
+                player.sendSystemMessage(Component.translatable(
+                        "message.rovenfall.activity.level_up",
+                        Component.translatable(kind.track().translationKey()),
+                        currentLevel));
+                leveledUp = true;
+            }
+        }
+        if (result.careerId().isPresent() && result.awardedCareerExperience() > 0) {
+            Identifier careerId = result.careerId().orElseThrow();
+            var careerDefinition = careerCatalog.definition(careerId);
+            if (careerDefinition.isPresent()) {
+                var definition = careerDefinition.orElseThrow();
+                int previousLevel = definition.level(
+                        result.totalCareerExperience() - result.awardedCareerExperience());
+                int currentLevel = definition.level(result.totalCareerExperience());
+                if (currentLevel > previousLevel) {
+                    player.sendSystemMessage(Component.translatable(
+                            "message.rovenfall.career.level_up",
+                            Component.translatable(definition.translationKey()),
+                            currentLevel));
+                    leveledUp = true;
+                }
+            }
+        }
+        if (!leveledUp) {
+            return;
+        }
+        level.playSound(
+                null,
+                player.blockPosition(),
+                SoundEvents.PLAYER_LEVELUP,
+                SoundSource.PLAYERS,
+                0.8F,
+                1.0F);
+        level.sendParticles(
+                ParticleTypes.HAPPY_VILLAGER,
+                player.getX(),
+                player.getY() + 1.0,
+                player.getZ(),
+                18,
+                0.55,
+                0.8,
+                0.55,
+                0.05);
     }
 
     private record PistonKey(

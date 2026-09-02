@@ -515,6 +515,26 @@ final class RovenfallAdministrationMenuScreen extends ContainerScreen {
     @Override
     public boolean keyPressed(KeyEvent event) {
         int key = event.key();
+        if (key == GLFW.GLFW_KEY_ESCAPE) {
+            if (textInputFocused()) {
+                setFocused(cards.isEmpty() ? advancedButton : cards.getFirst());
+                return true;
+            }
+            if (activateIfPresent(PlayerMenuKeyboardNavigation.TOOLBAR_BACK_SLOT)) {
+                return true;
+            }
+        }
+        if (query != null && !query.isFocused()
+                && (key == GLFW.GLFW_KEY_SLASH
+                || key == GLFW.GLFW_KEY_F && (event.modifiers() & GLFW.GLFW_MOD_CONTROL) != 0)) {
+            setFocused(query);
+            query.setFocused(true);
+            return true;
+        }
+        if (!textInputFocused() && key == GLFW.GLFW_KEY_R && event.modifiers() == 0
+                && activateIfPresent(PlayerMenuKeyboardNavigation.TOOLBAR_REFRESH_SLOT)) {
+            return true;
+        }
         if (advanced && key == GLFW.GLFW_KEY_C
                 && (event.modifiers() & GLFW.GLFW_MOD_CONTROL) != 0 && !textInputFocused()) {
             copyAdvancedDetails();
@@ -536,6 +556,14 @@ final class RovenfallAdministrationMenuScreen extends ContainerScreen {
             return true;
         }
         return super.keyPressed(event);
+    }
+
+    private boolean activateIfPresent(int slotId) {
+        if (slotId < 0 || slotId >= menu.getRowCount() * 9 || !menu.getSlot(slotId).hasItem()) {
+            return false;
+        }
+        activate(slotId);
+        return true;
     }
 
     static boolean isSubmitKey(int key) {

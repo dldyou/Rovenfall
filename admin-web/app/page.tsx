@@ -10,6 +10,7 @@ import {
   Clipboard,
   Coins,
   FileClock,
+  HelpCircle,
   KeyRound,
   LandPlot,
   Languages,
@@ -27,13 +28,14 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import {
   ApiError,
   apiRequest,
   queryString,
   registerReadOnlyTools,
+  type ActionPreview,
   type AuditRow,
   type ClaimRow,
   type DashboardData,
@@ -45,8 +47,8 @@ import {
   type ShopRow,
   type TransactionRow,
   type ViewId,
-} from '@/src/api';
-import { messages, type Locale } from '@/src/i18n';
+} from '../src/api';
+import { messages, type CopyKey, type Locale } from '../src/i18n';
 
 const TOKEN_KEY = 'rovenfall-admin-token';
 const locales: Locale[] = ['ko', 'en', 'ja'];
@@ -83,6 +85,15 @@ const navigation: Array<{ id: ViewId; icon: LucideIcon }> = [
   { id: 'claims', icon: LandPlot },
   { id: 'shops', icon: Store },
 ];
+
+const viewDescription: Record<ViewId, CopyKey> = {
+  dashboard: 'dashboardDescription',
+  players: 'playersDescription',
+  audit: 'auditDescription',
+  transactions: 'transactionsDescription',
+  claims: 'claimsDescription',
+  shops: 'shopsDescription',
+};
 
 export default function Home() {
   const [locale, setLocale] = useState<Locale>(() => {
@@ -220,7 +231,10 @@ function Console({
   const [refreshRevision, setRefreshRevision] = useState(0);
   const [selectedPlayer, setSelectedPlayer] = useState<string | null>(null);
   const [actionDraft, setActionDraft] = useState<ActionDraft | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [toast, setToast] = useState('');
+  const [toastTransaction, setToastTransaction] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const handleFailure = useCallback((reason: unknown) => {
     if (reason instanceof ApiError && reason.status === 401) {
@@ -283,16 +297,45 @@ function Console({
 
   useEffect(() => {
     if (!toast) return;
-    const timeout = window.setTimeout(() => setToast(''), 3_000);
+    const timeout = window.setTimeout(() => { setToast(''); setToastTransaction(''); }, 8_000);
     return () => window.clearTimeout(timeout);
   }, [toast]);
 
-  function switchView(view: ViewId) {
+  const switchView = useCallback((view: ViewId) => {
     setActive(view);
     setPage(0);
     setError('');
     setMobileMenu(false);
-  }
+  }, []);
+
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const editing = target?.matches('input, textarea, select, [contenteditable="true"]') ?? false;
+      if (event.key === 'Escape') {
+        if (helpOpen || actionDraft || selectedPlayer) return;
+        if (mobileMenu) { event.preventDefault(); setMobileMenu(false); }
+        else if (active !== 'dashboard') { event.preventDefault(); switchView('dashboard'); }
+        return;
+      }
+      if (helpOpen || actionDraft || selectedPlayer) return;
+      if ((event.ctrlKey && event.key.toLowerCase() === 'k') || (!editing && event.key === '/')) {
+        event.preventDefault(); searchRef.current?.focus(); searchRef.current?.select(); return;
+      }
+      if (editing) return;
+      if (event.altKey && /^[1-6]$/.test(event.key)) {
+        event.preventDefault();
+        const destination = navigation[Number(event.key) - 1]?.id;
+        if (destination) switchView(destination);
+      } else if (event.key.toLowerCase() === 'r' && !event.ctrlKey && !event.metaKey) {
+        event.preventDefault(); setRefreshRevision((value) => value + 1);
+      } else if (event.key === '?') {
+        event.preventDefault(); setHelpOpen(true);
+      }
+    };
+    window.addEventListener('keydown', listener);
+    return () => window.removeEventListener('keydown', listener);
+  }, [active, actionDraft, helpOpen, mobileMenu, selectedPlayer, switchView]);
 
   function searchKey(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'Enter' && active === 'dashboard' && queryDraft.trim()) {
@@ -309,7 +352,9 @@ function Console({
           <button className="icon-button mobile-only" onClick={() => setMobileMenu(true)} aria-label="Open menu"><Menu /></button>
           <div className="search-field">
             <Search />
+            <span className="search-scope" aria-hidden="true">{active === 'dashboard' ? t.allRecords : t[active]}</span>
             <input
+              ref={searchRef}
               value={queryDraft}
               onChange={(event) => setQueryDraft(event.target.value)}
               onKeyDown={searchKey}
@@ -320,6 +365,7 @@ function Console({
           </div>
           <div className="topbar-actions">
             <span className="connection-chip"><span /> {t.connected}</span>
+            <button className="icon-button" onClick={() => setHelpOpen(true)} title={`${t.help} (?)`} aria-label={t.help}><HelpCircle /></button>
             <LocalePicker locale={locale} setLocale={setLocale} compact />
             <button className="icon-button" onClick={onDisconnect} title={t.logout}><LogOut /></button>
           </div>
@@ -328,9 +374,15 @@ function Console({
         <div className="content">
           <section className="page-heading">
             <div>
-              <span className="eyebrow"><Box /> ROVENFALL · {t[active]}</span>
+              <nav className="breadcrumbs" aria-label={t.currentLocation}>
+                <button onClick={() => switchView('dashboard')}>ROVENFALL</button><ChevronRight /><span>{t[active]}</span>
+              </nav>
               <h1>{active === 'dashboard' ? t.headline : t[active]}</h1>
-              <p>{t.subtitle}</p>
+              <p>{t[viewDescription[active]]}</p>
+              <div className="shortcut-strip" aria-label={t.shortcuts}>
+                <span><kbd>Esc</kbd>{t.goBack}</span><span><kbd>Ctrl K</kbd>{t.focusSearch}</span>
+                <span><kbd>R</kbd>{t.refresh}</span><span><kbd>?</kbd>{t.help}</span>
+              </div>
             </div>
             <div className="heading-actions">
               <button className="pixel-button" onClick={() => setRefreshRevision((value) => value + 1)} disabled={loading}>
@@ -362,7 +414,7 @@ function Console({
           {error ? (
             <ErrorState message={error} retry={() => void load()} t={t} />
           ) : active === 'dashboard' ? (
-            <Dashboard dashboard={dashboard} loading={loading} locale={locale} t={t} onPlayer={setSelectedPlayer} />
+            <Dashboard dashboard={dashboard} loading={loading} locale={locale} t={t} onPlayer={setSelectedPlayer} onSelect={switchView} />
           ) : (
             <DataView
               active={active}
@@ -399,11 +451,15 @@ function Console({
           onComplete={(result) => {
             setActionDraft(null);
             setToast(`${t.actionDone} ${shortId(result.transactionId)}`);
+            setToastTransaction(result.transactionId);
             setRefreshRevision((value) => value + 1);
           }}
         />
       )}
-      {toast && <div className="toast"><Check /> {toast}</div>}
+      {helpOpen && <HelpDialog t={t} onClose={() => setHelpOpen(false)} />}
+      {toast && <output className="toast"><Check /><span>{toast}</span>{toastTransaction && <button onClick={() => {
+        setQueryDraft(toastTransaction); switchView('audit'); setToast(''); setToastTransaction('');
+      }}>{t.viewAudit}</button>}</output>}
     </main>
   );
 }
@@ -421,9 +477,9 @@ function Sidebar({ active, mobileOpen, t, onSelect }: {
         <div><strong>ROVENFALL</strong><span>{t.console}</span></div>
       </div>
       <nav aria-label="Administration">
-        {navigation.map(({ id, icon: Icon }) => (
+        {navigation.map(({ id, icon: Icon }, index) => (
           <button key={id} className={active === id ? 'active' : ''} onClick={() => onSelect(id)}>
-            <Icon /><span>{t[id]}</span>{active === id && <ChevronRight className="nav-arrow" />}
+            <Icon /><span>{t[id]}</span><kbd>Alt {index + 1}</kbd>{active === id && <ChevronRight className="nav-arrow" />}
           </button>
         ))}
       </nav>
@@ -436,31 +492,32 @@ function Sidebar({ active, mobileOpen, t, onSelect }: {
   );
 }
 
-function Dashboard({ dashboard, loading, locale, t, onPlayer }: {
+function Dashboard({ dashboard, loading, locale, t, onPlayer, onSelect }: {
   dashboard: DashboardData | null;
   loading: boolean;
   locale: Locale;
   t: Translator;
   onPlayer: (id: string) => void;
+  onSelect: (view: ViewId) => void;
 }) {
   if (loading && !dashboard) return <LoadingState t={t} />;
   if (!dashboard) return null;
   const metrics = [
-    { label: t.onlinePlayers, value: dashboard.onlinePlayers, detail: `${t.total} ${dashboard.knownPlayers}`, icon: Users, tone: 'emerald' },
-    { label: t.recentTransactions, value: dashboard.recentTransactions, detail: `${formatNumber(dashboard.recentVolume, locale)} G`, icon: Coins, tone: 'gold' },
-    { label: t.activeClaims, value: dashboard.claims, detail: `${t.activeShops} ${dashboard.shops}`, icon: LandPlot, tone: 'spruce' },
-    { label: t.warnings, value: dashboard.recentAlerts, detail: `${t.denied} ${dashboard.recentDenied}`, icon: AlertTriangle, tone: 'redstone' },
+    { label: t.onlinePlayers, value: dashboard.onlinePlayers, detail: `${t.total} ${dashboard.knownPlayers}`, icon: Users, tone: 'emerald', target: 'players' as const },
+    { label: t.recentTransactions, value: dashboard.recentTransactions, detail: `${formatNumber(dashboard.recentVolume, locale)} G`, icon: Coins, tone: 'gold', target: 'transactions' as const },
+    { label: t.activeClaims, value: dashboard.claims, detail: `${t.activeShops} ${dashboard.shops}`, icon: LandPlot, tone: 'spruce', target: 'claims' as const },
+    { label: t.warnings, value: dashboard.recentAlerts, detail: `${t.denied} ${dashboard.recentDenied}`, icon: AlertTriangle, tone: 'redstone', target: 'audit' as const },
   ];
   return (
     <div className="dashboard-stack">
       <section className="metric-grid">
-        {metrics.map(({ label, value, detail, icon: Icon, tone }) => (
-          <article className={`metric-card block-panel ${tone}`} key={label}>
+        {metrics.map(({ label, value, detail, icon: Icon, tone, target }) => (
+          <button className={`metric-card block-panel ${tone}`} key={label} onClick={() => onSelect(target)}>
             <div className="metric-icon"><Icon /></div>
             <span>{label}</span>
             <strong>{formatNumber(value, locale)}</strong>
-            <small>{detail}</small>
-          </article>
+            <small>{detail}</small><ChevronRight className="metric-arrow" />
+          </button>
         ))}
       </section>
       <section className="dashboard-grid">
@@ -602,7 +659,7 @@ function PlayerDialog({ token, playerId, locale, t, onClose, onManage }: {
     void apiRequest<PlayerDetail>(token, `/api/v1/players/${encodeURIComponent(playerId)}`)
       .then(setData).catch((reason) => setError(errorMessage(reason, locale)));
   }, [locale, playerId, token]);
-  return <Modal title={t.details} onClose={onClose} wide>
+  return <Modal title={t.details} closeLabel={t.close} onClose={onClose} wide>
     {error ? <p className="form-error">{error}</p> : !data ? <LoadingState t={t} compact /> : <div className="player-detail">
       <div className="player-hero"><div className="player-avatar">{(data.name || '?').slice(0, 1).toUpperCase()}</div><div>
         <span className={`status-badge ${data.online ? 'success' : 'neutral'}`}>{data.online ? t.online : t.offline}</span>
@@ -622,20 +679,58 @@ function ActionDialog({ token, draft, setDraft, t, locale, onClose, onComplete }
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [preview, setPreview] = useState<ActionPreview | null>(null);
+  const [confirmation, setConfirmation] = useState('');
   const update = (field: keyof ActionDraft, value: string) => setDraft({ ...draft, [field]: value });
-  async function submit(event: React.SyntheticEvent<HTMLFormElement>) {
+  function payload() {
+    const value: Record<string, string> = { type: draft.type, reason: draft.reason.trim() };
+    if (draft.type === 'set_role') Object.assign(value, { playerId: draft.playerId.trim(), role: draft.role });
+    if (draft.type === 'grant_balance' || draft.type === 'debit_balance') Object.assign(value, { playerId: draft.playerId.trim(), amount: draft.amount.trim() });
+    if (draft.type === 'reverse') Object.assign(value, { originalTransactionId: draft.originalTransactionId.trim(), compensation: draft.compensation });
+    return value;
+  }
+  async function submitPreview(event: React.SyntheticEvent<HTMLFormElement>) {
     event.preventDefault(); setBusy(true); setError('');
-    const payload: Record<string, string> = { type: draft.type, reason: draft.reason.trim(), transactionId: crypto.randomUUID() };
-    if (draft.type === 'set_role') Object.assign(payload, { playerId: draft.playerId.trim(), role: draft.role });
-    if (draft.type === 'grant_balance' || draft.type === 'debit_balance') Object.assign(payload, { playerId: draft.playerId.trim(), amount: draft.amount.trim() });
-    if (draft.type === 'reverse') Object.assign(payload, { originalTransactionId: draft.originalTransactionId.trim(), compensation: draft.compensation });
     try {
-      const result = await apiRequest<OperationResult>(token, '/api/v1/actions', { method: 'POST', body: JSON.stringify(payload) });
-      onComplete(result);
+      const result = await apiRequest<ActionPreview>(token, '/api/v1/actions/preview', { method: 'POST', body: JSON.stringify(payload()) });
+      setPreview(result); setConfirmation('');
     } catch (reason) { setError(errorMessage(reason, locale)); } finally { setBusy(false); }
   }
-  return <Modal title={t.manage} onClose={onClose}>
-    <form className="action-form" onSubmit={submit}>
+  async function confirm() {
+    if (!preview) return;
+    setBusy(true); setError('');
+    try {
+      const result = await apiRequest<OperationResult>(token, '/api/v1/actions/confirm', {
+        method: 'POST', body: JSON.stringify({ previewId: preview.previewId, confirmation }),
+      });
+      onComplete(result);
+    } catch (reason) {
+      setError(errorMessage(reason, locale));
+      if (reason instanceof ApiError && ['PREVIEW_NOT_FOUND', 'PREVIEW_EXPIRED', 'STALE_PREVIEW'].includes(reason.code)) setPreview(null);
+    } finally { setBusy(false); }
+  }
+  const details = preview?.details;
+  const target = details?.playerName || details?.playerId || details?.originalTransactionId || '—';
+  return <Modal title={preview ? t.operationPreview : t.manage} closeLabel={t.close} onClose={onClose}
+    closeOnEscape={!preview} closeOnBackdrop={!preview} showCloseButton={!preview}>
+    {preview && details ? <div className="action-review">
+      <p className="review-intro"><ShieldCheck />{t.previewBody}</p>
+      <dl className="review-grid">
+        <div><dt>{t.selectAction}</dt><dd>{humanize(String(details.type))}</dd></div>
+        <div><dt>{t.target}</dt><dd>{String(target)}</dd></div>
+        <div><dt>{t.beforeValue}</dt><dd>{String(details.beforeValue ?? '—')}</dd></div>
+        <div><dt>{t.afterValue}</dt><dd>{String(details.afterValue ?? '—')}</dd></div>
+        <div className="wide"><dt>{t.reason}</dt><dd>{String(details.reason)}</dd></div>
+        <div className="wide"><dt>{t.generatedTransaction}</dt><dd><code>{preview.transactionId}</code></dd></div>
+        <div className={details.onlineRequired ? undefined : 'wide'}><dt>{t.expires}</dt><dd>{formatDate(preview.expiresAt, locale)}</dd></div>
+        {Boolean(details.onlineRequired) && <div><dt>{t.targetStatus}</dt><dd className={details.online ? 'success-text' : 'danger-text'}>{details.online ? t.online : t.offline}</dd></div>}
+      </dl>
+      {preview.requiresTypedConfirmation && <label className="confirmation-field">{t.confirmationPhrase}<input data-autofocus required autoComplete="off" value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="EXECUTE" /></label>}
+      <p className="danger-note"><AlertTriangle />{t.irreversible}</p>
+      {error && <p className="form-error" role="alert">{error}</p>}
+      <div className="review-actions"><button className="pixel-button" onClick={onClose}>{t.cancel}</button><button className="pixel-button" onClick={() => { setPreview(null); setError(''); }}>{t.edit}</button>
+        <button className="pixel-button primary" disabled={busy || preview.requiresTypedConfirmation && confirmation.trim().toLowerCase() !== 'execute'} onClick={() => void confirm()}>{busy ? <LoaderCircle className="spin" /> : <ShieldCheck />}{busy ? t.executing : t.confirmChange}</button></div>
+    </div> : <form className="action-form" onSubmit={submitPreview}>
       <label>{t.selectAction}<select value={draft.type} onChange={(event) => update('type', event.target.value)}>
         <option value="set_role">{t.setRole}</option><option value="grant_balance">{t.grant}</option><option value="debit_balance">{t.debit}</option><option value="reverse">{t.reverse}</option>
       </select></label>
@@ -649,19 +744,54 @@ function ActionDialog({ token, draft, setDraft, t, locale, onClose, onComplete }
       <label>{t.reason}<textarea required maxLength={256} value={draft.reason} onChange={(event) => update('reason', event.target.value)} placeholder={t.reasonPlaceholder} /></label>
       <p className="danger-note"><AlertTriangle />{t.irreversible}</p>
       {error && <p className="form-error" role="alert">{error}</p>}
-      <button className="pixel-button primary wide" disabled={busy} type="submit">{busy ? <LoaderCircle className="spin" /> : <ShieldCheck />}{busy ? t.executing : t.execute}</button>
+      <button className="pixel-button primary wide" disabled={busy} type="submit">{busy ? <LoaderCircle className="spin" /> : <ShieldCheck />}{busy ? t.reviewing : t.reviewChange}</button>
     </form>
+    }
   </Modal>;
 }
 
-function Modal({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
+function HelpDialog({ t, onClose }: { t: Translator; onClose: () => void }) {
+  const shortcuts = [['Ctrl K /', t.focusSearch], ['Alt 1–6', t.switchSection], ['Esc', t.goBack], ['R', t.refreshData], ['?', t.openShortcutHelp]];
+  return <Modal title={t.shortcutHelp} closeLabel={t.close} onClose={onClose}>
+    <div className="help-content">
+      <p>{t.shortcutIntro}</p>
+      <div className="shortcut-list">{shortcuts.map(([key, label]) => <div key={key}><kbd>{key}</kbd><span>{label}</span></div>)}</div>
+      <section className="workflow-card"><h3>{t.dailyWorkflow}</h3><ol><li>{t.workflowSearch}</li><li>{t.workflowReview}</li><li>{t.workflowAudit}</li></ol></section>
+      <p className="safe-note"><ShieldCheck />{t.safeOperation}</p>
+      <button className="pixel-button wide" data-autofocus onClick={onClose}>{t.close}</button>
+    </div>
+  </Modal>;
+}
+
+function Modal({ title, closeLabel, onClose, children, wide = false, closeOnEscape = true, closeOnBackdrop = true, showCloseButton = true }: {
+  title: string; closeLabel: string; onClose: () => void; children: React.ReactNode; wide?: boolean;
+  closeOnEscape?: boolean; closeOnBackdrop?: boolean; showCloseButton?: boolean;
+}) {
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const closeRef = useRef(onClose);
+  useEffect(() => { closeRef.current = onClose; }, [onClose]);
   useEffect(() => {
-    const listener = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', listener); return () => window.removeEventListener('keydown', listener);
-  }, [onClose]);
-  return <div className="modal-layer" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-    <dialog open className={`modal block-panel ${wide ? 'wide' : ''}`} aria-label={title}>
-      <header><h2>{title}</h2><button className="icon-button" onClick={onClose}><X /></button></header>{children}
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const dialog = dialogRef.current;
+    const focusable = () => Array.from(dialog?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])') ?? []).filter((element) => element.offsetParent !== null);
+    (dialog?.querySelector<HTMLElement>('[data-autofocus]') ?? focusable()[0])?.focus();
+    const listener = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && closeOnEscape) { event.preventDefault(); event.stopImmediatePropagation(); closeRef.current(); return; }
+      if (event.key !== 'Tab') return;
+      const elements = focusable(); if (!elements.length) return;
+      const first = elements[0]; const last = elements[elements.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    window.addEventListener('keydown', listener);
+    return () => { window.removeEventListener('keydown', listener); previous?.focus(); };
+  }, [closeOnEscape]);
+  return <div className="modal-layer" role="presentation" onMouseDown={(event) => {
+    if (closeOnBackdrop && event.target === event.currentTarget) closeRef.current();
+  }}>
+    <dialog ref={dialogRef} open className={`modal block-panel ${wide ? 'wide' : ''}`} aria-modal="true" aria-labelledby={titleId}>
+      <header><h2 id={titleId}>{title}</h2>{showCloseButton && <button className="icon-button" onClick={onClose} aria-label={closeLabel}><X /></button>}</header>{children}
     </dialog></div>;
 }
 

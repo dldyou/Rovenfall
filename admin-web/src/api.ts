@@ -129,6 +129,15 @@ export interface OperationResult {
   details: Record<string, string | number | boolean>;
 }
 
+export interface ActionPreview {
+  ok: boolean;
+  previewId: string;
+  transactionId: string;
+  expiresAt: number;
+  requiresTypedConfirmation: boolean;
+  details: Record<string, string | number | boolean>;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,

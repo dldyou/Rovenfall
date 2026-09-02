@@ -11,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -28,7 +29,10 @@ import org.dldyou.rovenfall.economy.ShopInstance;
 /** Server-thread adapter between the loopback HTTP bridge and administration domain services. */
 final class AdminGateway {
     static final int DEFAULT_PAGE_SIZE = 25;
+    static final long ACTION_PREVIEW_TTL_MILLIS = 120_000L;
+    static final int MAX_ACTION_PREVIEWS = 128;
     private static final long RECENT_WINDOW_MILLIS = 86_400_000L;
+    private static final Map<UUID, PreparedAction> ACTION_PREVIEWS = new LinkedHashMap<>();
 
     private AdminGateway() {
     }
@@ -57,8 +61,11 @@ final class AdminGateway {
                 String rawId = path.substring("/api/v1/players/".length());
                 return player(state, server, parseUuid(rawId, "playerId"));
             }
-            if ("POST".equals(method) && "/api/v1/actions".equals(path)) {
-                return action(state, body, playerId -> server.getPlayerList().getPlayer(playerId));
+            if ("POST".equals(method) && "/api/v1/actions/preview".equals(path)) {
+                return previewAction(state, body, playerId -> server.getPlayerList().getPlayer(playerId));
+            }
+            if ("POST".equals(method) && "/api/v1/actions/confirm".equals(path)) {
+                return confirmAction(state, body, playerId -> server.getPlayerList().getPlayer(playerId));
             }
         } catch (BadRequest exception) {
             return error(400, exception.code, exception.getMessage());
@@ -268,6 +275,202 @@ final class AdminGateway {
             case "reverse" -> reverse(state, body, onlinePlayerLookup, reason, timestamp, transactionId);
             default -> throw new BadRequest("INVALID_ACTION", "Unknown administration action.");
         };
+    }
+
+    static Response previewAction(
+            PlatformSavedData state,
+            JsonObject body,
+            Function<UUID, ServerPlayer> onlinePlayerLookup) {
+        long now = System.currentTimeMillis();
+        UUID transactionId = UUID.randomUUID();
+        JsonObject preparedBody = prepareActionBody(body, transactionId);
+        ActionPreview snapshot = describeAction(state, preparedBody, onlinePlayerLookup);
+        purgeActionPreviews(now);
+        while (ACTION_PREVIEWS.size() >= MAX_ACTION_PREVIEWS) {
+            ACTION_PREVIEWS.remove(ACTION_PREVIEWS.keySet().iterator().next());
+        }
+        UUID previewId = UUID.randomUUID();
+        long expiresAt = now + ACTION_PREVIEW_TTL_MILLIS;
+        ACTION_PREVIEWS.put(previewId, new PreparedAction(
+                transactionId, expiresAt, preparedBody, snapshot.stateKey(), snapshot.target(),
+                snapshot.typedConfirmationRequired()));
+        return ok(map(
+                "ok", true,
+                "previewId", previewId.toString(),
+                "transactionId", transactionId.toString(),
+                "expiresAt", expiresAt,
+                "requiresTypedConfirmation", snapshot.typedConfirmationRequired(),
+                "details", snapshot.details()));
+    }
+
+    static Response confirmAction(
+            PlatformSavedData state,
+            JsonObject body,
+            Function<UUID, ServerPlayer> onlinePlayerLookup) {
+        if (body == null) {
+            throw new BadRequest("INVALID_BODY", "A JSON request body is required.");
+        }
+        UUID previewId = parseUuid(requiredString(body, "previewId"), "previewId");
+        PreparedAction prepared = ACTION_PREVIEWS.get(previewId);
+        if (prepared == null) {
+            return error(409, "PREVIEW_NOT_FOUND", "The action preview no longer exists.");
+        }
+        long now = System.currentTimeMillis();
+        if (prepared.expiresAtEpochMillis() < now) {
+            ACTION_PREVIEWS.remove(previewId);
+            return rejectedPreview(state, prepared, "PREVIEW_EXPIRED", "expired_preview", now);
+        }
+        if (prepared.typedConfirmationRequired()
+                && !optionalString(body, "confirmation").orElse("").equalsIgnoreCase("execute")) {
+            return error(400, "CONFIRMATION_REQUIRED", "Type EXECUTE to confirm this action.");
+        }
+
+        ACTION_PREVIEWS.remove(previewId);
+        ActionPreview current;
+        try {
+            current = describeAction(state, prepared.body(), onlinePlayerLookup);
+        } catch (BadRequest exception) {
+            return rejectedPreview(state, prepared, "STALE_PREVIEW", "invalidated_preview", now);
+        }
+        if (!Objects.equals(current.stateKey(), prepared.stateKey())) {
+            return rejectedPreview(state, prepared, "STALE_PREVIEW", "changed_after_preview", now);
+        }
+        return action(state, prepared.body(), onlinePlayerLookup);
+    }
+
+    static void clearActionPreviews() {
+        ACTION_PREVIEWS.clear();
+    }
+
+    private static JsonObject prepareActionBody(JsonObject body, UUID transactionId) {
+        if (body == null) {
+            throw new BadRequest("INVALID_BODY", "A JSON request body is required.");
+        }
+        JsonObject prepared = body.deepCopy();
+        String type = requiredString(prepared, "type").toLowerCase(Locale.ROOT);
+        String reason = requiredString(prepared, "reason");
+        if (reason.length() > AdministrationService.MAX_REASON_LENGTH) {
+            throw new BadRequest("INVALID_REASON", "reason is too long.");
+        }
+        if (!Set.of("set_role", "grant_balance", "debit_balance", "reverse").contains(type)) {
+            throw new BadRequest("INVALID_ACTION", "Unknown administration action.");
+        }
+        prepared.addProperty("type", type);
+        prepared.addProperty("reason", reason);
+        prepared.addProperty("transactionId", transactionId.toString());
+        return prepared;
+    }
+
+    private static ActionPreview describeAction(
+            PlatformSavedData state,
+            JsonObject body,
+            Function<UUID, ServerPlayer> onlinePlayerLookup) {
+        String type = requiredString(body, "type").toLowerCase(Locale.ROOT);
+        String reason = requiredString(body, "reason");
+        return switch (type) {
+            case "set_role" -> {
+                UUID playerId = parseUuid(requiredString(body, "playerId"), "playerId");
+                String role = requiredString(body, "role").toLowerCase(Locale.ROOT);
+                if (AdminRole.parse(role).isEmpty()) {
+                    throw new BadRequest("INVALID_ROLE", "Unknown administration role.");
+                }
+                String before = state.roleOf(playerId).map(AdminRole::getSerializedName).orElse("none");
+                yield new ActionPreview(
+                        new ActionState(type, playerId, before, false),
+                        "player:" + playerId,
+                        map("type", type, "playerId", playerId.toString(), "playerName", playerName(state, playerId),
+                                "beforeValue", before, "afterValue", role, "reason", reason,
+                                "actorRole", AdminRole.OWNER.getSerializedName(), "onlineRequired", false),
+                        true);
+            }
+            case "grant_balance", "debit_balance" -> {
+                UUID playerId = parseUuid(requiredString(body, "playerId"), "playerId");
+                long amount = parsePositiveLong(requiredString(body, "amount"), "amount");
+                long before = state.economyBalance(playerId).orElse(initialBalance());
+                BigInteger after = BigInteger.valueOf(before).add(BigInteger.valueOf(
+                        type.equals("grant_balance") ? amount : -amount));
+                yield new ActionPreview(
+                        new ActionState(type, playerId, state.economyBalance(playerId), false),
+                        "player:" + playerId,
+                        map("type", type, "playerId", playerId.toString(), "playerName", playerName(state, playerId),
+                                "amount", Long.toString(amount), "beforeValue", Long.toString(before),
+                                "afterValue", after.toString(), "reason", reason,
+                                "actorRole", AdminRole.OWNER.getSerializedName(), "onlineRequired", false),
+                        type.equals("debit_balance"));
+            }
+            case "reverse" -> describeReversal(state, body, onlinePlayerLookup, reason);
+            default -> throw new BadRequest("INVALID_ACTION", "Unknown administration action.");
+        };
+    }
+
+    private static ActionPreview describeReversal(
+            PlatformSavedData state,
+            JsonObject body,
+            Function<UUID, ServerPlayer> onlinePlayerLookup,
+            String reason) {
+        UUID originalId = parseUuid(requiredString(body, "originalTransactionId"), "originalTransactionId");
+        String compensation = optionalString(body, "compensation").orElse("none");
+        if (!Set.of("none", "refund_without_items_or_stock").contains(compensation)) {
+            throw new BadRequest("INVALID_COMPENSATION", "Unknown compensation decision.");
+        }
+        EconomyTransactionReceipt receipt = state.economyReceipt(originalId).orElse(null);
+        if (receipt != null) {
+            boolean online = onlinePlayerLookup != null && onlinePlayerLookup.apply(receipt.playerId()) != null;
+            ReverseState key = new ReverseState(receipt, state.economyBalance(receipt.playerId()), online);
+            return new ActionPreview(
+                    new ActionState("reverse", receipt.playerId(), key, online),
+                    "transaction:" + originalId,
+                    map("type", "reverse", "playerId", receipt.playerId().toString(),
+                            "playerName", playerName(state, receipt.playerId()),
+                            "originalTransactionId", originalId.toString(),
+                            "transactionKind", receipt.kind().getSerializedName(),
+                            "amount", Long.toString(receipt.amount()), "beforeValue", "active",
+                            "afterValue", "reversed", "compensation", compensation, "reason", reason,
+                            "actorRole", AdminRole.OWNER.getSerializedName(),
+                            "onlineRequired", true, "online", online),
+                    true);
+        }
+        Object evidence = state.claimReversalEvidence(originalId).<Object>map(value -> value)
+                .or(() -> state.shopReversalEvidence(originalId).map(value -> (Object) value))
+                .or(() -> state.careerReversalEvidence(originalId).map(value -> (Object) value))
+                .orElseThrow(() -> new BadRequest("INVALID_TRANSACTION", "No reversible transaction exists."));
+        String domain = evidence instanceof TargetedReversalState.ClaimEvidence value
+                ? value.domain().getSerializedName()
+                : evidence instanceof TargetedReversalState.ShopEvidence ? "shop"
+                : ((TargetedReversalState.CareerEvidence) evidence).domain().getSerializedName();
+        return new ActionPreview(
+                new ActionState("reverse", originalId, evidence, false),
+                "transaction:" + originalId,
+                map("type", "reverse", "originalTransactionId", originalId.toString(), "domain", domain,
+                        "beforeValue", "active", "afterValue", "reversed", "compensation", compensation,
+                        "reason", reason, "actorRole", AdminRole.OWNER.getSerializedName(),
+                        "onlineRequired", false),
+                true);
+    }
+
+    private static void purgeActionPreviews(long now) {
+        ACTION_PREVIEWS.entrySet().removeIf(entry -> entry.getValue().expiresAtEpochMillis() < now);
+    }
+
+    private static Response rejectedPreview(
+            PlatformSavedData state,
+            PreparedAction prepared,
+            String status,
+            String cause,
+            long timestamp) {
+        String reason = optionalString(prepared.body(), "reason").orElse("administration action");
+        boolean audited = state.appendDeniedAudit(new AuditEntry(
+                timestamp,
+                AdministrationService.SYSTEM_ACTOR,
+                Identifier.fromNamespaceAndPath(Rovenfall.MOD_ID, "admin_web_preview_denied"),
+                prepared.target(),
+                Optional.empty(),
+                Optional.empty(),
+                "unchanged",
+                "unchanged",
+                cause + ": " + reason,
+                prepared.transactionId()), 1_000L);
+        return operationResponse(false, status, prepared.transactionId(), map("auditRecorded", audited));
     }
 
     private static Response reverse(
@@ -612,6 +815,31 @@ final class AdminGateway {
     }
 
     record Response(int status, Object body) {
+    }
+
+    private record PreparedAction(
+            UUID transactionId,
+            long expiresAtEpochMillis,
+            JsonObject body,
+            Object stateKey,
+            String target,
+            boolean typedConfirmationRequired) {
+    }
+
+    private record ActionPreview(
+            Object stateKey,
+            String target,
+            Map<String, Object> details,
+            boolean typedConfirmationRequired) {
+    }
+
+    private record ActionState(String type, UUID targetId, Object value, boolean online) {
+    }
+
+    private record ReverseState(
+            EconomyTransactionReceipt receipt,
+            Optional<Long> balance,
+            boolean online) {
     }
 
     private static final class BadRequest extends RuntimeException {

@@ -45,6 +45,15 @@ IDs never depend on the player's language.
 Add both translation keys to `ko_kr`, `en_us`, and `ja_jp` for built-in content.
 External data packs own their own language resources.
 
+## Built-in Frontier chapter
+
+The built-in story continues after `rovenfall:first_steps` through three parallel journeys:
+`rovenfall:frontier_homestead`, `rovenfall:expedition_provisions`, and
+`rovenfall:wilderness_patrol`. Completing all three unlocks
+`rovenfall:rift_warden_oath`, which combines Combat progression with contribution to a verified
+Rift Warden reward. All four journeys reuse the ordinary server-observed evidence, deterministic
+reward transaction, persistence, recovery, and audit paths described below.
+
 ## Repeatable contracts
 
 Contract templates live below `quests/contracts/`. They use the ordinary quest

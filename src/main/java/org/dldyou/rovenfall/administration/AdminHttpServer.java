@@ -61,6 +61,7 @@ public final class AdminHttpServer {
                 return;
             }
             try {
+                AdminGateway.clearActionPreviews();
                 if (AdminHttpServer.class.getResource(ASSET_ROOT + "index.html") == null) {
                     LOGGER.error("Rovenfall administration console assets are missing from the mod JAR");
                     return;
@@ -100,6 +101,7 @@ public final class AdminHttpServer {
             executor = null;
             minecraftServer = null;
             token = null;
+            AdminGateway.clearActionPreviews();
             if (running != null) {
                 running.stop(1);
             }
