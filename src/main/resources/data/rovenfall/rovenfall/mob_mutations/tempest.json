@@ -1,0 +1,24 @@
+{
+  "eligible_entity_types": [
+    "minecraft:skeleton",
+    "minecraft:stray",
+    "minecraft:zombie"
+  ],
+  "spawn_chance": 0.03,
+  "translation_key": "mutation.rovenfall.tempest",
+  "glowing": true,
+  "attributes": [
+    {
+      "attribute": "minecraft:max_health",
+      "amount": 0.25,
+      "operation": "add_multiplied_total"
+    },
+    {
+      "attribute": "minecraft:movement_speed",
+      "amount": 0.18,
+      "operation": "add_multiplied_total"
+    }
+  ],
+  "ai_modifier": "leap",
+  "currency_reward": 16
+}

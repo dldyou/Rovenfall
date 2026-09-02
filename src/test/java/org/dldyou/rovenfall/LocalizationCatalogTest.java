@@ -513,6 +513,7 @@ final class LocalizationCatalogTest {
     private static void assertOrdinaryGuiAvoids(String locale, Pattern rejectedTerms) {
         catalog(locale).entrySet().stream()
                 .filter(entry -> entry.getKey().startsWith("gui.rovenfall."))
+                .filter(entry -> !entry.getKey().startsWith("gui.rovenfall.admin."))
                 .filter(entry -> !entry.getKey().contains(".form."))
                 .filter(entry -> !TECHNICAL_GUI_KEYS.contains(entry.getKey()))
                 .forEach(entry -> assertTrue(

@@ -1,6 +1,7 @@
 package org.dldyou.rovenfall.administration;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Predicate;
@@ -35,6 +36,9 @@ public final class ClaimPurchaseService {
             int ownershipCap,
             long timestampEpochMillis,
             UUID transactionId) {
+        if (state == null) {
+            return result(Status.INVALID_REQUEST, Optional.empty(), 0, 0, transactionId, false);
+        }
         if (!state.isWritable()) {
             return result(Status.READ_ONLY_SCHEMA, Optional.empty(), 0, 0, transactionId, false);
         }
@@ -66,49 +70,16 @@ public final class ClaimPurchaseService {
             return denied(state, playerId, Optional.of(key), playerPosition, Status.TRANSACTION_ID_CONFLICT,
                     "transaction_id_conflict", 0, balance, timestampEpochMillis, transactionId);
         }
-        if (!validConfiguration(basePrice, priceIncrease, ownershipCap)) {
-            return denied(state, playerId, Optional.of(key), playerPosition, Status.INVALID_CONFIGURATION,
-                    "invalid_configuration", 0, state.economyBalance(playerId).orElse(0L),
+        PurchaseEvaluation evaluation = evaluatePurchase(
+                state, playerId, hubDimension, playerDimension, playerPosition,
+                isEligible, isProtected, basePrice, priceIncrease, ownershipCap);
+        if (!evaluation.allowed()) {
+            return denied(state, playerId, evaluation.claim(), playerPosition, evaluation.status(),
+                    evaluation.status().id(), evaluation.price(), evaluation.balance(),
                     timestampEpochMillis, transactionId);
         }
-        if (!WorldTopology.HUB.equals(hubDimension) || !WorldTopology.allowsClaims(playerDimension)) {
-            return denied(state, playerId, Optional.of(key), playerPosition, Status.NOT_IN_HUB,
-                    "not_in_hub", 0, state.economyBalance(playerId).orElse(0L), timestampEpochMillis, transactionId);
-        }
-        if (isProtected.test(key)) {
-            return denied(state, playerId, Optional.of(key), playerPosition, Status.PROTECTED_CHUNK,
-                    "protected_chunk", 0, state.economyBalance(playerId).orElse(0L), timestampEpochMillis, transactionId);
-        }
-        if (!isEligible.test(key)) {
-            return denied(state, playerId, Optional.of(key), playerPosition, Status.INELIGIBLE_CHUNK,
-                    "ineligible_chunk", 0, state.economyBalance(playerId).orElse(0L), timestampEpochMillis, transactionId);
-        }
-        if (state.claim(key).isPresent()) {
-            return denied(state, playerId, Optional.of(key), playerPosition, Status.ALREADY_CLAIMED,
-                    "already_claimed", 0, state.economyBalance(playerId).orElse(0L), timestampEpochMillis, transactionId);
-        }
-
-        int ownedClaims = state.claimCount(playerId);
-        if (ownedClaims >= ownershipCap || state.claimCount() >= Claim.MAX_CLAIMS) {
-            return denied(state, playerId, Optional.of(key), playerPosition, Status.OWNERSHIP_CAP_REACHED,
-                    "ownership_cap_reached", 0, state.economyBalance(playerId).orElse(0L),
-                    timestampEpochMillis, transactionId);
-        }
-        Optional<Long> price = calculatePrice(basePrice, priceIncrease, ownedClaims);
-        if (price.isEmpty()) {
-            return denied(state, playerId, Optional.of(key), playerPosition, Status.PRICE_OVERFLOW,
-                    "price_overflow", 0, state.economyBalance(playerId).orElse(0L), timestampEpochMillis, transactionId);
-        }
-        long beforeBalance = state.economyBalance(playerId).orElse(-1L);
-        if (beforeBalance < 0) {
-            return denied(state, playerId, Optional.of(key), playerPosition, Status.ACCOUNT_NOT_FOUND,
-                    "account_not_found", price.orElseThrow(), 0, timestampEpochMillis, transactionId);
-        }
-        long purchasePrice = price.orElseThrow();
-        if (purchasePrice > beforeBalance) {
-            return denied(state, playerId, Optional.of(key), playerPosition, Status.INSUFFICIENT_FUNDS,
-                    "insufficient_funds", purchasePrice, beforeBalance, timestampEpochMillis, transactionId);
-        }
+        long beforeBalance = evaluation.balance();
+        long purchasePrice = evaluation.price();
         if (!state.canCommitEconomyTransaction(transactionId, timestampEpochMillis)) {
             return denied(state, playerId, Optional.of(key), playerPosition, Status.TRANSACTION_LEDGER_FULL,
                     "transaction_ledger_full", purchasePrice, beforeBalance, timestampEpochMillis, transactionId);
@@ -131,6 +102,72 @@ public final class ClaimPurchaseService {
                         "claim_purchase", transactionId));
         EconomyMonitoringService.publish(alerts);
         return result(Status.SUCCESS, Optional.of(key), purchasePrice, afterBalance, transactionId, true);
+    }
+
+    public static PurchaseEvaluation evaluatePurchase(
+            PlatformSavedData state,
+            UUID playerId,
+            ResourceKey<Level> hubDimension,
+            ResourceKey<Level> playerDimension,
+            BlockPos playerPosition,
+            Predicate<ClaimKey> isEligible,
+            Predicate<ClaimKey> isProtected,
+            long basePrice,
+            long priceIncrease,
+            int ownershipCap) {
+        if (state == null || playerId == null || hubDimension == null || playerDimension == null
+                || playerPosition == null || isEligible == null || isProtected == null) {
+            return evaluation(Status.INVALID_REQUEST, Optional.empty(), Optional.empty(), 0, 0, 0, ownershipCap);
+        }
+
+        ClaimKey key = ClaimKey.at(playerDimension, playerPosition);
+        int ownedClaims = state.claimCount(playerId);
+        long balance = state.economyBalance(playerId).orElse(0L);
+        if (!state.isWritable()) {
+            return evaluation(Status.READ_ONLY_SCHEMA, Optional.of(key),
+                    state.claim(key).map(Claim::ownerId), 0, balance, ownedClaims, ownershipCap);
+        }
+        if (!validConfiguration(basePrice, priceIncrease, ownershipCap)) {
+            return evaluation(Status.INVALID_CONFIGURATION, Optional.of(key), Optional.empty(),
+                    0, balance, ownedClaims, ownershipCap);
+        }
+        Optional<Long> price = calculatePrice(basePrice, priceIncrease, ownedClaims);
+        long displayedPrice = price.orElse(0L);
+        if (!WorldTopology.HUB.equals(hubDimension) || !WorldTopology.allowsClaims(playerDimension)) {
+            return evaluation(Status.NOT_IN_HUB, Optional.of(key), Optional.empty(),
+                    displayedPrice, balance, ownedClaims, ownershipCap);
+        }
+        if (isProtected.test(key)) {
+            return evaluation(Status.PROTECTED_CHUNK, Optional.of(key), Optional.empty(),
+                    displayedPrice, balance, ownedClaims, ownershipCap);
+        }
+        if (!isEligible.test(key)) {
+            return evaluation(Status.INELIGIBLE_CHUNK, Optional.of(key), Optional.empty(),
+                    displayedPrice, balance, ownedClaims, ownershipCap);
+        }
+        Optional<Claim> retained = state.claim(key);
+        if (retained.isPresent()) {
+            return evaluation(Status.ALREADY_CLAIMED, Optional.of(key),
+                    retained.map(Claim::ownerId), displayedPrice, balance, ownedClaims, ownershipCap);
+        }
+        if (ownedClaims >= ownershipCap || state.claimCount() >= Claim.MAX_CLAIMS) {
+            return evaluation(Status.OWNERSHIP_CAP_REACHED, Optional.of(key), Optional.empty(),
+                    displayedPrice, balance, ownedClaims, ownershipCap);
+        }
+        if (price.isEmpty()) {
+            return evaluation(Status.PRICE_OVERFLOW, Optional.of(key), Optional.empty(),
+                    0, balance, ownedClaims, ownershipCap);
+        }
+        if (state.economyBalance(playerId).isEmpty()) {
+            return evaluation(Status.ACCOUNT_NOT_FOUND, Optional.of(key), Optional.empty(),
+                    displayedPrice, 0, ownedClaims, ownershipCap);
+        }
+        if (displayedPrice > balance) {
+            return evaluation(Status.INSUFFICIENT_FUNDS, Optional.of(key), Optional.empty(),
+                    displayedPrice, balance, ownedClaims, ownershipCap);
+        }
+        return evaluation(Status.SUCCESS, Optional.of(key), Optional.empty(),
+                displayedPrice, balance, ownedClaims, ownershipCap);
     }
 
     static Optional<Long> calculatePrice(long basePrice, long priceIncrease, int ownedClaims) {
@@ -207,6 +244,17 @@ public final class ClaimPurchaseService {
         return new PurchaseResult(status, claim, price, balance, transactionId, auditRecorded);
     }
 
+    private static PurchaseEvaluation evaluation(
+            Status status,
+            Optional<ClaimKey> claim,
+            Optional<UUID> ownerId,
+            long price,
+            long balance,
+            int ownedClaims,
+            int ownershipCap) {
+        return new PurchaseEvaluation(status, claim, ownerId, price, balance, ownedClaims, ownershipCap);
+    }
+
     public enum Status {
         SUCCESS,
         DUPLICATE_TRANSACTION,
@@ -223,7 +271,33 @@ public final class ClaimPurchaseService {
         INVALID_CONFIGURATION,
         PRICE_OVERFLOW,
         INSUFFICIENT_FUNDS,
-        TRANSACTION_LEDGER_FULL
+        TRANSACTION_LEDGER_FULL;
+
+        public String id() {
+            return name().toLowerCase(Locale.ROOT);
+        }
+
+        public String evaluationTranslationKey() {
+            return "claim_purchase_evaluation.rovenfall." + id();
+        }
+    }
+
+    public record PurchaseEvaluation(
+            Status status,
+            Optional<ClaimKey> claim,
+            Optional<UUID> ownerId,
+            long price,
+            long balance,
+            int ownedClaims,
+            int ownershipCap) {
+        public PurchaseEvaluation {
+            claim = claim == null ? Optional.empty() : claim;
+            ownerId = ownerId == null ? Optional.empty() : ownerId;
+        }
+
+        public boolean allowed() {
+            return status == Status.SUCCESS;
+        }
     }
 
     public record PurchaseResult(

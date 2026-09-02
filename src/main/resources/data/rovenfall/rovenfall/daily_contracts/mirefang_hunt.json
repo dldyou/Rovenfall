@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.mirefang_hunt",
+  "description_translation_key": "daily_contract_description.rovenfall.mirefang_hunt",
+  "kind": "hunting_contribution",
+  "target": "rovenfall:mirefang",
+  "required_experience": 160,
+  "currency_reward": 170
+}

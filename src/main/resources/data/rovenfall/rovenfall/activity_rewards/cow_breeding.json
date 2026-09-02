@@ -1,0 +1,9 @@
+{
+  "track": "farming",
+  "kind": "breeding_completion",
+  "target": "minecraft:cow",
+  "experience": 10,
+  "window_millis": 60000,
+  "target_window_cap": 30,
+  "player_window_cap": 80
+}

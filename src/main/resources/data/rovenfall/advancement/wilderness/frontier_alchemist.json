@@ -1,0 +1,111 @@
+{
+  "parent": "rovenfall:wilderness/hunt_the_frontier",
+  "criteria": {
+    "mireguard_tonic": {
+      "conditions": {
+        "items": [
+          {
+            "items": "rovenfall:mireguard_tonic"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "cinderward_tonic": {
+      "conditions": {
+        "items": [
+          {
+            "items": "rovenfall:cinderward_tonic"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "ashveil_tonic": {
+      "conditions": {
+        "items": [
+          {
+            "items": "rovenfall:ashveil_tonic"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "runeward_tonic": {
+      "conditions": {
+        "items": [
+          {
+            "items": "rovenfall:runeward_tonic"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "froststep_tonic": {
+      "conditions": {
+        "items": [
+          {
+            "items": "rovenfall:froststep_tonic"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "tidebreath_tonic": {
+      "conditions": {
+        "items": [
+          {
+            "items": "rovenfall:tidebreath_tonic"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "deepsight_tonic": {
+      "conditions": {
+        "items": [
+          {
+            "items": "rovenfall:deepsight_tonic"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancements.rovenfall.wilderness.frontier_alchemist.description"
+    },
+    "frame": "goal",
+    "icon": {
+      "id": "rovenfall:runeward_tonic"
+    },
+    "title": {
+      "translate": "advancements.rovenfall.wilderness.frontier_alchemist.title"
+    }
+  },
+  "requirements": [
+    [
+      "mireguard_tonic"
+    ],
+    [
+      "cinderward_tonic"
+    ],
+    [
+      "ashveil_tonic"
+    ],
+    [
+      "runeward_tonic"
+    ],
+    [
+      "froststep_tonic"
+    ],
+    [
+      "tidebreath_tonic"
+    ],
+    [
+      "deepsight_tonic"
+    ]
+  ],
+  "sends_telemetry_event": false
+}

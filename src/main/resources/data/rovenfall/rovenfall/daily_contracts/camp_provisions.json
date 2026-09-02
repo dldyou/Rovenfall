@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.camp_provisions",
+  "description_translation_key": "daily_contract_description.rovenfall.camp_provisions",
+  "kind": "cooking_result",
+  "target": "minecraft:cooked_beef",
+  "required_experience": 24,
+  "currency_reward": 90
+}

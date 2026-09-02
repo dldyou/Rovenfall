@@ -1,0 +1,37 @@
+{
+  "parent": "rovenfall:wilderness/frontier_feast",
+  "criteria": {
+    "breed_goat": {
+      "conditions": {
+        "child": [
+          {
+            "condition": "minecraft:entity_properties",
+            "entity": "this",
+            "predicate": {
+              "minecraft:entity_type": "minecraft:goat"
+            }
+          }
+        ]
+      },
+      "trigger": "minecraft:bred_animals"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancements.rovenfall.wilderness.highland_herd.description"
+    },
+    "frame": "task",
+    "icon": {
+      "id": "rovenfall:frontier_feed"
+    },
+    "title": {
+      "translate": "advancements.rovenfall.wilderness.highland_herd.title"
+    }
+  },
+  "requirements": [
+    [
+      "breed_goat"
+    ]
+  ],
+  "sends_telemetry_event": false
+}

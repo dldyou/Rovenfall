@@ -1,0 +1,11 @@
+{
+  "type": "neoforge:add_spawn_costs",
+  "biomes": "#rovenfall:deepstone_husk_spawns",
+  "entity_types": [
+    "rovenfall:deepstone_husk"
+  ],
+  "spawn_cost": {
+    "energy_budget": 0.26,
+    "charge": 0.15
+  }
+}

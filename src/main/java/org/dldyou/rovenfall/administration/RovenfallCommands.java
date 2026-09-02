@@ -7,8 +7,11 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.logging.LogUtils;
 import java.time.Instant;
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import net.minecraft.core.BlockPos;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.DimensionArgument;
@@ -25,6 +28,13 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.Permissions;
 import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import org.dldyou.rovenfall.activities.ActivityTrack;
+import org.dldyou.rovenfall.activities.ActivityLevelReloadListener;
+import org.dldyou.rovenfall.activities.ActivityChallengeReloadListener;
+import org.dldyou.rovenfall.activities.DailyContractReloadListener;
+import org.dldyou.rovenfall.activities.WeeklyExpeditionReloadListener;
+import org.dldyou.rovenfall.careers.CareerCatalog;
+import org.dldyou.rovenfall.careers.CareerDefinitionReloadListener;
 import org.dldyou.rovenfall.economy.ShopInstance;
 import org.dldyou.rovenfall.economy.ShopTemplateReloadListener;
 import org.dldyou.rovenfall.economy.ShopTemplateSnapshot;
@@ -39,6 +49,9 @@ import org.dldyou.rovenfall.world.ProtectedRegion;
 import org.dldyou.rovenfall.world.PortalDefinition;
 import org.dldyou.rovenfall.world.WorldTopology;
 import org.slf4j.Logger;
+import org.dldyou.rovenfall.worlds.Portal;
+import org.dldyou.rovenfall.worlds.SafeArrivalResolver;
+import org.dldyou.rovenfall.mobs.BossEvents;
 
 public final class RovenfallCommands {
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -50,6 +63,11 @@ public final class RovenfallCommands {
     }
 
     public static void register(RegisterCommandsEvent event) {
+        var playerHelpCommand = Commands.literal("help")
+                .executes(context -> showHelp(context.getSource(), false));
+        var adminHelpCommand = Commands.literal("help")
+                .executes(context -> showHelp(context.getSource(), true));
+
         var roleCommand = Commands.literal("role")
                 .then(Commands.literal("set")
                         .then(Commands.argument("player", EntityArgument.player())
@@ -103,6 +121,28 @@ public final class RovenfallCommands {
                                                         StringArgumentType.getString(context, "reason"),
                                                         StringArgumentType.getString(context, "query")))))));
 
+        var searchCommand = Commands.literal("search")
+                .then(Commands.argument("scope", StringArgumentType.word())
+                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(
+                                AdminSearchService.Scope.ids(), builder))
+                        .then(Commands.argument("page", IntegerArgumentType.integer(1))
+                                .then(Commands.argument("query", StringArgumentType.greedyString())
+                                        .executes(context -> openAdminSearch(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "scope"),
+                                                IntegerArgumentType.getInteger(context, "page") - 1,
+                                                StringArgumentType.getString(context, "query"))))));
+
+        var reverseCommand = Commands.literal("reverse")
+                .then(Commands.argument("original_transaction_id", UuidArgument.uuid())
+                        .then(Commands.argument("reversal_transaction_id", UuidArgument.uuid())
+                                .then(Commands.argument("reason", StringArgumentType.greedyString())
+                                        .executes(context -> reverseTargetedTransaction(
+                                                context.getSource(),
+                                                UuidArgument.getUuid(context, "original_transaction_id"),
+                                                UuidArgument.getUuid(context, "reversal_transaction_id"),
+                                                StringArgumentType.getString(context, "reason"))))));
+
         var snapshotCommand = Commands.literal("snapshot")
                 .then(Commands.literal("create")
                         .then(Commands.argument("reason", StringArgumentType.greedyString())
@@ -119,7 +159,7 @@ public final class RovenfallCommands {
                                                         UuidArgument.getUuid(context, "transaction_id"),
                                                         StringArgumentType.getString(context, "reason")))))));
 
-        var wildernessCommand = Commands.literal("wilderness")
+        var restartWildernessCommand = Commands.literal("wilderness-restart")
                 .requires(RovenfallCommands::canResetWilderness)
                 .then(Commands.literal("reset")
                         .then(Commands.literal("warn")
@@ -146,6 +186,37 @@ public final class RovenfallCommands {
                                                                 UuidArgument.getUuid(context, "snapshot_id"),
                                                                 UuidArgument.getUuid(context, "transaction_id"),
                                                                 StringArgumentType.getString(context, "reason"))))))));
+
+        var wildernessCommand = Commands.literal("wilderness")
+                .then(Commands.literal("reset")
+                        .then(Commands.literal("confirm")
+                                .then(Commands.argument("reason", StringArgumentType.greedyString())
+                                        .executes(context -> resetWilderness(
+                                                context.getSource(),
+                                                StringArgumentType.getString(context, "reason"))))))
+                .then(Commands.literal("status")
+                        .executes(context -> viewWildernessReset(context.getSource(), null))
+                        .then(Commands.argument("operation_id", UuidArgument.uuid())
+                                .executes(context -> viewWildernessReset(
+                                        context.getSource(),
+                                        UuidArgument.getUuid(context, "operation_id")))));
+
+        var arenaBossCommand = Commands.literal("arena-boss")
+                .then(Commands.literal("start")
+                        .then(Commands.argument(
+                                        "radius",
+                                        IntegerArgumentType.integer(
+                                                org.dldyou.rovenfall.mobs.BossEncounter.MIN_RADIUS,
+                                                org.dldyou.rovenfall.mobs.BossEncounter.MAX_RADIUS))
+                                .then(Commands.argument("encounter_id", UuidArgument.uuid())
+                                        .then(Commands.argument("reason", StringArgumentType.greedyString())
+                                                .executes(context -> startBossEncounter(
+                                                        context.getSource(),
+                                                        IntegerArgumentType.getInteger(context, "radius"),
+                                                        UuidArgument.getUuid(context, "encounter_id"),
+                                                        StringArgumentType.getString(context, "reason")))))))
+                .then(Commands.literal("status")
+                        .executes(context -> viewBossEncounter(context.getSource())));
 
         var economyCommand = Commands.literal("economy")
                 .then(Commands.literal("grant")
@@ -283,6 +354,7 @@ public final class RovenfallCommands {
                 .then(Commands.literal("create")
                         .then(Commands.argument("shop_id", IdentifierArgument.id())
                                 .then(Commands.argument("template_id", IdentifierArgument.id())
+                                        .suggests(RovenfallCommands::suggestShopTemplateIds)
                                         .then(Commands.argument("transaction_id", UuidArgument.uuid())
                                                 .then(Commands.argument("reason", StringArgumentType.greedyString())
                                                         .executes(context -> createShop(
@@ -340,10 +412,89 @@ public final class RovenfallCommands {
                         .then(removeOfferCommand)
                         .then(restockCommand));
 
+        var portalCreateReason = Commands.argument("reason", StringArgumentType.greedyString())
+                .executes(context -> createPortal(
+                        context.getSource(),
+                        IdentifierArgument.getId(context, "portal_id"),
+                        DimensionArgument.getDimension(context, "destination_dimension"),
+                        BlockPosArgument.getBlockPos(context, "destination_position"),
+                        IntegerArgumentType.getInteger(context, "protection_radius"),
+                        IntegerArgumentType.getInteger(context, "search_radius"),
+                        IntegerArgumentType.getInteger(context, "cooldown_seconds"),
+                        UuidArgument.getUuid(context, "transaction_id"),
+                        StringArgumentType.getString(context, "reason")));
+        var portalCreateTransaction = Commands.argument("transaction_id", UuidArgument.uuid())
+                .then(portalCreateReason);
+        var portalCreateCooldown = Commands.argument(
+                "cooldown_seconds", IntegerArgumentType.integer(0, Portal.MAX_COOLDOWN_SECONDS))
+                .then(portalCreateTransaction);
+        var portalCreateSearch = Commands.argument(
+                "search_radius", IntegerArgumentType.integer(0, SafeArrivalResolver.MAX_SEARCH_RADIUS))
+                .then(portalCreateCooldown);
+        var portalCreateProtection = Commands.argument(
+                "protection_radius", IntegerArgumentType.integer(0, Portal.MAX_PROTECTION_RADIUS))
+                .then(portalCreateSearch);
+        var portalCreatePosition = Commands.argument("destination_position", BlockPosArgument.blockPos())
+                .then(portalCreateProtection);
+        var portalCreateDimension = Commands.argument("destination_dimension", DimensionArgument.dimension())
+                .then(portalCreatePosition);
+        var portalCreateId = Commands.argument("portal_id", IdentifierArgument.id()).then(portalCreateDimension);
+
+        var portalDeleteReason = Commands.argument("reason", StringArgumentType.greedyString())
+                .executes(context -> deletePortal(
+                        context.getSource(),
+                        IdentifierArgument.getId(context, "portal_id"),
+                        UuidArgument.getUuid(context, "transaction_id"),
+                        StringArgumentType.getString(context, "reason")));
+        var portalDeleteTransaction = Commands.argument("transaction_id", UuidArgument.uuid())
+                .then(portalDeleteReason);
+        var portalDeleteId = Commands.argument("portal_id", IdentifierArgument.id())
+                .suggests(RovenfallCommands::suggestPortalIds)
+                .then(portalDeleteTransaction);
+        var portalInfoId = Commands.argument("portal_id", IdentifierArgument.id())
+                .suggests(RovenfallCommands::suggestPortalIds)
+                .executes(context -> viewManagedPortal(
+                        context.getSource(), IdentifierArgument.getId(context, "portal_id")));
+        var adminPortalCommand = Commands.literal("portal")
+                .then(Commands.literal("create").then(portalCreateId))
+                .then(Commands.literal("delete").then(portalDeleteId))
+                .then(Commands.literal("info").then(portalInfoId));
+
         var playerShopCommand = Commands.literal("shop")
+                .then(Commands.literal("info")
+                        .then(Commands.argument("shop_id", IdentifierArgument.id())
+                                .suggests(RovenfallCommands::suggestShopIds)
+                                .executes(context -> viewShop(
+                                        context.getSource(),
+                                        IdentifierArgument.getId(context, "shop_id")))))
                 .then(tradeCommand("buy", ShopTradeService.Direction.BUY))
                 .then(tradeCommand("sell", ShopTradeService.Direction.SELL));
+        var playerPortalCommand = Commands.literal("travel")
+                .executes(context -> useManagedPortal(context.getSource(), null))
+                .then(Commands.argument("portal_id", IdentifierArgument.id())
+                        .suggests(RovenfallCommands::suggestPortalIds)
+                        .executes(context -> useManagedPortal(
+                                context.getSource(), IdentifierArgument.getId(context, "portal_id"))));
+        var claimExplainCommand = Commands.literal("explain")
+                .then(Commands.literal("buy")
+                        .executes(context -> explainClaimPurchase(context.getSource())))
+                .then(Commands.literal("action")
+                        .then(Commands.argument("action", StringArgumentType.word())
+                                .suggests((context, builder) -> SharedSuggestionProvider.suggest(
+                                        ClaimProtectionService.Action.ids(), builder))
+                                .executes(context -> explainClaimAction(
+                                        context.getSource(), StringArgumentType.getString(context, "action")))))
+                .then(Commands.literal("role")
+                        .then(Commands.argument("player", EntityArgument.player())
+                                .then(Commands.argument("role", StringArgumentType.word())
+                                        .suggests((context, builder) -> SharedSuggestionProvider.suggest(
+                                                ClaimRole.ids(), builder))
+                                        .executes(context -> explainClaimRole(
+                                                context.getSource(),
+                                                EntityArgument.getPlayer(context, "player"),
+                                                StringArgumentType.getString(context, "role"))))));
         var playerClaimCommand = Commands.literal("claim")
+                .then(claimExplainCommand)
                 .then(Commands.literal("buy")
                         .executes(context -> buyClaim(context.getSource())))
                 .then(Commands.literal("info")
@@ -464,16 +615,161 @@ public final class RovenfallCommands {
                                 .executes(context -> listPortals(
                                         context.getSource(), IntegerArgumentType.getInteger(context, "page") - 1))));
 
+        var playerActivityCommand = Commands.literal("activity")
+                .executes(context -> viewActivity(context.getSource()))
+                .then(Commands.literal("info")
+                        .executes(context -> viewActivity(context.getSource())));
+
+        var playerChallengeCommand = Commands.literal("challenge")
+                .executes(context -> viewChallenges(context.getSource()))
+                .then(Commands.literal("list")
+                        .executes(context -> viewChallenges(context.getSource())))
+                .then(Commands.literal("info")
+                        .then(Commands.argument("challenge_id", IdentifierArgument.id())
+                                .suggests(RovenfallCommands::suggestChallengeIds)
+                                .executes(context -> viewChallenge(
+                                        context.getSource(),
+                                        IdentifierArgument.getId(context, "challenge_id")))))
+                .then(Commands.literal("claim")
+                        .then(Commands.argument("challenge_id", IdentifierArgument.id())
+                                .suggests(RovenfallCommands::suggestChallengeIds)
+                                .executes(context -> claimChallenge(
+                                        context.getSource(),
+                                        IdentifierArgument.getId(context, "challenge_id")))));
+
+        var playerContractCommand = Commands.literal("contract")
+                .executes(context -> viewDailyContracts(context.getSource()))
+                .then(Commands.literal("list")
+                        .executes(context -> viewDailyContracts(context.getSource())))
+                .then(Commands.literal("info")
+                        .then(Commands.argument("contract_id", IdentifierArgument.id())
+                                .suggests(RovenfallCommands::suggestDailyContractIds)
+                                .executes(context -> viewDailyContract(
+                                        context.getSource(),
+                                        IdentifierArgument.getId(context, "contract_id")))))
+                .then(Commands.literal("claim")
+                        .then(Commands.argument("contract_id", IdentifierArgument.id())
+                                .suggests(RovenfallCommands::suggestDailyContractIds)
+                                .executes(context -> claimDailyContract(
+                                        context.getSource(),
+                                        IdentifierArgument.getId(context, "contract_id")))));
+
+        var playerExpeditionCommand = Commands.literal("expedition")
+                .executes(context -> viewWeeklyExpeditions(context.getSource()))
+                .then(Commands.literal("list")
+                        .executes(context -> viewWeeklyExpeditions(context.getSource())))
+                .then(Commands.literal("info")
+                        .then(Commands.argument("expedition_id", IdentifierArgument.id())
+                                .suggests(RovenfallCommands::suggestWeeklyExpeditionIds)
+                                .executes(context -> viewWeeklyExpedition(
+                                        context.getSource(),
+                                        IdentifierArgument.getId(context, "expedition_id")))))
+                .then(Commands.literal("claim")
+                        .then(Commands.argument("expedition_id", IdentifierArgument.id())
+                                .suggests(RovenfallCommands::suggestWeeklyExpeditionIds)
+                                .executes(context -> claimWeeklyExpedition(
+                                        context.getSource(),
+                                        IdentifierArgument.getId(context, "expedition_id")))));
+
+        var playerCareerCommand = Commands.literal("profession")
+                .executes(context -> viewCareer(context.getSource()))
+                .then(Commands.literal("info")
+                        .executes(context -> viewCareer(context.getSource())))
+                .then(Commands.literal("explain")
+                        .then(Commands.argument("career_id", IdentifierArgument.id())
+                                .suggests(RovenfallCommands::suggestCareerIds)
+                                .executes(context -> explainCareerPromotion(
+                                        context.getSource(),
+                                        IdentifierArgument.getId(context, "career_id")))))
+                .then(Commands.literal("promote")
+                        .then(Commands.argument("career_id", IdentifierArgument.id())
+                                .suggests(RovenfallCommands::suggestCareerIds)
+                                .then(Commands.argument("transaction_id", UuidArgument.uuid())
+                                        .then(Commands.literal("confirm")
+                                                .executes(context -> promoteCareer(
+                                                        context.getSource(),
+                                                        IdentifierArgument.getId(context, "career_id"),
+                                                        UuidArgument.getUuid(context, "transaction_id")))))));
+
+        var playerSkillCommand = Commands.literal("ability")
+                .executes(context -> viewSkills(context.getSource(), null))
+                .then(Commands.literal("info")
+                        .executes(context -> viewSkills(context.getSource(), null))
+                        .then(Commands.argument("career_id", IdentifierArgument.id())
+                                .suggests(RovenfallCommands::suggestCareerIds)
+                                .executes(context -> viewSkills(
+                                        context.getSource(),
+                                        IdentifierArgument.getId(context, "career_id")))))
+                .then(Commands.literal("explain")
+                        .then(Commands.argument("skill_id", IdentifierArgument.id())
+                                .suggests(RovenfallCommands::suggestSkillIds)
+                                .executes(context -> explainSkillUnlock(
+                                        context.getSource(),
+                                        IdentifierArgument.getId(context, "skill_id")))))
+                .then(Commands.literal("unlock")
+                        .then(Commands.argument("skill_id", IdentifierArgument.id())
+                                .suggests(RovenfallCommands::suggestSkillIds)
+                                .then(Commands.argument("transaction_id", UuidArgument.uuid())
+                                        .then(Commands.literal("confirm")
+                                                .executes(context -> unlockSkill(
+                                                        context.getSource(),
+                                                        IdentifierArgument.getId(context, "skill_id"),
+                                                        UuidArgument.getUuid(context, "transaction_id")))))))
+                .then(Commands.literal("reset")
+                        .then(Commands.literal("explain")
+                                .then(Commands.argument("career_id", IdentifierArgument.id())
+                                        .suggests(RovenfallCommands::suggestCareerIds)
+                                        .executes(context -> explainSkillReset(
+                                                context.getSource(),
+                                                IdentifierArgument.getId(context, "career_id")))))
+                        .then(Commands.argument("career_id", IdentifierArgument.id())
+                                .suggests(RovenfallCommands::suggestCareerIds)
+                                .then(Commands.argument("transaction_id", UuidArgument.uuid())
+                                        .then(Commands.literal("confirm")
+                                                .executes(context -> resetSkills(
+                                                        context.getSource(),
+                                                        IdentifierArgument.getId(context, "career_id"),
+                                                        UuidArgument.getUuid(context, "transaction_id")))))))
+                .then(Commands.literal("slots")
+                        .executes(context -> viewActiveSkillSlots(context.getSource())))
+                .then(Commands.literal("equip")
+                        .then(Commands.argument("slot", IntegerArgumentType.integer(1, 4))
+                                .then(Commands.argument("skill_id", IdentifierArgument.id())
+                                        .suggests(RovenfallCommands::suggestActiveSkillIds)
+                                        .executes(context -> equipActiveSkill(
+                                                context.getSource(),
+                                                IntegerArgumentType.getInteger(context, "slot"),
+                                                IdentifierArgument.getId(context, "skill_id"))))))
+                .then(Commands.literal("clear")
+                        .then(Commands.argument("slot", IntegerArgumentType.integer(1, 4))
+                                .executes(context -> clearActiveSkill(
+                                        context.getSource(),
+                                        IntegerArgumentType.getInteger(context, "slot")))))
+                .then(Commands.literal("use")
+                        .then(Commands.argument("slot", IntegerArgumentType.integer(1, 4))
+                                .executes(context -> useActiveSkill(
+                                        context.getSource(),
+                                        IntegerArgumentType.getInteger(context, "slot")))));
+
         event.getDispatcher().register(Commands.literal("rovenfall")
+                .executes(context -> showHelp(context.getSource(), false))
+                .then(playerHelpCommand)
                 .then(Commands.literal("menu")
                         .executes(context -> openPlayerMenu(context.getSource())))
                 .then(Commands.literal("inventory")
                         .executes(context -> openCharacterInventory(context.getSource())))
                 .then(playerShopCommand)
+                .then(playerPortalCommand)
                 .then(playerClaimCommand)
                 .then(RpgCommands.careerCommand())
                 .then(RpgCommands.skillCommand())
                 .then(portalCommand)
+                .then(playerActivityCommand)
+                .then(playerChallengeCommand)
+                .then(playerContractCommand)
+                .then(playerExpeditionCommand)
+                .then(playerCareerCommand)
+                .then(playerSkillCommand)
                 .then(Commands.literal("admin")
                         .requires(RovenfallCommands::canUseAdministration)
                         .then(guiCommand)
@@ -482,13 +778,18 @@ public final class RovenfallCommands {
                         .then(economyCommand)
                         .then(operationsCommand)
                         .then(adminShopCommand)
+                        .then(adminPortalCommand)
                         .then(adminClaimCommand)
                         .then(protectedRegionCommand)
                         .then(RpgAdminCommands.command())
                         .then(BossAdminCommands.command())
+                        .then(searchCommand)
+                        .then(reverseCommand)
                         .then(auditCommand)
                         .then(snapshotCommand)
-                        .then(wildernessCommand)));
+                        .then(wildernessCommand)
+                        .then(restartWildernessCommand)
+                        .then(arenaBossCommand)));
     }
 
     private static int openPlayerMenu(CommandSourceStack source) throws CommandSyntaxException {
@@ -575,6 +876,1214 @@ public final class RovenfallCommands {
                                                                                 create)))))))));
     }
 
+
+    private static int showHelp(CommandSourceStack source, boolean administrator) {
+        String prefix = administrator
+                ? "command.rovenfall.admin.help."
+                : "command.rovenfall.help.";
+        String[] sections = administrator
+                ? new String[]{"header", "search", "audit", "roles", "economy", "shops", "worlds",
+                        "claims", "reverse", "snapshot", "destructive"}
+                : new String[]{
+                        "header", "shop", "portal", "claim", "activity", "challenge", "contract", "expedition",
+                        "career", "skill"};
+        for (String section : sections) {
+            source.sendSuccess(() -> Component.translatable(prefix + section), false);
+        }
+        return 1;
+    }
+
+    private static int startBossEncounter(
+            CommandSourceStack source, int radius, UUID encounterId, String reason) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = BossEncounterService.start(
+                state,
+                actorId(source),
+                authorizationOverride(source, state),
+                player.level().dimension(),
+                player.blockPosition(),
+                radius,
+                reason,
+                Instant.now().toEpochMilli(),
+                encounterId,
+                encounter -> BossEvents.spawnManaged(source.getLevel(), encounter));
+        return switch (result.status()) {
+            case SUCCESS -> {
+                var encounter = result.encounter().orElseThrow();
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.admin.boss.start.success",
+                        encounter.encounterId().toString(),
+                        encounter.origin().toShortString(),
+                        encounter.radius()), true);
+                yield 1;
+            }
+            case DUPLICATE_TRANSACTION -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.admin.boss.start.duplicate", encounterId.toString()), false);
+                yield 1;
+            }
+            case TRANSACTION_ID_CONFLICT -> failure(
+                    source, "command.rovenfall.admin.boss.error.transaction_id_conflict");
+            case UNAUTHORIZED -> failure(source, "command.rovenfall.admin.boss.error.unauthorized");
+            case INVALID_REQUEST -> failure(source, "command.rovenfall.admin.boss.error.invalid_request");
+            case INVALID_REASON -> failure(
+                    source, "command.rovenfall.admin.error.invalid_reason", AdministrationService.MAX_REASON_LENGTH);
+            case ENCOUNTER_ACTIVE -> failure(source, "command.rovenfall.admin.boss.error.active");
+            case TRANSACTION_LEDGER_FULL -> failure(
+                    source, "command.rovenfall.admin.boss.error.transaction_ledger_full");
+            case SPAWN_FAILED -> failure(source, "command.rovenfall.admin.boss.error.spawn_failed");
+            case READ_ONLY_SCHEMA -> failure(
+                    source, "command.rovenfall.admin.error.read_only_schema", state.schemaVersion());
+        };
+    }
+
+    private static int viewBossEncounter(CommandSourceStack source) {
+        var encounter = PlatformSavedData.get(source.getServer()).bossEncounter();
+        if (encounter.isEmpty()) {
+            return failure(source, "command.rovenfall.admin.boss.status.none");
+        }
+        var value = encounter.orElseThrow();
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.admin.boss.status",
+                value.encounterId().toString(),
+                value.status().name().toLowerCase(java.util.Locale.ROOT),
+                value.phase(),
+                value.dimension().identifier().toString(),
+                value.origin().toShortString(),
+                value.radius(),
+                value.contributions().size(),
+                value.settledPlayers().size()), false);
+        return 1;
+    }
+
+    private static int viewActivity(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        source.sendSuccess(() -> Component.translatable("command.rovenfall.activity.header"), false);
+        for (ActivityTrack track : ActivityTrack.values()) {
+            long experience = state.activityExperience(player.getUUID(), track);
+            var definition = ActivityLevelReloadListener.get(source.getServer(), track);
+            if (definition.isEmpty()) {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.activity.line_unavailable",
+                        Component.translatable(track.translationKey()),
+                        experience), false);
+                continue;
+            }
+            var progress = definition.orElseThrow().progress(experience);
+            if (progress.maximum()) {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.activity.line_max",
+                        Component.translatable(track.translationKey()),
+                        progress.level(),
+                        progress.totalExperience()), false);
+            } else {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.activity.line",
+                        Component.translatable(track.translationKey()),
+                        progress.level(),
+                        progress.experienceIntoLevel(),
+                        progress.experienceForNextLevel(),
+                        progress.totalExperience()), false);
+            }
+        }
+        return 1;
+    }
+
+    private static int viewChallenges(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var definitions = ActivityChallengeReloadListener.snapshot(source.getServer()).orElse(Map.of());
+        if (definitions.isEmpty()) {
+            return failure(source, "command.rovenfall.challenge.error.catalog_unavailable");
+        }
+        Optional<Map<ActivityTrack, Integer>> retainedLevels = activityLevels(
+                source, state, player.getUUID());
+        if (retainedLevels.isEmpty()) {
+            return failure(source, "command.rovenfall.challenge.error.activity_levels_unavailable");
+        }
+        Map<ActivityTrack, Integer> levels = retainedLevels.orElseThrow();
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.challenge.header", definitions.size()), false);
+        definitions.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> {
+            var evaluation = ActivityChallengeService.evaluate(
+                    state, player.getUUID(), entry.getKey(), entry.getValue(), levels);
+            source.sendSuccess(() -> Component.translatable(
+                    "command.rovenfall.challenge.line",
+                    Component.translatable(entry.getValue().translationKey()),
+                    entry.getKey().toString(),
+                    Component.translatable(evaluation.status().translationKey()),
+                    entry.getValue().currencyReward()), false);
+        });
+        return 1;
+    }
+
+    private static int viewChallenge(
+            CommandSourceStack source,
+            Identifier challengeId) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var retainedDefinitions = ActivityChallengeReloadListener.snapshot(source.getServer());
+        if (retainedDefinitions.isEmpty() || retainedDefinitions.orElseThrow().isEmpty()) {
+            return failure(source, "command.rovenfall.challenge.error.catalog_unavailable");
+        }
+        var definitions = retainedDefinitions.orElseThrow();
+        var definition = definitions.get(challengeId);
+        if (definition == null) {
+            return failure(source, "command.rovenfall.challenge.error.not_found", challengeId.toString());
+        }
+        Optional<Map<ActivityTrack, Integer>> retainedLevels = activityLevels(
+                source, state, player.getUUID());
+        if (retainedLevels.isEmpty()) {
+            return failure(source, "command.rovenfall.challenge.error.activity_levels_unavailable");
+        }
+        var evaluation = ActivityChallengeService.evaluate(
+                state, player.getUUID(), challengeId, definition, retainedLevels.orElseThrow());
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.challenge.info.header",
+                Component.translatable(definition.translationKey()),
+                challengeId.toString()), false);
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.challenge.info.summary",
+                Component.translatable(definition.descriptionTranslationKey()),
+                Component.translatable(evaluation.status().translationKey()),
+                definition.currencyReward()), false);
+        evaluation.requirements().forEach(requirement -> source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.challenge.info.requirement",
+                Component.translatable(requirement.track().translationKey()),
+                requirement.currentLevel(),
+                requirement.requiredLevel(),
+                careerCondition(requirement.met())), false));
+        return 1;
+    }
+
+    private static int claimChallenge(
+            CommandSourceStack source,
+            Identifier challengeId) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var retainedDefinitions = ActivityChallengeReloadListener.snapshot(source.getServer());
+        if (retainedDefinitions.isEmpty() || retainedDefinitions.orElseThrow().isEmpty()) {
+            return failure(source, "command.rovenfall.challenge.error.catalog_unavailable");
+        }
+        var definitions = retainedDefinitions.orElseThrow();
+        var definition = definitions.get(challengeId);
+        if (definition == null) {
+            return failure(source, "command.rovenfall.challenge.error.not_found", challengeId.toString());
+        }
+        Optional<Map<ActivityTrack, Integer>> retainedLevels = activityLevels(
+                source, state, player.getUUID());
+        if (retainedLevels.isEmpty()) {
+            return failure(source, "command.rovenfall.challenge.error.activity_levels_unavailable");
+        }
+        var result = ActivityChallengeService.claim(
+                state,
+                player.getUUID(),
+                challengeId,
+                definition,
+                retainedLevels.orElseThrow(),
+                Instant.now().toEpochMilli(),
+                EconomyConfig.initialBalance(),
+                EconomyConfig.maximumBalance());
+        return switch (result.status()) {
+            case SUCCESS -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.challenge.claim.success",
+                        Component.translatable(definition.translationKey()),
+                        result.awardedCurrency(),
+                        result.balance()), false);
+                yield 1;
+            }
+            case ALREADY_CLAIMED -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.challenge.claim.already_claimed",
+                        Component.translatable(definition.translationKey())), false);
+                yield 1;
+            }
+            case REQUIREMENTS_NOT_MET -> failure(
+                    source,
+                    "command.rovenfall.challenge.claim.requirements_not_met",
+                    Component.translatable(definition.translationKey()));
+            case READ_ONLY_SCHEMA -> failure(
+                    source, "command.rovenfall.admin.error.read_only_schema", state.schemaVersion());
+            case TRANSACTION_CONFLICT -> failure(
+                    source, "command.rovenfall.challenge.error.transaction_conflict");
+            case REWARD_FAILED -> failure(
+                    source,
+                    "command.rovenfall.challenge.error.reward_failed",
+                    result.economyStatus().map(value -> value.name().toLowerCase(java.util.Locale.ROOT))
+                            .orElse("unknown"));
+            case INVALID_REQUEST -> failure(source, "command.rovenfall.challenge.error.invalid_request");
+            case CLAIMABLE -> failure(source, "command.rovenfall.challenge.error.invalid_request");
+        };
+    }
+
+    private static int viewDailyContracts(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var definitions = DailyContractReloadListener.snapshot(source.getServer()).orElse(Map.of());
+        if (definitions.isEmpty()) {
+            return failure(source, "command.rovenfall.contract.error.catalog_unavailable");
+        }
+        long timestamp = Instant.now().toEpochMilli();
+        String reset = Instant.ofEpochMilli(
+                DailyContractService.periodStart(timestamp) + DailyContractService.PERIOD_MILLIS).toString();
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.contract.header", definitions.size(), reset), false);
+        definitions.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> {
+            var evaluation = DailyContractService.evaluate(
+                    state, player.getUUID(), entry.getKey(), entry.getValue(), timestamp);
+            source.sendSuccess(() -> Component.translatable(
+                    "command.rovenfall.contract.line",
+                    Component.translatable(entry.getValue().translationKey()),
+                    entry.getKey().toString(),
+                    evaluation.progressExperience(),
+                    evaluation.requiredExperience(),
+                    Component.translatable(evaluation.status().translationKey()),
+                    entry.getValue().currencyReward()), false);
+        });
+        return 1;
+    }
+
+    private static int viewDailyContract(
+            CommandSourceStack source,
+            Identifier contractId) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var retainedDefinitions = DailyContractReloadListener.snapshot(source.getServer());
+        if (retainedDefinitions.isEmpty() || retainedDefinitions.orElseThrow().isEmpty()) {
+            return failure(source, "command.rovenfall.contract.error.catalog_unavailable");
+        }
+        var definition = retainedDefinitions.orElseThrow().get(contractId);
+        if (definition == null) {
+            return failure(source, "command.rovenfall.contract.error.not_found", contractId.toString());
+        }
+        var evaluation = DailyContractService.evaluate(
+                state, player.getUUID(), contractId, definition, Instant.now().toEpochMilli());
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.contract.info.header",
+                Component.translatable(definition.translationKey()),
+                contractId.toString()), false);
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.contract.info.summary",
+                Component.translatable(definition.descriptionTranslationKey()),
+                Component.translatable(evaluation.status().translationKey()),
+                definition.currencyReward()), false);
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.contract.info.objective",
+                definition.targetId().toString(),
+                Component.translatable(definition.kind().track().translationKey()),
+                evaluation.progressExperience(),
+                evaluation.requiredExperience(),
+                Instant.ofEpochMilli(evaluation.nextResetEpochMillis()).toString()), false);
+        return 1;
+    }
+
+    private static int claimDailyContract(
+            CommandSourceStack source,
+            Identifier contractId) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var retainedDefinitions = DailyContractReloadListener.snapshot(source.getServer());
+        if (retainedDefinitions.isEmpty() || retainedDefinitions.orElseThrow().isEmpty()) {
+            return failure(source, "command.rovenfall.contract.error.catalog_unavailable");
+        }
+        var definition = retainedDefinitions.orElseThrow().get(contractId);
+        if (definition == null) {
+            return failure(source, "command.rovenfall.contract.error.not_found", contractId.toString());
+        }
+        var result = DailyContractService.claim(
+                state,
+                player.getUUID(),
+                contractId,
+                definition,
+                Instant.now().toEpochMilli(),
+                EconomyConfig.initialBalance(),
+                EconomyConfig.maximumBalance());
+        return switch (result.status()) {
+            case SUCCESS -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.contract.claim.success",
+                        Component.translatable(definition.translationKey()),
+                        result.awardedCurrency(),
+                        result.balance()), false);
+                yield 1;
+            }
+            case ALREADY_CLAIMED -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.contract.claim.already_claimed",
+                        Component.translatable(definition.translationKey()),
+                        Instant.ofEpochMilli(result.evaluation().nextResetEpochMillis()).toString()), false);
+                yield 1;
+            }
+            case IN_PROGRESS -> failure(
+                    source,
+                    "command.rovenfall.contract.claim.in_progress",
+                    Component.translatable(definition.translationKey()),
+                    result.evaluation().progressExperience(),
+                    result.evaluation().requiredExperience());
+            case READ_ONLY_SCHEMA -> failure(
+                    source, "command.rovenfall.admin.error.read_only_schema", state.schemaVersion());
+            case TRANSACTION_CONFLICT -> failure(
+                    source, "command.rovenfall.contract.error.transaction_conflict");
+            case REWARD_FAILED -> failure(
+                    source,
+                    "command.rovenfall.contract.error.reward_failed",
+                    result.economyStatus().map(value -> value.name().toLowerCase(java.util.Locale.ROOT))
+                            .orElse("unknown"));
+            case INVALID_REQUEST, CLAIMABLE -> failure(
+                    source, "command.rovenfall.contract.error.invalid_request");
+        };
+    }
+
+    private static int viewWeeklyExpeditions(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var definitions = WeeklyExpeditionReloadListener.snapshot(source.getServer()).orElse(Map.of());
+        if (definitions.isEmpty()) {
+            return failure(source, "command.rovenfall.expedition.error.catalog_unavailable");
+        }
+        long timestamp = Instant.now().toEpochMilli();
+        String reset = Instant.ofEpochMilli(
+                WeeklyExpeditionService.periodStart(timestamp) + WeeklyExpeditionService.PERIOD_MILLIS).toString();
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.expedition.header", definitions.size(), reset), false);
+        definitions.entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> {
+            var evaluation = WeeklyExpeditionService.evaluate(
+                    state, player.getUUID(), entry.getKey(), entry.getValue(), timestamp);
+            long met = evaluation.requirements().stream()
+                    .filter(WeeklyExpeditionService.Requirement::met)
+                    .count();
+            source.sendSuccess(() -> Component.translatable(
+                    "command.rovenfall.expedition.line",
+                    Component.translatable(entry.getValue().translationKey()),
+                    entry.getKey().toString(),
+                    met,
+                    evaluation.requirements().size(),
+                    Component.translatable(evaluation.status().translationKey()),
+                    entry.getValue().currencyReward()), false);
+        });
+        return 1;
+    }
+
+    private static int viewWeeklyExpedition(
+            CommandSourceStack source,
+            Identifier expeditionId) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var retainedDefinitions = WeeklyExpeditionReloadListener.snapshot(source.getServer());
+        if (retainedDefinitions.isEmpty() || retainedDefinitions.orElseThrow().isEmpty()) {
+            return failure(source, "command.rovenfall.expedition.error.catalog_unavailable");
+        }
+        var definition = retainedDefinitions.orElseThrow().get(expeditionId);
+        if (definition == null) {
+            return failure(source, "command.rovenfall.expedition.error.not_found", expeditionId.toString());
+        }
+        var dailyContracts = DailyContractReloadListener.snapshot(source.getServer()).orElse(Map.of());
+        var evaluation = WeeklyExpeditionService.evaluate(
+                state, player.getUUID(), expeditionId, definition, Instant.now().toEpochMilli());
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.expedition.info.header",
+                Component.translatable(definition.translationKey()),
+                expeditionId.toString()), false);
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.expedition.info.summary",
+                Component.translatable(definition.descriptionTranslationKey()),
+                Component.translatable(evaluation.status().translationKey()),
+                definition.currencyReward(),
+                Instant.ofEpochMilli(evaluation.nextResetEpochMillis()).toString()), false);
+        evaluation.requirements().forEach(requirement -> {
+            var dailyContract = dailyContracts.get(requirement.dailyContractId());
+            Component dailyContractName = dailyContract == null
+                    ? Component.literal(requirement.dailyContractId().toString())
+                    : Component.translatable(dailyContract.translationKey());
+            source.sendSuccess(() -> Component.translatable(
+                    "command.rovenfall.expedition.info.requirement",
+                    dailyContractName,
+                    requirement.dailyContractId().toString(),
+                    requirement.currentCompletions(),
+                    requirement.requiredCompletions()), false);
+        });
+        return 1;
+    }
+
+    private static int claimWeeklyExpedition(
+            CommandSourceStack source,
+            Identifier expeditionId) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var retainedDefinitions = WeeklyExpeditionReloadListener.snapshot(source.getServer());
+        if (retainedDefinitions.isEmpty() || retainedDefinitions.orElseThrow().isEmpty()) {
+            return failure(source, "command.rovenfall.expedition.error.catalog_unavailable");
+        }
+        var definition = retainedDefinitions.orElseThrow().get(expeditionId);
+        if (definition == null) {
+            return failure(source, "command.rovenfall.expedition.error.not_found", expeditionId.toString());
+        }
+        var result = WeeklyExpeditionService.claim(
+                state,
+                player.getUUID(),
+                expeditionId,
+                definition,
+                Instant.now().toEpochMilli(),
+                EconomyConfig.initialBalance(),
+                EconomyConfig.maximumBalance());
+        return switch (result.status()) {
+            case SUCCESS -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.expedition.claim.success",
+                        Component.translatable(definition.translationKey()),
+                        result.awardedCurrency(),
+                        result.balance()), false);
+                yield 1;
+            }
+            case ALREADY_CLAIMED -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.expedition.claim.already_claimed",
+                        Component.translatable(definition.translationKey()),
+                        Instant.ofEpochMilli(result.evaluation().nextResetEpochMillis()).toString()), false);
+                yield 1;
+            }
+            case IN_PROGRESS -> {
+                long met = result.evaluation().requirements().stream()
+                        .filter(WeeklyExpeditionService.Requirement::met)
+                        .count();
+                yield failure(
+                        source,
+                        "command.rovenfall.expedition.claim.in_progress",
+                        Component.translatable(definition.translationKey()),
+                        met,
+                        result.evaluation().requirements().size());
+            }
+            case READ_ONLY_SCHEMA -> failure(
+                    source, "command.rovenfall.admin.error.read_only_schema", state.schemaVersion());
+            case TRANSACTION_CONFLICT -> failure(
+                    source, "command.rovenfall.expedition.error.transaction_conflict");
+            case REWARD_FAILED -> failure(
+                    source,
+                    "command.rovenfall.expedition.error.reward_failed",
+                    result.economyStatus().map(value -> value.name().toLowerCase(java.util.Locale.ROOT))
+                            .orElse("unknown"));
+            case INVALID_REQUEST, CLAIMABLE -> failure(
+                    source, "command.rovenfall.expedition.error.invalid_request");
+        };
+    }
+
+    private static int viewCareer(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        Optional<CareerCatalog> retainedCatalog = CareerDefinitionReloadListener.snapshot(source.getServer());
+        if (retainedCatalog.isEmpty()) {
+            return failure(source, "command.rovenfall.career.error.catalog_unavailable");
+        }
+        CareerCatalog catalog = retainedCatalog.orElseThrow();
+        var careers = state.playerCareerState(player.getUUID());
+        source.sendSuccess(() -> Component.translatable("command.rovenfall.career.info.header"), false);
+        careers.activeCareer().ifPresentOrElse(
+                careerId -> source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.career.info.active",
+                        careerName(catalog, careerId),
+                        careerId.toString()), false),
+                () -> source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.career.info.active.none"), false));
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.career.info.learned.header", careers.learnedCareers().size()), false);
+        careers.learnedCareers().stream().sorted().forEach(careerId -> {
+            long experience = careers.experience(careerId);
+            var definition = catalog.definition(careerId);
+            if (definition.isPresent()) {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.career.info.learned.line",
+                        Component.translatable(definition.orElseThrow().translationKey()),
+                        careerId.toString(),
+                        definition.orElseThrow().level(experience),
+                        experience), false);
+            } else {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.career.info.learned.unresolved",
+                        careerId.toString(),
+                        experience), false);
+            }
+        });
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.career.info.catalog.header", catalog.size()), false);
+        catalog.ids().stream().sorted().forEach(careerId -> {
+            var definition = catalog.definition(careerId).orElseThrow();
+            source.sendSuccess(() -> Component.translatable(
+                    "command.rovenfall.career.info.catalog.line",
+                    Component.translatable(definition.translationKey()),
+                    careerId.toString(),
+                    definition.tier()), false);
+        });
+        return 1;
+    }
+
+    private static int explainCareerPromotion(
+            CommandSourceStack source,
+            Identifier targetCareer) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        Optional<CareerCatalog> retainedCatalog = CareerDefinitionReloadListener.snapshot(source.getServer());
+        if (retainedCatalog.isEmpty()) {
+            return failure(source, "command.rovenfall.career.error.catalog_unavailable");
+        }
+        Optional<Map<ActivityTrack, Integer>> retainedLevels = activityLevels(source, state, player.getUUID());
+        if (retainedLevels.isEmpty()) {
+            return failure(source, "command.rovenfall.career.error.activity_levels_unavailable");
+        }
+        CareerCatalog catalog = retainedCatalog.orElseThrow();
+        var evaluation = CareerPromotionService.evaluate(
+                state, catalog, player.getUUID(), targetCareer, retainedLevels.orElseThrow());
+        sendCareerEvaluation(source, catalog, evaluation);
+        return evaluation.allowed() ? 1 : 0;
+    }
+
+    private static int promoteCareer(
+            CommandSourceStack source,
+            Identifier targetCareer,
+            UUID transactionId) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        Optional<CareerCatalog> retainedCatalog = CareerDefinitionReloadListener.snapshot(source.getServer());
+        if (retainedCatalog.isEmpty()) {
+            return failure(source, "command.rovenfall.career.error.catalog_unavailable");
+        }
+        Optional<Map<ActivityTrack, Integer>> retainedLevels = activityLevels(source, state, player.getUUID());
+        if (retainedLevels.isEmpty()) {
+            return failure(source, "command.rovenfall.career.error.activity_levels_unavailable");
+        }
+        CareerCatalog catalog = retainedCatalog.orElseThrow();
+        var result = CareerPromotionService.promote(
+                state,
+                catalog,
+                player.getUUID(),
+                targetCareer,
+                retainedLevels.orElseThrow(),
+                Instant.now().toEpochMilli(),
+                transactionId);
+        return switch (result.status()) {
+            case SUCCESS -> {
+                var evaluation = result.evaluation().orElseThrow();
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.career.promote.success",
+                        careerName(catalog, targetCareer),
+                        evaluation.promotionCost(),
+                        state.economyBalance(player.getUUID()).orElse(0L),
+                        transactionId), false);
+                yield 1;
+            }
+            case DUPLICATE_TRANSACTION -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.career.promote.duplicate",
+                        transactionId,
+                        careerName(catalog, targetCareer)), false);
+                yield 1;
+            }
+            default -> failure(
+                    source,
+                    "command.rovenfall.career.promote.error",
+                    Component.translatable(result.status().evaluationTranslationKey()),
+                    result.status().id(),
+                    transactionId);
+        };
+    }
+
+    private static void sendCareerEvaluation(
+            CommandSourceStack source,
+            CareerCatalog catalog,
+            CareerPromotionService.PromotionEvaluation evaluation) {
+        Component verdict = Component.translatable(evaluation.allowed()
+                ? "command.rovenfall.career.explain.verdict.allowed"
+                : "command.rovenfall.career.explain.verdict.denied");
+        int tier = evaluation.definition().map(definition -> definition.tier()).orElse(0);
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.career.explain.summary",
+                careerName(catalog, evaluation.targetCareer()),
+                evaluation.targetCareer(),
+                tier,
+                verdict,
+                Component.translatable(evaluation.status().evaluationTranslationKey()),
+                evaluation.status().id(),
+                evaluation.promotionCost(),
+                evaluation.balance()), false);
+        evaluation.parentRequirements().forEach(requirement -> source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.career.explain.parent",
+                careerName(catalog, requirement.careerId()),
+                requirement.careerId(),
+                careerCondition(requirement.met())), false));
+        evaluation.activityRequirements().forEach(requirement -> source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.career.explain.activity",
+                Component.translatable(requirement.track().translationKey()),
+                requirement.currentLevel(),
+                requirement.requiredLevel(),
+                careerCondition(requirement.met())), false));
+        if (evaluation.resetCareers().isEmpty()) {
+            source.sendSuccess(() -> Component.translatable(
+                    "command.rovenfall.career.explain.reset.none"), false);
+        } else {
+            source.sendSuccess(() -> Component.translatable(
+                    "command.rovenfall.career.explain.reset.header"), false);
+            evaluation.resetCareers().stream().sorted().forEach(careerId -> source.sendSuccess(
+                    () -> Component.translatable(
+                            "command.rovenfall.career.explain.reset.line",
+                            careerName(catalog, careerId),
+                            careerId.toString()), false));
+        }
+    }
+
+    private static Optional<Map<ActivityTrack, Integer>> activityLevels(
+            CommandSourceStack source,
+            PlatformSavedData state,
+            UUID playerId) {
+        Map<ActivityTrack, Integer> levels = new EnumMap<>(ActivityTrack.class);
+        for (ActivityTrack track : ActivityTrack.values()) {
+            var definition = ActivityLevelReloadListener.get(source.getServer(), track);
+            if (definition.isEmpty()) {
+                return Optional.empty();
+            }
+            levels.put(track, definition.orElseThrow().progress(
+                    state.activityExperience(playerId, track)).level());
+        }
+        return Optional.of(Map.copyOf(levels));
+    }
+
+    private static Component careerName(CareerCatalog catalog, Identifier careerId) {
+        return catalog.definition(careerId)
+                .<Component>map(definition -> Component.translatable(definition.translationKey()))
+                .orElseGet(() -> Component.literal(careerId.toString()));
+    }
+
+    private static Component careerCondition(boolean met) {
+        return Component.translatable(met
+                ? "command.rovenfall.career.condition.met"
+                : "command.rovenfall.career.condition.unmet");
+    }
+
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestCareerIds(
+            com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+            com.mojang.brigadier.suggestion.SuggestionsBuilder builder) {
+        return SharedSuggestionProvider.suggest(
+                CareerDefinitionReloadListener.snapshot(context.getSource().getServer())
+                        .stream()
+                        .flatMap(catalog -> catalog.ids().stream())
+                        .sorted()
+                        .map(Identifier::toString)
+                        .toList(),
+                builder);
+    }
+
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions>
+            suggestChallengeIds(
+                    com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+                    com.mojang.brigadier.suggestion.SuggestionsBuilder builder) {
+        return SharedSuggestionProvider.suggest(
+                ActivityChallengeReloadListener.snapshot(context.getSource().getServer())
+                        .stream()
+                        .flatMap(definitions -> definitions.keySet().stream())
+                        .sorted()
+                        .map(Identifier::toString)
+                        .toList(),
+                builder);
+    }
+
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions>
+            suggestDailyContractIds(
+                    com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+                    com.mojang.brigadier.suggestion.SuggestionsBuilder builder) {
+        return SharedSuggestionProvider.suggest(
+                DailyContractReloadListener.snapshot(context.getSource().getServer())
+                        .stream()
+                        .flatMap(definitions -> definitions.keySet().stream())
+                        .sorted()
+                        .map(Identifier::toString)
+                        .toList(),
+                builder);
+    }
+
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions>
+            suggestWeeklyExpeditionIds(
+                    com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+                    com.mojang.brigadier.suggestion.SuggestionsBuilder builder) {
+        return SharedSuggestionProvider.suggest(
+                WeeklyExpeditionReloadListener.snapshot(context.getSource().getServer())
+                        .stream()
+                        .flatMap(definitions -> definitions.keySet().stream())
+                        .sorted()
+                        .map(Identifier::toString)
+                        .toList(),
+                builder);
+    }
+
+    private static int viewSkills(
+            CommandSourceStack source,
+            Identifier requestedCareer) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        Optional<CareerCatalog> retainedCatalog = CareerDefinitionReloadListener.snapshot(source.getServer());
+        if (retainedCatalog.isEmpty()) {
+            return failure(source, "command.rovenfall.career.error.catalog_unavailable");
+        }
+        CareerCatalog catalog = retainedCatalog.orElseThrow();
+        var careers = state.playerCareerState(player.getUUID());
+        Identifier careerId = requestedCareer;
+        if (careerId == null) {
+            if (careers.activeCareer().isEmpty()) {
+                return failure(source, "command.rovenfall.skill.error.no_active_career");
+            }
+            careerId = careers.activeCareer().orElseThrow();
+        }
+        if (!careers.learnedCareers().contains(careerId)) {
+            return failure(source, "command.rovenfall.skill.error.career_not_learned", careerId);
+        }
+        var definition = catalog.definition(careerId);
+        if (definition.isEmpty()) {
+            return failure(source, "command.rovenfall.skill.error.career_unresolved", careerId);
+        }
+        var progress = careers.progress(careerId);
+        int level = definition.orElseThrow().level(progress.experience());
+        int earned = progress.earnedSkillPoints(definition.orElseThrow());
+        int available = progress.availableSkillPoints(definition.orElseThrow());
+        Identifier displayedCareer = careerId;
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.skill.info.header",
+                careerName(catalog, displayedCareer),
+                displayedCareer,
+                level,
+                progress.experience(),
+                earned,
+                progress.spentSkillPoints(),
+                available), false);
+        if (progress.skillRanks().isEmpty()) {
+            source.sendSuccess(() -> Component.translatable(
+                    "command.rovenfall.skill.info.none"), false);
+        } else {
+            progress.skillRanks().entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> {
+                var binding = catalog.skill(entry.getKey());
+                if (binding.isPresent()) {
+                    source.sendSuccess(() -> Component.translatable(
+                            "command.rovenfall.skill.info.line",
+                            skillName(catalog, entry.getKey()),
+                            entry.getKey(),
+                            entry.getValue(),
+                            binding.orElseThrow().definition().maximumRank()), false);
+                } else {
+                    source.sendSuccess(() -> Component.translatable(
+                            "command.rovenfall.skill.info.unresolved",
+                            entry.getKey(),
+                            entry.getValue()), false);
+                }
+            });
+        }
+        return 1;
+    }
+
+    private static int explainSkillUnlock(
+            CommandSourceStack source,
+            Identifier skillId) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        Optional<CareerCatalog> retainedCatalog = CareerDefinitionReloadListener.snapshot(source.getServer());
+        if (retainedCatalog.isEmpty()) {
+            return failure(source, "command.rovenfall.career.error.catalog_unavailable");
+        }
+        CareerCatalog catalog = retainedCatalog.orElseThrow();
+        var evaluation = CareerSkillService.evaluateUnlock(
+                PlatformSavedData.get(source.getServer()), catalog, player.getUUID(), skillId);
+        sendSkillEvaluation(source, catalog, evaluation);
+        return evaluation.allowed() ? 1 : 0;
+    }
+
+    private static int explainSkillReset(
+            CommandSourceStack source,
+            Identifier careerId) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        Optional<CareerCatalog> retainedCatalog = CareerDefinitionReloadListener.snapshot(source.getServer());
+        if (retainedCatalog.isEmpty()) {
+            return failure(source, "command.rovenfall.career.error.catalog_unavailable");
+        }
+        CareerCatalog catalog = retainedCatalog.orElseThrow();
+        var evaluation = CareerSkillService.evaluateReset(
+                PlatformSavedData.get(source.getServer()), catalog, player.getUUID(), careerId);
+        sendSkillEvaluation(source, catalog, evaluation);
+        return evaluation.allowed() ? 1 : 0;
+    }
+
+    private static int unlockSkill(
+            CommandSourceStack source,
+            Identifier skillId,
+            UUID transactionId) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        Optional<CareerCatalog> retainedCatalog = CareerDefinitionReloadListener.snapshot(source.getServer());
+        if (retainedCatalog.isEmpty()) {
+            return failure(source, "command.rovenfall.career.error.catalog_unavailable");
+        }
+        CareerCatalog catalog = retainedCatalog.orElseThrow();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = CareerSkillService.unlock(
+                state, catalog, player.getUUID(), skillId, Instant.now().toEpochMilli(), transactionId);
+        return switch (result.status()) {
+            case SUCCESS -> {
+                var evaluation = result.evaluation().orElseThrow();
+                int rank = state.playerCareerState(player.getUUID())
+                        .progress(evaluation.careerId()).skillRank(skillId);
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.skill.unlock.success",
+                        skillName(catalog, skillId),
+                        rank,
+                        evaluation.maximumRank(),
+                        transactionId), false);
+                yield 1;
+            }
+            case DUPLICATE_TRANSACTION -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.skill.unlock.duplicate", transactionId, skillName(catalog, skillId)), false);
+                yield 1;
+            }
+            default -> failure(
+                    source,
+                    "command.rovenfall.skill.mutation.error",
+                    Component.translatable(result.status().evaluationTranslationKey()),
+                    result.status().id(),
+                    transactionId);
+        };
+    }
+
+    private static int resetSkills(
+            CommandSourceStack source,
+            Identifier careerId,
+            UUID transactionId) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        Optional<CareerCatalog> retainedCatalog = CareerDefinitionReloadListener.snapshot(source.getServer());
+        if (retainedCatalog.isEmpty()) {
+            return failure(source, "command.rovenfall.career.error.catalog_unavailable");
+        }
+        CareerCatalog catalog = retainedCatalog.orElseThrow();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = CareerSkillService.reset(
+                state, catalog, player.getUUID(), careerId, Instant.now().toEpochMilli(), transactionId);
+        return switch (result.status()) {
+            case SUCCESS -> {
+                var evaluation = result.evaluation().orElseThrow();
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.skill.reset.success",
+                        careerName(catalog, careerId),
+                        evaluation.spentPoints(),
+                        evaluation.currencyCost(),
+                        state.economyBalance(player.getUUID()).orElse(0L),
+                        transactionId), false);
+                yield 1;
+            }
+            case DUPLICATE_TRANSACTION -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.skill.reset.duplicate",
+                        transactionId,
+                        careerName(catalog, careerId)), false);
+                yield 1;
+            }
+            default -> failure(
+                    source,
+                    "command.rovenfall.skill.mutation.error",
+                    Component.translatable(result.status().evaluationTranslationKey()),
+                    result.status().id(),
+                    transactionId);
+        };
+    }
+
+    private static void sendSkillEvaluation(
+            CommandSourceStack source,
+            CareerCatalog catalog,
+            CareerSkillService.Evaluation evaluation) {
+        Component verdict = Component.translatable(evaluation.allowed()
+                ? "command.rovenfall.skill.explain.verdict.allowed"
+                : "command.rovenfall.skill.explain.verdict.denied");
+        if (evaluation.operation() == org.dldyou.rovenfall.careers.SkillMutationReceipt.Operation.RESET) {
+            source.sendSuccess(() -> Component.translatable(
+                    "command.rovenfall.skill.explain.reset",
+                    careerName(catalog, evaluation.careerId()),
+                    evaluation.careerId(),
+                    verdict,
+                    Component.translatable(evaluation.status().evaluationTranslationKey()),
+                    evaluation.status().id(),
+                    evaluation.spentPoints(),
+                    evaluation.currencyCost(),
+                    evaluation.balance()), false);
+            return;
+        }
+        Identifier skillId = evaluation.skillId().orElse(null);
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.skill.explain.unlock",
+                skillName(catalog, skillId),
+                String.valueOf(skillId),
+                evaluation.careerId() == null
+                        ? Component.literal("unknown")
+                        : careerName(catalog, evaluation.careerId()),
+                evaluation.rank(),
+                evaluation.maximumRank(),
+                verdict,
+                Component.translatable(evaluation.status().evaluationTranslationKey()),
+                evaluation.status().id(),
+                evaluation.pointCost(),
+                evaluation.availablePoints()), false);
+        evaluation.prerequisites().forEach(requirement -> source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.skill.explain.prerequisite",
+                skillName(catalog, requirement.skillId()),
+                requirement.skillId(),
+                careerCondition(requirement.met())), false));
+        evaluation.binding().ifPresent(binding -> {
+            source.sendSuccess(() -> Component.translatable(
+                    "command.rovenfall.skill.explain.scope",
+                    Component.translatable("career_skill_scope.rovenfall."
+                            + binding.definition().scope().getSerializedName())), false);
+            binding.definition().effects().forEach(effect -> {
+                String magnitude = java.math.BigDecimal.valueOf(
+                                effect.magnitudePerRankBasisPoints(), 2)
+                        .stripTrailingZeros().toPlainString();
+                if (effect.track().isPresent()) {
+                    source.sendSuccess(() -> Component.translatable(
+                            "command.rovenfall.skill.explain.effect.track",
+                            magnitude,
+                            Component.translatable(effect.track().orElseThrow().translationKey())), false);
+                } else {
+                    source.sendSuccess(() -> Component.translatable(
+                            "command.rovenfall.skill.explain.effect.all", magnitude), false);
+                }
+            });
+            binding.definition().active().ifPresent(active -> source.sendSuccess(() -> Component.translatable(
+                    "command.rovenfall.skill.explain.active",
+                    active.effectId(),
+                    active.durationTicks(),
+                    active.amplifier() + 1,
+                    active.cooldownSeconds()), false));
+        });
+    }
+
+    private static int viewActiveSkillSlots(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        Optional<CareerCatalog> retainedCatalog = CareerDefinitionReloadListener.snapshot(source.getServer());
+        if (retainedCatalog.isEmpty()) {
+            return failure(source, "command.rovenfall.career.error.catalog_unavailable");
+        }
+        CareerCatalog catalog = retainedCatalog.orElseThrow();
+        var activeSkills = PlatformSavedData.get(source.getServer())
+                .playerCareerState(player.getUUID()).activeSkills();
+        long now = Instant.now().toEpochMilli();
+        source.sendSuccess(() -> Component.translatable("command.rovenfall.active_skill.slots.header"), false);
+        for (int slot = 1; slot <= org.dldyou.rovenfall.careers.ActiveSkillState.SLOT_COUNT; slot++) {
+            Optional<Identifier> retainedSkill = activeSkills.slot(slot);
+            if (retainedSkill.isEmpty()) {
+                int displayedSlot = slot;
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.active_skill.slots.empty", displayedSlot), false);
+                continue;
+            }
+            Identifier skillId = retainedSkill.orElseThrow();
+            long remainingMillis = Math.max(0, activeSkills.cooldownReadyAt(skillId) - now);
+            long remainingSeconds = remainingMillis == 0 ? 0 : 1 + (remainingMillis - 1) / 1_000;
+            int displayedSlot = slot;
+            source.sendSuccess(() -> Component.translatable(
+                    remainingSeconds == 0
+                            ? "command.rovenfall.active_skill.slots.ready"
+                            : "command.rovenfall.active_skill.slots.cooldown",
+                    displayedSlot,
+                    skillName(catalog, skillId),
+                    skillId,
+                    remainingSeconds), false);
+        }
+        return 1;
+    }
+
+    private static int equipActiveSkill(
+            CommandSourceStack source,
+            int slot,
+            Identifier skillId) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        Optional<CareerCatalog> retainedCatalog = CareerDefinitionReloadListener.snapshot(source.getServer());
+        if (retainedCatalog.isEmpty()) {
+            return failure(source, "command.rovenfall.career.error.catalog_unavailable");
+        }
+        CareerCatalog catalog = retainedCatalog.orElseThrow();
+        var result = ActiveSkillService.equip(
+                PlatformSavedData.get(source.getServer()),
+                catalog,
+                player.getUUID(),
+                slot,
+                skillId,
+                Instant.now().toEpochMilli());
+        if (result.status() != ActiveSkillService.Status.SUCCESS) {
+            return failure(
+                    source,
+                    "command.rovenfall.active_skill.mutation.error",
+                    Component.translatable(result.status().translationKey()),
+                    result.status().id());
+        }
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.active_skill.equip.success",
+                skillName(catalog, skillId),
+                slot), false);
+        return 1;
+    }
+
+    private static int clearActiveSkill(
+            CommandSourceStack source,
+            int slot) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        Identifier skillId = state.playerCareerState(player.getUUID())
+                .activeSkills().slot(slot).orElse(null);
+        var result = ActiveSkillService.clear(
+                state, player.getUUID(), slot, Instant.now().toEpochMilli());
+        if (result.status() != ActiveSkillService.Status.SUCCESS) {
+            return failure(
+                    source,
+                    "command.rovenfall.active_skill.mutation.error",
+                    Component.translatable(result.status().translationKey()),
+                    result.status().id());
+        }
+        Optional<CareerCatalog> catalog = CareerDefinitionReloadListener.snapshot(source.getServer());
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.active_skill.clear.success",
+                slot,
+                catalog.<Component>map(value -> skillName(value, skillId))
+                        .orElseGet(() -> Component.literal(String.valueOf(skillId)))), false);
+        return 1;
+    }
+
+    private static int useActiveSkill(
+            CommandSourceStack source,
+            int slot) throws CommandSyntaxException {
+        return ActiveSkillGameplay.use(
+                        source.getPlayerOrException(), slot, Instant.now().toEpochMilli())
+                .filter(result -> result.status() == ActiveSkillService.Status.SUCCESS)
+                .map(ignored -> 1)
+                .orElse(0);
+    }
+
+    private static Component skillName(CareerCatalog catalog, Identifier skillId) {
+        if (skillId == null) {
+            return Component.literal("unknown");
+        }
+        return catalog.skill(skillId)
+                .<Component>map(binding -> Component.translatable(binding.definition().translationKey()))
+                .orElseGet(() -> Component.literal(skillId.toString()));
+    }
+
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestSkillIds(
+            com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+            com.mojang.brigadier.suggestion.SuggestionsBuilder builder) {
+        return SharedSuggestionProvider.suggest(
+                CareerDefinitionReloadListener.snapshot(context.getSource().getServer())
+                        .stream()
+                        .flatMap(catalog -> catalog.skillIds().stream())
+                        .sorted()
+                        .map(Identifier::toString)
+                        .toList(),
+                builder);
+    }
+
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions>
+            suggestActiveSkillIds(
+                    com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+                    com.mojang.brigadier.suggestion.SuggestionsBuilder builder) {
+        return SharedSuggestionProvider.suggest(
+                CareerDefinitionReloadListener.snapshot(context.getSource().getServer())
+                        .stream()
+                        .flatMap(catalog -> catalog.activeSkillIds().stream())
+                        .sorted()
+                        .map(Identifier::toString)
+                        .toList(),
+                builder);
+    }
+
+    private static int useManagedPortal(
+            CommandSourceStack source, Identifier portalId) throws CommandSyntaxException {
+        var result = WorldTravelService.transit(
+                source.getPlayerOrException(), portalId, Instant.now().toEpochMilli());
+        return switch (result.status()) {
+            case SUCCESS -> {
+                if (portalId == null) {
+                    String destination = result.destination().orElseThrow().equals(WorldCombatService.WILDERNESS_DIMENSION)
+                            ? "command.rovenfall.portal.success.wilderness"
+                            : "command.rovenfall.portal.success.hub";
+                    source.sendSuccess(() -> Component.translatable(destination), false);
+                } else {
+                    source.sendSuccess(() -> Component.translatable(
+                            "command.rovenfall.portal.success.custom",
+                            result.portalId().orElseThrow().toString(),
+                            result.destination().orElseThrow().identifier().toString()), false);
+                }
+                yield 1;
+            }
+            case COOLDOWN -> failure(
+                    source, "command.rovenfall.portal.error.cooldown", result.retryAfterSeconds());
+            case RATE_LIMITED -> failure(source, "command.rovenfall.portal.error.rate_limited");
+            case IN_COMBAT -> failure(
+                    source, "command.rovenfall.portal.error.in_combat", result.retryAfterSeconds());
+            case RESET_PENDING -> failure(source, "command.rovenfall.portal.error.reset_pending");
+            case MOUNTED -> failure(source, "command.rovenfall.portal.error.mounted");
+            case PORTAL_NOT_FOUND -> failure(
+                    source, "command.rovenfall.portal.error.not_found", portalId == null ? "" : portalId.toString());
+            case UNSUPPORTED_ORIGIN -> failure(source, "command.rovenfall.portal.error.unsupported_origin");
+            case OUTSIDE_PORTAL_RING -> failure(source, "command.rovenfall.portal.error.outside_ring");
+            case DESTINATION_UNAVAILABLE -> failure(source, "command.rovenfall.portal.error.destination_unavailable");
+            case NO_SAFE_ARRIVAL -> failure(source, "command.rovenfall.portal.error.no_safe_arrival");
+            case TELEPORT_REJECTED -> failure(source, "command.rovenfall.portal.error.teleport_rejected");
+            case READ_ONLY_SCHEMA -> failure(source, "command.rovenfall.admin.error.read_only_schema",
+                    PlatformSavedData.get(source.getServer()).schemaVersion());
+            case INVALID_REQUEST -> failure(source, "command.rovenfall.portal.error.invalid_request");
+        };
+    }
+
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestPortalIds(
+            com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+            com.mojang.brigadier.suggestion.SuggestionsBuilder builder) {
+        return SharedSuggestionProvider.suggest(
+                PlatformSavedData.get(context.getSource().getServer()).portalIds().stream()
+                        .sorted()
+                        .map(Identifier::toString)
+                        .toList(),
+                builder);
+    }
+
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestShopTemplateIds(
+            com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+            com.mojang.brigadier.suggestion.SuggestionsBuilder builder) {
+        return SharedSuggestionProvider.suggest(
+                ShopTemplateReloadListener.snapshot(context.getSource().getServer()).templates().keySet().stream()
+                        .sorted()
+                        .map(Identifier::toString)
+                        .toList(),
+                builder);
+    }
+
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestShopIds(
+            com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+            com.mojang.brigadier.suggestion.SuggestionsBuilder builder) {
+        return SharedSuggestionProvider.suggest(
+                PlatformSavedData.get(context.getSource().getServer()).shopInstancesView().keySet().stream()
+                        .sorted()
+                        .map(Identifier::toString)
+                        .toList(),
+                builder);
+    }
+
+    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestShopOfferIds(
+            com.mojang.brigadier.context.CommandContext<CommandSourceStack> context,
+            com.mojang.brigadier.suggestion.SuggestionsBuilder builder,
+            ShopTradeService.Direction direction) {
+        Identifier shopId = IdentifierArgument.getId(context, "shop_id");
+        return SharedSuggestionProvider.suggest(
+                PlatformSavedData.get(context.getSource().getServer()).shopInstance(shopId).stream()
+                        .flatMap(shop -> shop.offers().entrySet().stream())
+                        .filter(entry -> direction == ShopTradeService.Direction.BUY
+                                ? entry.getValue().buyPrice().isPresent()
+                                : entry.getValue().sellPrice().isPresent())
+                        .map(Map.Entry::getKey)
+                        .sorted()
+                        .map(Identifier::toString)
+                        .toList(),
+                builder);
+    }
+
     private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> tradeCommand(
             String literal,
             ShopTradeService.Direction direction) {
@@ -587,9 +2096,21 @@ public final class RovenfallCommands {
                         IntegerArgumentType.getInteger(context, "quantity"),
                         UuidArgument.getUuid(context, "transaction_id")));
         var quantity = Commands.argument(
-                "quantity", IntegerArgumentType.integer(1, ShopTradeService.MAX_TRADE_QUANTITY)).then(transaction);
-        var offer = Commands.argument("offer_id", IdentifierArgument.id()).then(quantity);
-        var shop = Commands.argument("shop_id", IdentifierArgument.id()).then(offer);
+                        "quantity", IntegerArgumentType.integer(1, ShopTradeService.MAX_TRADE_QUANTITY))
+                .executes(context -> trade(
+                        context.getSource(),
+                        IdentifierArgument.getId(context, "shop_id"),
+                        IdentifierArgument.getId(context, "offer_id"),
+                        direction,
+                        IntegerArgumentType.getInteger(context, "quantity"),
+                        UUID.randomUUID()))
+                .then(transaction);
+        var offer = Commands.argument("offer_id", IdentifierArgument.id())
+                .suggests((context, builder) -> suggestShopOfferIds(context, builder, direction))
+                .then(quantity);
+        var shop = Commands.argument("shop_id", IdentifierArgument.id())
+                .suggests(RovenfallCommands::suggestShopIds)
+                .then(offer);
         return Commands.literal(literal).then(shop);
     }
 
@@ -736,6 +2257,107 @@ public final class RovenfallCommands {
                 transactionId), shopId);
     }
 
+    private static int createPortal(
+            CommandSourceStack source,
+            Identifier portalId,
+            net.minecraft.server.level.ServerLevel destination,
+            BlockPos destinationPosition,
+            int protectionRadius,
+            int searchRadius,
+            int cooldownSeconds,
+            UUID transactionId,
+            String reason) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        Portal portal = new Portal(
+                player.level().dimension(),
+                player.blockPosition(),
+                destination.dimension(),
+                destinationPosition,
+                protectionRadius,
+                searchRadius,
+                cooldownSeconds);
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        return portalResult(source, state, ManagedPortalService.create(
+                state,
+                actorId(source),
+                authorizationOverride(source, state),
+                portalId,
+                portal,
+                key -> source.getServer().getLevel(key) != null,
+                reason,
+                Instant.now().toEpochMilli(),
+                transactionId), portalId);
+    }
+
+    private static int deletePortal(
+            CommandSourceStack source, Identifier portalId, UUID transactionId, String reason) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        return portalResult(source, state, ManagedPortalService.delete(
+                state,
+                actorId(source),
+                authorizationOverride(source, state),
+                portalId,
+                reason,
+                Instant.now().toEpochMilli(),
+                transactionId), portalId);
+    }
+
+    private static int viewManagedPortal(CommandSourceStack source, Identifier portalId) {
+        Optional<Portal> portal = PlatformSavedData.get(source.getServer()).portal(portalId);
+        if (portal.isEmpty()) {
+            return failure(source, "command.rovenfall.admin.portal.error.not_found", portalId.toString());
+        }
+        Portal value = portal.orElseThrow();
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.admin.portal.info",
+                portalId.toString(),
+                value.originDimension().identifier().toString(),
+                value.origin().toShortString(),
+                value.destinationDimension().identifier().toString(),
+                value.destination().toShortString(),
+                value.protectionRadius(),
+                value.safeSearchRadius(),
+                value.cooldownSeconds()), false);
+        return 1;
+    }
+
+    private static int portalResult(
+            CommandSourceStack source,
+            PlatformSavedData state,
+            ManagedPortalService.MutationResult result,
+            Identifier portalId) {
+        return switch (result.status()) {
+            case SUCCESS -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.admin.portal.success",
+                        portalId.toString(),
+                        result.transactionId().toString()), true);
+                yield 1;
+            }
+            case DUPLICATE_TRANSACTION -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.admin.portal.duplicate", result.transactionId().toString()), false);
+                yield 1;
+            }
+            case UNAUTHORIZED -> failure(source, "command.rovenfall.admin.portal.error.unauthorized");
+            case INVALID_REQUEST -> failure(source, "command.rovenfall.admin.portal.error.invalid_request");
+            case INVALID_TRANSACTION -> failure(source, "command.rovenfall.admin.portal.error.invalid_transaction");
+            case INVALID_REASON -> failure(
+                    source, "command.rovenfall.admin.error.invalid_reason", AdministrationService.MAX_REASON_LENGTH);
+            case READ_ONLY_SCHEMA -> failure(
+                    source, "command.rovenfall.admin.error.read_only_schema", state.schemaVersion());
+            case TRANSACTION_LEDGER_FULL -> failure(
+                    source, "command.rovenfall.admin.portal.error.transaction_ledger_full");
+            case PORTAL_LIMIT_REACHED -> failure(source, "command.rovenfall.admin.portal.error.limit");
+            case PORTAL_EXISTS -> failure(
+                    source, "command.rovenfall.admin.portal.error.exists", portalId.toString());
+            case PORTAL_NOT_FOUND -> failure(
+                    source, "command.rovenfall.admin.portal.error.not_found", portalId.toString());
+            case DIMENSION_UNAVAILABLE -> failure(
+                    source, "command.rovenfall.admin.portal.error.dimension_unavailable");
+        };
+    }
+
     private static int deleteShop(
             CommandSourceStack source, Identifier shopId, UUID transactionId, String reason) {
         PlatformSavedData state = PlatformSavedData.get(source.getServer());
@@ -870,6 +2492,50 @@ public final class RovenfallCommands {
             case OFFER_NOT_FOUND -> failure(source, "command.rovenfall.admin.shop.error.offer_not_found");
             case INVALID_REQUEST -> failure(source, "command.rovenfall.admin.shop.error.invalid_request");
         };
+    }
+
+    private static int viewShop(CommandSourceStack source, Identifier shopId) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        Optional<ShopInstance> existing = state.shopInstance(shopId);
+        if (existing.isEmpty()) {
+            return failure(source, "command.rovenfall.shop.error.not_found");
+        }
+
+        ShopInstance shop = existing.orElseThrow();
+        Component templateName = ShopTemplateReloadListener.get(source.getServer(), shop.templateId())
+                .<Component>map(template -> Component.translatable(template.translationKey()))
+                .orElseGet(() -> Component.literal(shop.templateId().toString()));
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.shop.info.header",
+                shopId.toString(),
+                templateName,
+                shop.offers().size()), false);
+        shop.offers().entrySet().stream().sorted(Map.Entry.comparingByKey()).forEach(entry -> {
+            ShopInstance.Offer offer = entry.getValue();
+            var item = offer.item();
+            Component buyPrice = shopPrice(offer.buyPrice());
+            Component sellPrice = shopPrice(offer.sellPrice());
+            Component stock = offer.stock().unlimited()
+                    ? Component.translatable("command.rovenfall.shop.info.stock_unlimited")
+                    : Component.translatable(
+                            "command.rovenfall.shop.info.stock_finite",
+                            offer.stock().current(),
+                            offer.stock().maximum());
+            source.sendSuccess(() -> Component.translatable(
+                    "command.rovenfall.shop.info.offer",
+                    entry.getKey().toString(),
+                    item.getHoverName(),
+                    item.getCount(),
+                    buyPrice,
+                    sellPrice,
+                    stock), false);
+        });
+        return 1;
+    }
+
+    private static Component shopPrice(Optional<Long> price) {
+        return price.<Component>map(value -> Component.literal(Long.toString(value)))
+                .orElseGet(() -> Component.translatable("command.rovenfall.shop.info.unavailable"));
     }
 
     private static int trade(
@@ -1176,6 +2842,118 @@ public final class RovenfallCommands {
         };
     }
 
+    private static int explainClaimPurchase(CommandSourceStack source) throws CommandSyntaxException {
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        ClaimKey key = ClaimKey.at(player.level().dimension(), player.blockPosition());
+        var evaluation = ClaimPurchaseService.evaluatePurchase(
+                state,
+                player.getUUID(),
+                source.getServer().overworld().dimension(),
+                player.level().dimension(),
+                player.blockPosition(),
+                ignored -> true,
+                candidate -> isProtectedClaimRegion(source, candidate),
+                ClaimConfig.basePrice(),
+                ClaimConfig.priceIncrease(),
+                ClaimConfig.ownershipCap());
+        Component verdict = Component.translatable(evaluation.allowed()
+                ? "command.rovenfall.claim.explain.verdict.allowed"
+                : "command.rovenfall.claim.explain.verdict.denied");
+        Component rule = Component.translatable(evaluation.status().evaluationTranslationKey());
+        String owner = evaluation.ownerId().map(UUID::toString).orElse("-");
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.claim.explain.buy",
+                verdict,
+                rule,
+                evaluation.status().id(),
+                key.dimension().identifier().toString(),
+                key.chunkX(),
+                key.chunkZ(),
+                evaluation.price(),
+                evaluation.balance(),
+                evaluation.ownedClaims(),
+                evaluation.ownershipCap(),
+                owner), false);
+        return 1;
+    }
+
+    private static int explainClaimAction(
+            CommandSourceStack source, String actionId) throws CommandSyntaxException {
+        ClaimProtectionService.Action action = ClaimProtectionService.Action.fromId(actionId).orElse(null);
+        if (action == null) {
+            return failure(source, "command.rovenfall.claim.explain.error.invalid_action");
+        }
+        ServerPlayer player = source.getPlayerOrException();
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var hub = source.getServer().overworld();
+        ClaimKey key = ClaimKey.at(player.level().dimension(), player.blockPosition());
+        var decision = ClaimProtectionService.evaluate(
+                state,
+                player.getUUID(),
+                authorizationOverride(source, state),
+                hub.dimension(),
+                hub.getRespawnData().pos(),
+                ClaimConfig.protectedSpawnRadiusChunks(),
+                state.isPortalProtected(player.level().dimension(), player.blockPosition())
+                        || action != ClaimProtectionService.Action.ENTITY
+                        && state.isBossArenaProtected(player.level().dimension(), player.blockPosition()),
+                key,
+                action);
+        Component verdict = Component.translatable(decision.allowed()
+                ? "command.rovenfall.claim.explain.verdict.allowed"
+                : "command.rovenfall.claim.explain.verdict.denied");
+        String owner = decision.claim().map(claim -> claim.ownerId().toString()).orElse("-");
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.claim.explain.action",
+                verdict,
+                Component.translatable(decision.reason().translationKey()),
+                decision.reason().id(),
+                Component.translatable(action.translationKey()),
+                Component.translatable(decision.role().translationKey()),
+                key.dimension().identifier().toString(),
+                key.chunkX(),
+                key.chunkZ(),
+                owner), false);
+        return 1;
+    }
+
+    private static int explainClaimRole(
+            CommandSourceStack source,
+            ServerPlayer target,
+            String roleId) throws CommandSyntaxException {
+        ClaimRole requestedRole = ClaimRole.fromId(roleId).filter(value -> value != ClaimRole.OWNER).orElse(null);
+        if (requestedRole == null) {
+            return failure(source, "command.rovenfall.claim.error.invalid_role");
+        }
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        ClaimKey key = currentClaimKey(source);
+        var evaluation = ClaimManagementService.evaluateSetRole(
+                state,
+                actorId(source),
+                authorizationOverride(source, state),
+                key,
+                target.getUUID(),
+                requestedRole);
+        Component verdict = Component.translatable(evaluation.allowed()
+                ? "command.rovenfall.claim.explain.verdict.allowed"
+                : "command.rovenfall.claim.explain.verdict.denied");
+        String owner = evaluation.claim().map(claim -> claim.ownerId().toString()).orElse("-");
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.claim.explain.role",
+                verdict,
+                Component.translatable(evaluation.status().evaluationTranslationKey()),
+                evaluation.status().id(),
+                target.getDisplayName(),
+                Component.translatable(evaluation.currentTargetRole().translationKey()),
+                Component.translatable(requestedRole.translationKey()),
+                Component.translatable(evaluation.actorRole().translationKey()),
+                evaluation.trustedPlayers(),
+                evaluation.trustLimit(),
+                owner), false);
+        return 1;
+    }
+
     private static int buyClaim(CommandSourceStack source) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
         UUID transactionId = UUID.randomUUID();
@@ -1371,6 +3149,7 @@ public final class RovenfallCommands {
     private static boolean isProtectedClaimRegion(CommandSourceStack source, ClaimKey key) {
         var hub = source.getServer().overworld();
         return PlatformSavedData.get(source.getServer()).isProtectedRegion(key)
+                || PlatformSavedData.get(source.getServer()).isAdministratorProtected(key)
                 || ClaimRegionPolicy.isProtectedHubRegion(
                 key,
                 WorldTopology.HUB,
@@ -1609,6 +3388,98 @@ public final class RovenfallCommands {
         return 1;
     }
 
+    private static int openAdminSearch(
+            CommandSourceStack source,
+            String scopeId,
+            int page,
+            String query) {
+        Optional<AdminSearchService.Scope> retainedScope = AdminSearchService.Scope.parse(scopeId);
+        if (retainedScope.isEmpty()) {
+            return failure(source, "command.rovenfall.admin.search.error.invalid_scope", scopeId);
+        }
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = AdminSearchService.search(
+                state,
+                actorId(source),
+                authorizationOverride(source, state),
+                retainedScope.orElseThrow(),
+                query,
+                page,
+                AdminSearchBookView.PAGE_SIZE);
+        return switch (result.status()) {
+            case SUCCESS -> {
+                ServerPlayer player = source.getPlayer();
+                if (player != null) {
+                    AdminSearchBookView.open(player, result);
+                } else {
+                    AdminSearchBookView.pages(result).forEach(component ->
+                            source.sendSuccess(() -> component, false));
+                }
+                yield 1;
+            }
+            case UNAUTHORIZED -> failure(source, "command.rovenfall.admin.error.unauthorized");
+            case INVALID_SCOPE -> failure(
+                    source, "command.rovenfall.admin.search.error.invalid_scope", scopeId);
+            case INVALID_QUERY -> failure(
+                    source, "command.rovenfall.admin.search.error.invalid_query",
+                    AdminSearchService.MAX_QUERY_LENGTH);
+            case INVALID_PAGE -> failure(source, "command.rovenfall.admin.search.error.invalid_page");
+        };
+    }
+
+    private static int reverseTargetedTransaction(
+            CommandSourceStack source,
+            UUID originalTransactionId,
+            UUID reversalTransactionId,
+            String reason) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        var result = TargetedReversalService.reverse(
+                state,
+                actorId(source),
+                authorizationOverride(source, state),
+                originalTransactionId,
+                reason,
+                Instant.now().toEpochMilli(),
+                reversalTransactionId);
+        return switch (result.status()) {
+            case SUCCESS -> {
+                Component domain = result.domain()
+                        .<Component>map(value -> Component.translatable(value.translationKey()))
+                        .orElseGet(() -> Component.translatable("targeted_reversal_domain.rovenfall.unknown"));
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.admin.reverse.success",
+                        domain,
+                        originalTransactionId,
+                        reversalTransactionId), true);
+                yield 1;
+            }
+            case DUPLICATE_TRANSACTION -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.admin.reverse.duplicate", reversalTransactionId), false);
+                yield 1;
+            }
+            case TRANSACTION_ID_CONFLICT -> failure(
+                    source, "command.rovenfall.admin.reverse.error.transaction_id_conflict");
+            case ALREADY_REVERSED -> failure(
+                    source, "command.rovenfall.admin.reverse.error.already_reversed");
+            case UNAUTHORIZED -> failure(source, "command.rovenfall.admin.reverse.error.unauthorized");
+            case INVALID_REQUEST -> failure(source, "command.rovenfall.admin.reverse.error.invalid_request");
+            case INVALID_TRANSACTION -> failure(
+                    source, "command.rovenfall.admin.reverse.error.invalid_transaction");
+            case INVALID_REASON -> failure(source, "command.rovenfall.admin.reverse.error.invalid_reason");
+            case READ_ONLY_SCHEMA -> failure(
+                    source, "command.rovenfall.admin.reverse.error.read_only_schema");
+            case TRANSACTION_LEDGER_FULL -> failure(
+                    source, "command.rovenfall.admin.reverse.error.transaction_ledger_full");
+            case DEPENDENCY_LOCKED -> failure(
+                    source, "command.rovenfall.admin.reverse.error.dependency_locked");
+            case ORIGINAL_NOT_REVERSIBLE -> failure(
+                    source, "command.rovenfall.admin.reverse.error.original_not_reversible");
+            case CURRENT_STATE_MISMATCH -> failure(
+                    source, "command.rovenfall.admin.reverse.error.current_state_mismatch");
+        };
+    }
+
     private static int openEconomyGui(
             CommandSourceStack source, EconomyView view, int page) throws CommandSyntaxException {
         ServerPlayer player = source.getPlayerOrException();
@@ -1721,6 +3592,87 @@ public final class RovenfallCommands {
                     source, "command.rovenfall.admin.economy.reversal.error.failed",
                     result.status().name().toLowerCase(java.util.Locale.ROOT));
         };
+    }
+
+    private static int resetWilderness(CommandSourceStack source, String reason) {
+        PlatformSavedData state = PlatformSavedData.get(source.getServer());
+        UUID operationId = UUID.randomUUID();
+        UUID snapshotId = UUID.randomUUID();
+        var result = RestartWildernessResetService.schedule(
+                source.getServer(),
+                actorId(source),
+                authorizationOverride(source, state),
+                source.getDisplayName(),
+                reason,
+                Instant.now().toEpochMilli(),
+                operationId,
+                snapshotId);
+        return switch (result.status()) {
+            case SUCCESS -> {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.admin.wilderness.reset.scheduled",
+                        result.operationId().toString(),
+                        result.snapshotId().toString(),
+                        result.evacuatedPlayers()), true);
+                yield 1;
+            }
+            case UNAUTHORIZED -> failure(source, "command.rovenfall.admin.wilderness.error.unauthorized");
+            case INVALID_REASON -> failure(
+                    source, "command.rovenfall.admin.error.invalid_reason", AdministrationService.MAX_REASON_LENGTH);
+            case READ_ONLY_SCHEMA -> failure(
+                    source, "command.rovenfall.admin.error.read_only_schema", state.schemaVersion());
+            case TRANSACTION_LEDGER_FULL -> failure(
+                    source, "command.rovenfall.admin.wilderness.error.transaction_ledger_full");
+            case RESET_PENDING -> failure(source, "command.rovenfall.admin.wilderness.error.pending");
+            case DIMENSION_UNAVAILABLE -> failure(
+                    source, "command.rovenfall.admin.wilderness.error.dimension_unavailable");
+            case NO_SAFE_HUB_ARRIVAL -> failure(
+                    source, "command.rovenfall.admin.wilderness.error.no_safe_hub_arrival");
+            case EVACUATION_FAILED -> failure(
+                    source, "command.rovenfall.admin.wilderness.error.evacuation_failed");
+            case SAVE_FAILED -> failure(source, "command.rovenfall.admin.wilderness.error.save_failed");
+            case SNAPSHOT_FAILED -> failure(source, "command.rovenfall.admin.wilderness.error.snapshot_failed");
+            case STORAGE_ERROR -> failure(source, "command.rovenfall.admin.wilderness.error.storage_error");
+            case INVALID_REQUEST, INVALID_TRANSACTION, DUPLICATE_TRANSACTION -> failure(
+                    source, "command.rovenfall.admin.wilderness.error.invalid_request");
+        };
+    }
+
+    private static int viewWildernessReset(CommandSourceStack source, UUID operationId) {
+        Optional<RestartWildernessResetService.Operation> operation;
+        try {
+            operation = operationId == null
+                    ? RestartWildernessResetService.pendingOperation(source.getServer())
+                    : RestartWildernessResetService.operation(source.getServer(), operationId);
+        } catch (RestartWildernessResetService.StorageException exception) {
+            return failure(source, "command.rovenfall.admin.wilderness.error.storage_error");
+        }
+        if (operation.isEmpty()) {
+            if (operationId == null) {
+                source.sendSuccess(() -> Component.translatable(
+                        "command.rovenfall.admin.wilderness.status.none"), false);
+                return 1;
+            }
+            return failure(source, "command.rovenfall.admin.wilderness.status.not_found", operationId.toString());
+        }
+
+        RestartWildernessResetService.Operation value = operation.orElseThrow();
+        String completed = value.completedAtEpochMillis() < 0
+                ? "-"
+                : Instant.ofEpochMilli(value.completedAtEpochMillis()).toString();
+        String failureCode = value.failureCode().isEmpty() ? "-" : value.failureCode();
+        source.sendSuccess(() -> Component.translatable(
+                "command.rovenfall.admin.wilderness.status.info",
+                value.operationId().toString(),
+                value.snapshotId().toString(),
+                Component.translatable(value.phase().translationKey()),
+                value.evacuatedPlayers(),
+                Instant.ofEpochMilli(value.requestedAtEpochMillis()).toString(),
+                completed,
+                RestartWildernessResetService.backupRelativePath(value.snapshotId()),
+                failureCode,
+                value.reason()), false);
+        return 1;
     }
 
     private static int createSnapshot(CommandSourceStack source, String reason) {

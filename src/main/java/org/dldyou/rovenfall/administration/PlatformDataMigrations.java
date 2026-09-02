@@ -5,11 +5,15 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.UnaryOperator;
 import net.minecraft.resources.Identifier;
+import org.dldyou.rovenfall.activities.ActivityState;
+import org.dldyou.rovenfall.careers.CareerState;
 import org.dldyou.rovenfall.claims.Claim;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimMutationReceipt;
 import org.dldyou.rovenfall.economy.ShopInstance;
 import org.dldyou.rovenfall.world.ProtectedRegion;
+import org.dldyou.rovenfall.mobs.BossState;
+import org.dldyou.rovenfall.worlds.Portal;
 
 final class PlatformDataMigrations {
     private static final Map<Integer, UnaryOperator<PersistedState>> MIGRATIONS = Map.ofEntries(
@@ -60,7 +64,9 @@ final class PlatformDataMigrations {
                 7, state.adminRoles(), state.auditEntries(), state.playerRecords(), state.economyBalances(),
                 state.economyTransactions(), state.shopInstances(), state.economyReceipts(), state.economyAlerts(),
                 migratedClaims, state.claimReceipts(), state.protectedRegions(), state.portalState(),
-                state.wildernessResetState(), state.rpgSkillOperations(), state.rpgAdminOperations());
+                state.wildernessResetState(), state.rpgSkillOperations(), state.rpgAdminOperations(),
+                state.portals(), state.activityState(), state.careerState(),
+                state.bossState(), state.targetedReversalState());
     }
 
     static MigrationResult migrate(
@@ -80,11 +86,17 @@ final class PlatformDataMigrations {
             WildernessResetState wildernessResetState,
             Map<UUID, RpgSkillOperation> rpgSkillOperations,
             Map<UUID, RpgAdminOperation> rpgAdminOperations,
+            Map<Identifier, Portal> portals,
+            ActivityState activityState,
+            CareerState careerState,
+            BossState bossState,
+            TargetedReversalState targetedReversalState,
             int targetVersion) {
         PersistedState original = new PersistedState(
                 schemaVersion, adminRoles, auditEntries, playerRecords, economyBalances, economyTransactions,
-                shopInstances, economyReceipts, economyAlerts, claims, claimReceipts, protectedRegions, portalState,
-                wildernessResetState, rpgSkillOperations, rpgAdminOperations);
+                shopInstances, economyReceipts, economyAlerts, claims, claimReceipts,
+                protectedRegions, portalState, wildernessResetState, rpgSkillOperations, rpgAdminOperations, portals,
+                activityState, careerState, bossState, targetedReversalState);
         if (schemaVersion < 0 || schemaVersion > targetVersion) {
             return MigrationResult.readOnly(original);
         }
@@ -121,7 +133,12 @@ final class PlatformDataMigrations {
             PortalState portalState,
             WildernessResetState wildernessResetState,
             Map<UUID, RpgSkillOperation> rpgSkillOperations,
-            Map<UUID, RpgAdminOperation> rpgAdminOperations) {
+            Map<UUID, RpgAdminOperation> rpgAdminOperations,
+            Map<Identifier, Portal> portals,
+            ActivityState activityState,
+            CareerState careerState,
+            BossState bossState,
+            TargetedReversalState targetedReversalState) {
         PersistedState {
             adminRoles = Map.copyOf(adminRoles);
             auditEntries = List.copyOf(auditEntries);
@@ -138,13 +155,21 @@ final class PlatformDataMigrations {
             wildernessResetState = wildernessResetState == null ? WildernessResetState.EMPTY : wildernessResetState;
             rpgSkillOperations = Map.copyOf(rpgSkillOperations);
             rpgAdminOperations = Map.copyOf(rpgAdminOperations);
+            portals = Map.copyOf(portals);
+            activityState = activityState == null ? ActivityState.empty() : activityState;
+            careerState = careerState == null ? CareerState.empty() : careerState;
+            bossState = bossState == null ? BossState.empty() : bossState;
+            targetedReversalState = targetedReversalState == null
+                    ? TargetedReversalState.empty()
+                    : targetedReversalState;
         }
 
         PersistedState atVersion(int version) {
             return new PersistedState(
                     version, adminRoles, auditEntries, playerRecords, economyBalances, economyTransactions,
                     shopInstances, economyReceipts, economyAlerts, claims, claimReceipts, protectedRegions, portalState,
-                    wildernessResetState, rpgSkillOperations, rpgAdminOperations);
+                    wildernessResetState, rpgSkillOperations, rpgAdminOperations, portals,
+                    activityState, careerState, bossState, targetedReversalState);
         }
     }
 

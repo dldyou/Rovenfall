@@ -1,0 +1,10 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "rovenfall:cinder_core",
+    "minecraft:honey_bottle"
+  ],
+  "result": {
+    "id": "rovenfall:cinderward_tonic"
+  }
+}

@@ -1,5 +1,7 @@
 package org.dldyou.rovenfall.administration;
 
+import java.util.Arrays;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
@@ -28,6 +30,21 @@ public final class ClaimProtectionService {
             int protectedSpawnRadiusChunks,
             ClaimKey key,
             Action action) {
+        return evaluate(
+                state, actorId, administratorOverride, hubDimension, hubSpawn,
+                protectedSpawnRadiusChunks, false, key, action);
+    }
+
+    public static Decision evaluate(
+            PlatformSavedData state,
+            UUID actorId,
+            boolean administratorOverride,
+            ResourceKey<Level> hubDimension,
+            BlockPos hubSpawn,
+            int protectedSpawnRadiusChunks,
+            boolean administratorProtected,
+            ClaimKey key,
+            Action action) {
         if (state == null || actorId == null || hubDimension == null || hubSpawn == null || key == null
                 || action == null || protectedSpawnRadiusChunks < 0 || protectedSpawnRadiusChunks > 64) {
             return new Decision(false, Reason.INVALID_REQUEST, ClaimRole.VISITOR, Optional.empty());
@@ -40,13 +57,19 @@ public final class ClaimProtectionService {
         if (administratorOverride || hasClaimAdministratorRole(state, actorId)) {
             return new Decision(true, Reason.ADMINISTRATOR_OVERRIDE, role, retained);
         }
-        if (state.isProtectedRegion(key)) {
+        if (administratorProtected && state.roleOf(actorId).orElse(null) == AdminRole.CONTENT_MANAGER) {
+            return new Decision(true, Reason.ADMINISTRATOR_OVERRIDE, role, retained);
+        }
+        if (state.isProtectedRegion(key) || administratorProtected) {
             return action == Action.ENTRY
                     ? new Decision(true, Reason.PROTECTED_PUBLIC_ENTRY, role, retained)
-                    : new Decision(false, Reason.PROTECTED_REGION, role, retained);
+                    : new Decision(false,
+                            administratorProtected ? Reason.PROTECTED_PORTAL_REGION : Reason.PROTECTED_REGION,
+                            role,
+                            retained);
         }
         if (!key.dimension().equals(hubDimension)) {
-            return new Decision(true, Reason.OUTSIDE_HUB, ClaimRole.VISITOR, Optional.empty());
+            return new Decision(true, Reason.OUTSIDE_HUB, role, retained);
         }
         if (ClaimRegionPolicy.isProtectedHubRegion(
                 key, hubDimension, hubSpawn, protectedSpawnRadiusChunks)) {
@@ -84,14 +107,25 @@ public final class ClaimProtectionService {
             int protectedSpawnRadiusChunks,
             ClaimKey source,
             ClaimKey target) {
+        return environmentMayModify(
+                state, hubDimension, hubSpawn, protectedSpawnRadiusChunks, source, target, false);
+    }
+
+    public static boolean environmentMayModify(
+            PlatformSavedData state,
+            ResourceKey<Level> hubDimension,
+            BlockPos hubSpawn,
+            int protectedSpawnRadiusChunks,
+            ClaimKey source,
+            ClaimKey target,
+            boolean targetAdministratorProtected) {
         if (state == null || hubDimension == null || hubSpawn == null || source == null || target == null
                 || protectedSpawnRadiusChunks < 0 || protectedSpawnRadiusChunks > 64) {
             return false;
         }
-        if (state.isProtectedRegion(target)) {
-            return false;
-        }
-        if (state.isWildernessOperationLocked() && WorldTopology.isWilderness(target.dimension())) {
+        if (state.isProtectedRegion(target)
+                || targetAdministratorProtected
+                || state.isWildernessOperationLocked() && WorldTopology.isWilderness(target.dimension())) {
             return false;
         }
         if (!target.dimension().equals(hubDimension)) {
@@ -152,8 +186,28 @@ public final class ClaimProtectionService {
             this.id = id;
         }
 
+        public String id() {
+            return id;
+        }
+
+        public String translationKey() {
+            return "claim_action.rovenfall." + id;
+        }
+
         public String denialTranslationKey() {
             return "message.rovenfall.claim.denied." + id;
+        }
+
+        public static Optional<Action> fromId(String id) {
+            if (id == null) {
+                return Optional.empty();
+            }
+            String normalized = id.toLowerCase(Locale.ROOT);
+            return Arrays.stream(values()).filter(action -> action.id.equals(normalized)).findFirst();
+        }
+
+        public static String[] ids() {
+            return Arrays.stream(values()).map(Action::id).toArray(String[]::new);
         }
     }
 
@@ -164,6 +218,7 @@ public final class ClaimProtectionService {
         ADMINISTRATOR_OVERRIDE("administrator_override"),
         PROTECTED_PUBLIC_ENTRY("protected_public_entry"),
         PROTECTED_REGION("protected_region"),
+        PROTECTED_PORTAL_REGION("protected_portal_region"),
         UNCLAIMED_HUB_BUILD("unclaimed_hub_build"),
         UNCLAIMED_HUB_PUBLIC_USE("unclaimed_hub_public_use"),
         ROLE_ALLOWED("role_allowed"),
@@ -178,6 +233,14 @@ public final class ClaimProtectionService {
 
         Reason(String id) {
             this.id = id;
+        }
+
+        public String id() {
+            return id;
+        }
+
+        public String translationKey() {
+            return "claim_policy.rovenfall." + id;
         }
     }
 

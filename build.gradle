@@ -276,6 +276,221 @@ tasks.named('jacocoTestReport', JacocoReport).configure {
     }
 }
 
+def releaseJarFile = tasks.named('jar', Jar).flatMap { it.archiveFile }
+
+tasks.register('verifyReleaseArtifact') {
+    group = 'verification'
+    description = 'Verifies that the distributable Rovenfall JAR contains required runtime assets.'
+    dependsOn tasks.named('jar')
+    inputs.file(releaseJarFile)
+
+    doLast {
+        File artifact = releaseJarFile.get().asFile
+        if (!artifact.isFile() || artifact.length() < 1L) {
+            throw new GradleException("Release artifact is missing or empty: ${artifact}")
+        }
+        def requiredEntries = [
+                'META-INF/neoforge.mods.toml',
+                'org/dldyou/rovenfall/Rovenfall.class',
+                'org/dldyou/rovenfall/administration/ActivityChallengeService.class',
+                'org/dldyou/rovenfall/activities/ActivityChallengeReloadListener.class',
+                'org/dldyou/rovenfall/administration/DailyContractService.class',
+                'org/dldyou/rovenfall/activities/DailyContractReloadListener.class',
+                'org/dldyou/rovenfall/administration/WeeklyExpeditionService.class',
+                'org/dldyou/rovenfall/activities/WeeklyExpeditionReloadListener.class',
+                'org/dldyou/rovenfall/mobs/Mirefang.class',
+                'org/dldyou/rovenfall/mobs/CinderWisp.class',
+                'org/dldyou/rovenfall/mobs/FrostboundReaver.class',
+                'org/dldyou/rovenfall/mobs/TideboundRaider.class',
+                'org/dldyou/rovenfall/mobs/DeepstoneHusk.class',
+                'org/dldyou/rovenfall/items/RovenfallItems.class',
+                'org/dldyou/rovenfall/items/FrontierFeedItem.class',
+                'org/dldyou/rovenfall/items/HuntingWeaponItem.class',
+                'org/dldyou/rovenfall/items/BossChallengeSigilItem.class',
+                'assets/rovenfall/lang/en_us.json',
+                'assets/rovenfall/lang/ko_kr.json',
+                'assets/rovenfall/lang/ja_jp.json',
+                'assets/rovenfall/items/mirefang_gland.json',
+                'assets/rovenfall/items/cinder_core.json',
+                'assets/rovenfall/items/frostbound_shard.json',
+                'assets/rovenfall/items/tidebound_scale.json',
+                'assets/rovenfall/items/deepstone_core.json',
+                'assets/rovenfall/items/ashen_residue.json',
+                'assets/rovenfall/items/runebound_fragment.json',
+                'assets/rovenfall/items/mireguard_tonic.json',
+                'assets/rovenfall/items/cinderward_tonic.json',
+                'assets/rovenfall/items/ashveil_tonic.json',
+                'assets/rovenfall/items/runeward_tonic.json',
+                'assets/rovenfall/items/froststep_tonic.json',
+                'assets/rovenfall/items/tidebreath_tonic.json',
+                'assets/rovenfall/items/deepsight_tonic.json',
+                'assets/rovenfall/items/frontier_stew.json',
+                'assets/rovenfall/items/frontier_feed.json',
+                'assets/rovenfall/items/highland_cheese.json',
+                'assets/rovenfall/items/mirefang_dagger.json',
+                'assets/rovenfall/items/cinderbrand.json',
+                'assets/rovenfall/items/warden_challenge_sigil.json',
+                'assets/rovenfall/items/warden_core.json',
+                'assets/rovenfall/items/wardenbreaker.json',
+                'assets/rovenfall/models/item/mirefang_gland.json',
+                'assets/rovenfall/models/item/cinder_core.json',
+                'assets/rovenfall/models/item/frostbound_shard.json',
+                'assets/rovenfall/models/item/tidebound_scale.json',
+                'assets/rovenfall/models/item/deepstone_core.json',
+                'assets/rovenfall/models/item/ashen_residue.json',
+                'assets/rovenfall/models/item/runebound_fragment.json',
+                'assets/rovenfall/models/item/mireguard_tonic.json',
+                'assets/rovenfall/models/item/cinderward_tonic.json',
+                'assets/rovenfall/models/item/ashveil_tonic.json',
+                'assets/rovenfall/models/item/runeward_tonic.json',
+                'assets/rovenfall/models/item/froststep_tonic.json',
+                'assets/rovenfall/models/item/tidebreath_tonic.json',
+                'assets/rovenfall/models/item/deepsight_tonic.json',
+                'assets/rovenfall/models/item/frontier_stew.json',
+                'assets/rovenfall/models/item/frontier_feed.json',
+                'assets/rovenfall/models/item/highland_cheese.json',
+                'assets/rovenfall/models/item/mirefang_dagger.json',
+                'assets/rovenfall/models/item/cinderbrand.json',
+                'assets/rovenfall/models/item/warden_challenge_sigil.json',
+                'assets/rovenfall/models/item/warden_core.json',
+                'assets/rovenfall/models/item/wardenbreaker.json',
+                'assets/rovenfall/admin/index.html',
+                'data/rovenfall/dimension/wilderness.json',
+                'data/rovenfall/loot_table/entities/ashen_stalker.json',
+                'data/rovenfall/loot_table/entities/runebound_archer.json',
+                'data/rovenfall/loot_table/entities/mirefang.json',
+                'data/rovenfall/loot_table/entities/cinder_wisp.json',
+                'data/rovenfall/loot_table/entities/frostbound_reaver.json',
+                'data/rovenfall/loot_table/entities/tidebound_raider.json',
+                'data/rovenfall/loot_table/entities/deepstone_husk.json',
+                'data/rovenfall/loot_table/entities/arena_warden.json',
+                'data/rovenfall/loot_table/gameplay/warden_relic.json',
+                'data/rovenfall/recipe/mireguard_tonic.json',
+                'data/rovenfall/recipe/cinderward_tonic.json',
+                'data/rovenfall/recipe/ashveil_tonic.json',
+                'data/rovenfall/recipe/runeward_tonic.json',
+                'data/rovenfall/recipe/froststep_tonic.json',
+                'data/rovenfall/recipe/tidebreath_tonic.json',
+                'data/rovenfall/recipe/deepsight_tonic.json',
+                'data/rovenfall/recipe/frontier_stew.json',
+                'data/rovenfall/recipe/frontier_feed.json',
+                'data/rovenfall/recipe/highland_cheese.json',
+                'data/rovenfall/recipe/mirefang_dagger.json',
+                'data/rovenfall/recipe/cinderbrand.json',
+                'data/rovenfall/recipe/warden_challenge_sigil.json',
+                'data/rovenfall/recipe/wardenbreaker.json',
+                'data/rovenfall/advancement/recipes/hunting/mireguard_tonic.json',
+                'data/rovenfall/advancement/recipes/hunting/cinderward_tonic.json',
+                'data/rovenfall/advancement/recipes/hunting/ashveil_tonic.json',
+                'data/rovenfall/advancement/recipes/hunting/runeward_tonic.json',
+                'data/rovenfall/advancement/recipes/hunting/froststep_tonic.json',
+                'data/rovenfall/advancement/recipes/hunting/tidebreath_tonic.json',
+                'data/rovenfall/advancement/recipes/hunting/deepsight_tonic.json',
+                'data/rovenfall/advancement/recipes/cooking/frontier_stew.json',
+                'data/rovenfall/advancement/recipes/farming/frontier_feed.json',
+                'data/rovenfall/advancement/recipes/cooking/highland_cheese.json',
+                'data/rovenfall/advancement/recipes/hunting/warden_challenge_sigil.json',
+                'data/rovenfall/advancement/recipes/hunting/wardenbreaker.json',
+                'data/rovenfall/advancement/wilderness/root.json',
+                'data/rovenfall/advancement/wilderness/beneath_the_frontier.json',
+                'data/rovenfall/advancement/wilderness/frontier_feast.json',
+                'data/rovenfall/advancement/wilderness/highland_herd.json',
+                'data/rovenfall/advancement/wilderness/highland_provisions.json',
+                'data/rovenfall/advancement/wilderness/hunt_the_frontier.json',
+                'data/rovenfall/advancement/wilderness/frontier_alchemist.json',
+                'data/rovenfall/advancement/wilderness/challenge_the_warden.json',
+                'data/rovenfall/advancement/wilderness/warden_defeated.json',
+                'data/rovenfall/advancement/wilderness/warden_relic_reward.json',
+                'data/rovenfall/advancement/wilderness/forge_the_wardenbreaker.json',
+                'data/rovenfall/rovenfall/shop_templates/wilderness_outfitter.json',
+                'data/rovenfall/rovenfall/professions/adventurer.json',
+                'data/rovenfall/rovenfall/professions/scout.json',
+                'data/rovenfall/rovenfall/professions/vanguard.json',
+                'data/rovenfall/rovenfall/professions/slayer.json',
+                'data/rovenfall/rovenfall/professions/architect.json',
+                'data/rovenfall/rovenfall/professions/cultivator.json',
+                'data/rovenfall/rovenfall/professions/pathfinder.json',
+                'data/rovenfall/rovenfall/professions/ranger.json',
+                'data/rovenfall/rovenfall/activity_challenges/first_steps.json',
+                'data/rovenfall/rovenfall/activity_challenges/master_of_trades.json',
+                'data/rovenfall/rovenfall/daily_contracts/iron_rush.json',
+                'data/rovenfall/rovenfall/daily_contracts/ashen_pursuit.json',
+                'data/rovenfall/rovenfall/daily_contracts/cinder_containment.json',
+                'data/rovenfall/rovenfall/daily_contracts/frozen_front.json',
+                'data/rovenfall/rovenfall/daily_contracts/sunken_patrol.json',
+                'data/rovenfall/rovenfall/daily_contracts/depths_watch.json',
+                'data/rovenfall/rovenfall/daily_contracts/frontier_feast.json',
+                'data/rovenfall/rovenfall/daily_contracts/highland_herd.json',
+                'data/rovenfall/rovenfall/daily_contracts/highland_provisions.json',
+                'data/rovenfall/rovenfall/daily_contracts/rune_breaker.json',
+                'data/rovenfall/rovenfall/daily_contracts/warden_trial.json',
+                'data/rovenfall/rovenfall/weekly_expeditions/supply_lines.json',
+                'data/rovenfall/rovenfall/weekly_expeditions/frontier_anomalies.json',
+                'data/rovenfall/rovenfall/weekly_expeditions/wilderness_campaign.json',
+                'data/rovenfall/rovenfall/weekly_expeditions/warden_oath.json',
+                'data/rovenfall/rovenfall/activity_rewards/deep_dark_discovery.json',
+                'data/rovenfall/rovenfall/activity_rewards/runebound_archer_hunting.json',
+                'data/rovenfall/rovenfall/activity_rewards/cinder_wisp_hunting.json',
+                'data/rovenfall/rovenfall/activity_rewards/frostbound_reaver_combat.json',
+                'data/rovenfall/rovenfall/activity_rewards/frostbound_reaver_hunting.json',
+                'data/rovenfall/rovenfall/activity_rewards/tidebound_raider_combat.json',
+                'data/rovenfall/rovenfall/activity_rewards/tidebound_raider_hunting.json',
+                'data/rovenfall/rovenfall/activity_rewards/deepstone_husk_combat.json',
+                'data/rovenfall/rovenfall/activity_rewards/deepstone_husk_hunting.json',
+                'data/rovenfall/rovenfall/activity_rewards/dripstone_caves_discovery.json',
+                'data/rovenfall/rovenfall/activity_rewards/lush_caves_discovery.json',
+                'data/rovenfall/rovenfall/activity_rewards/sulfur_caves_discovery.json',
+                'data/rovenfall/rovenfall/activity_rewards/frontier_stew.json',
+                'data/rovenfall/rovenfall/activity_rewards/goat_breeding.json',
+                'data/rovenfall/rovenfall/activity_rewards/highland_cheese.json',
+                'data/rovenfall/tags/entity_type/frontier_feed_animals.json',
+                'data/rovenfall/neoforge/biome_modifier/cinder_wisp_spawns.json',
+                'data/rovenfall/neoforge/biome_modifier/frostbound_reaver_spawns.json',
+                'data/rovenfall/neoforge/biome_modifier/frostbound_reaver_spawn_costs.json',
+                'data/rovenfall/tags/worldgen/biome/frostbound_reaver_spawns.json',
+                'data/rovenfall/neoforge/biome_modifier/tidebound_raider_spawns.json',
+                'data/rovenfall/neoforge/biome_modifier/tidebound_raider_spawn_costs.json',
+                'data/rovenfall/tags/worldgen/biome/tidebound_raider_spawns.json',
+                'data/rovenfall/neoforge/biome_modifier/deepstone_husk_spawns.json',
+                'data/rovenfall/neoforge/biome_modifier/deepstone_husk_spawn_costs.json',
+                'data/rovenfall/tags/worldgen/biome/deepstone_husk_spawns.json',
+                'data/rovenfall/rovenfall/mob_mutations/ashen.json',
+                'data/rovenfall/rovenfall/mob_mutations/tempest.json',
+                'data/rovenfall/rovenfall/mob_mutations/bulwark.json',
+                'data/rovenfall/rovenfall/mob_mutations/frenzied.json'
+        ]
+        new java.util.zip.ZipFile(artifact).withCloseable { archive ->
+            requiredEntries.each { entry ->
+                if (archive.getEntry(entry) == null) {
+                    throw new GradleException("Release artifact is missing required entry: ${entry}")
+                }
+            }
+            if (archive.entries().toList().any { entry ->
+                entry.name.startsWith('org/junit/') || entry.name.startsWith('net/minecraft/')
+            }) {
+                throw new GradleException('Release artifact contains test or bundled Minecraft classes')
+            }
+        }
+        def digest = java.security.MessageDigest.getInstance('SHA-256')
+        artifact.withInputStream { input ->
+            byte[] buffer = new byte[8192]
+            for (int count = input.read(buffer); count >= 0; count = input.read(buffer)) {
+                digest.update(buffer, 0, count)
+            }
+        }
+        String sha256 = digest.digest().encodeHex().toString().toUpperCase(java.util.Locale.ROOT)
+        println "Verified release artifact: ${artifact} (${artifact.length()} bytes, SHA-256 ${sha256})"
+    }
+}
+
+tasks.register('releaseCheck') {
+    group = 'verification'
+    description = 'Runs unit tests, NeoForge GameTests, the full build, and release JAR verification.'
+    dependsOn tasks.named('build')
+    dependsOn tasks.named('runGameTestServer')
+    dependsOn tasks.named('verifyReleaseArtifact')
+}
+
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.
 idea {
     module {

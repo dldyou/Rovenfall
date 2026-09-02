@@ -1,0 +1,12 @@
+{
+  "type": "neoforge:add_spawns",
+  "biomes": "#rovenfall:cinder_wisp_spawns",
+  "spawners": [
+    {
+      "type": "rovenfall:cinder_wisp",
+      "weight": 6,
+      "minCount": 1,
+      "maxCount": 1
+    }
+  ]
+}

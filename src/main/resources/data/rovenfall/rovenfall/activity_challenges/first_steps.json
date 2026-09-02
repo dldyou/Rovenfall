@@ -1,0 +1,9 @@
+{
+  "translation_key": "activity_challenge.rovenfall.first_steps",
+  "description_translation_key": "activity_challenge_description.rovenfall.first_steps",
+  "activity_levels": {
+    "exploration": 1,
+    "hunting": 1
+  },
+  "currency_reward": 100
+}

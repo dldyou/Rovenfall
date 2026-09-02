@@ -1,0 +1,9 @@
+{
+  "translation_key": "activity_challenge.rovenfall.monster_hunter",
+  "description_translation_key": "activity_challenge_description.rovenfall.monster_hunter",
+  "activity_levels": {
+    "combat": 3,
+    "hunting": 3
+  },
+  "currency_reward": 250
+}

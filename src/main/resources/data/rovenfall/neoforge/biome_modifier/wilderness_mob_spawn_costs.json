@@ -1,0 +1,12 @@
+{
+  "type": "neoforge:add_spawn_costs",
+  "biomes": "#rovenfall:wilderness_mob_spawns",
+  "entity_types": [
+    "rovenfall:ashen_stalker",
+    "rovenfall:runebound_archer"
+  ],
+  "spawn_cost": {
+    "energy_budget": 0.16,
+    "charge": 0.08
+  }
+}

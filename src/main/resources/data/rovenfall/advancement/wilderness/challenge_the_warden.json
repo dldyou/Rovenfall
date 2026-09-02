@@ -1,0 +1,26 @@
+{
+  "parent": "rovenfall:wilderness/root",
+  "criteria": {
+    "summoned": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancements.rovenfall.wilderness.challenge_the_warden.description"
+    },
+    "frame": "goal",
+    "icon": {
+      "id": "rovenfall:warden_challenge_sigil"
+    },
+    "title": {
+      "translate": "advancements.rovenfall.wilderness.challenge_the_warden.title"
+    }
+  },
+  "requirements": [
+    [
+      "summoned"
+    ]
+  ],
+  "sends_telemetry_event": false
+}

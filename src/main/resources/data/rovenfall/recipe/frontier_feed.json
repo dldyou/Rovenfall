@@ -1,0 +1,13 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "minecraft:wheat",
+    "minecraft:carrot",
+    "minecraft:beetroot",
+    "minecraft:wheat_seeds"
+  ],
+  "result": {
+    "id": "rovenfall:frontier_feed",
+    "count": 4
+  }
+}
