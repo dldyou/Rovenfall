@@ -58,6 +58,7 @@ public final class PlayerQuestMenu extends ChestMenu {
     private static final int GUIDE_SLOT = 49;
     private static final int NEXT_SLOT = 50;
     private static final int TRACKER_CLEAR_SLOT = 51;
+    private static final int[] STORY_FILTER_SLOTS = {0, 1, 2, 6, 7};
     private static final int REFRESH_SLOT = 53;
     static final UUID EXPLORATION_MARKER_ID =
             UUID.fromString("aa43fe27-4456-4f81-99cf-93558a69c79f");
@@ -79,6 +80,7 @@ public final class PlayerQuestMenu extends ChestMenu {
         FILTER_ALL,
         FILTER_HUB,
         FILTER_WILDERNESS,
+        FILTER_STORY,
         PREVIOUS,
         GUIDE,
         NEXT,
@@ -99,6 +101,7 @@ public final class PlayerQuestMenu extends ChestMenu {
     private QuestJourneyView.QuestRow selected;
     private List<QuestJourneyView.QuestRow> displayedRows = List.of();
     private QuestJourneyView renderedView;
+    private QuestJourneyView.Filter storyFilter = QuestJourneyView.Filter.ALL;
     private ContractJourneyView renderedContracts;
     private ExplorationJournalView renderedExploration;
     private List<ExplorationJournalView.Row> displayedExplorationRows = List.of();
@@ -177,6 +180,7 @@ public final class PlayerQuestMenu extends ChestMenu {
             case FILTER_ALL -> filterExploration(ExplorationJournalView.Filter.ALL);
             case FILTER_HUB -> filterExploration(ExplorationJournalView.Filter.HUB);
             case FILTER_WILDERNESS -> filterExploration(ExplorationJournalView.Filter.WILDERNESS);
+            case FILTER_STORY -> filterStory(slotIndex);
             case PREVIOUS -> previous();
             case GUIDE -> openNextStep();
             case NEXT -> next();
@@ -215,6 +219,9 @@ public final class PlayerQuestMenu extends ChestMenu {
         }
         if (slot == TRACKER_CLEAR_SLOT && (page == Page.LIST || page == Page.CONTRACTS)) {
             return Action.CLEAR_TRACKER;
+        }
+        if (page == Page.LIST && storyFilterOffset(slot) >= 0) {
+            return Action.FILTER_STORY;
         }
         if (page == Page.CONTRACTS) {
             return contractOffset(slot) >= 0 ? Action.TRACK_CONTRACT : Action.NONE;
@@ -278,6 +285,15 @@ public final class PlayerQuestMenu extends ChestMenu {
     static int contractOffset(int slot) {
         for (int index = 0; index < CONTRACT_SLOTS.length; index++) {
             if (CONTRACT_SLOTS[index] == slot) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    static int storyFilterOffset(int slot) {
+        for (int index = 0; index < STORY_FILTER_SLOTS.length; index++) {
+            if (STORY_FILTER_SLOTS[index] == slot) {
                 return index;
             }
         }
@@ -434,6 +450,16 @@ public final class PlayerQuestMenu extends ChestMenu {
     private void filterExploration(ExplorationJournalView.Filter filter) {
         explorationFilter = filter;
         explorationPage = 0;
+        render();
+    }
+
+    private void filterStory(int slot) {
+        int offset = storyFilterOffset(slot);
+        if (offset < 0) {
+            return;
+        }
+        storyFilter = QuestJourneyView.Filter.values()[offset];
+        listPage = 0;
         render();
     }
 
@@ -621,7 +647,8 @@ public final class PlayerQuestMenu extends ChestMenu {
         }
 
         renderedView = QuestJourneyView.create(
-                versioned.snapshot(), state, versioned.revision(), writable, listPage, PAGE_SIZE);
+                versioned.snapshot(), state, versioned.revision(), writable,
+                listPage, PAGE_SIZE, storyFilter);
         renderedContracts = ContractJourneyView.create(
                 versioned.snapshot(), state, versioned.revision(), contractsWritable, now);
         renderedExploration = ExplorationJournalView.create(
@@ -667,6 +694,17 @@ public final class PlayerQuestMenu extends ChestMenu {
                 Component.translatable("gui.rovenfall.quest.title"),
                 header.toArray(Component[]::new)));
 
+        for (int index = 0; index < STORY_FILTER_SLOTS.length; index++) {
+            QuestJourneyView.Filter filter = QuestJourneyView.Filter.values()[index];
+            Component name = Component.translatable(storyFilterKey(filter));
+            content.setItem(STORY_FILTER_SLOTS[index], PlayerDashboardMenu.icon(
+                    storyFilter == filter ? Items.FILLED_MAP : Items.MAP,
+                    name,
+                    Component.translatable(storyFilter == filter
+                            ? "gui.rovenfall.inventory.current_tab"
+                            : "gui.rovenfall.inventory.open_tab", name)));
+        }
+
         displayedRows = renderedView.entries();
         for (int index = 0; index < displayedRows.size(); index++) {
             content.setItem(CONTENT_SLOTS[index], questIcon(displayedRows.get(index), true));
@@ -679,6 +717,10 @@ public final class PlayerQuestMenu extends ChestMenu {
         }
         addNavigation(renderedView.page(), renderedView.totalEntries());
         addTrackerClear();
+    }
+
+    private static String storyFilterKey(QuestJourneyView.Filter filter) {
+        return "gui.rovenfall.quest.filter." + filter.name().toLowerCase(Locale.ROOT);
     }
 
     private void renderDetail() {

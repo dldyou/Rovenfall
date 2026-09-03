@@ -1,0 +1,15 @@
+{
+  "type": "minecraft:advancement_reward",
+  "pools": [
+    {
+      "entries": [
+        {
+          "type": "minecraft:item",
+          "name": "rovenfall:warden_core"
+        }
+      ],
+      "rolls": 1.0
+    }
+  ],
+  "random_sequence": "rovenfall:gameplay/warden_relic"
+}

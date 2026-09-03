@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "equipment",
+  "key": {
+    "C": "rovenfall:cinder_core",
+    "I": "#minecraft:iron_tool_materials",
+    "S": "minecraft:stick"
+  },
+  "pattern": [
+    "C",
+    "I",
+    "S"
+  ],
+  "result": {
+    "id": "rovenfall:cinderbrand"
+  }
+}

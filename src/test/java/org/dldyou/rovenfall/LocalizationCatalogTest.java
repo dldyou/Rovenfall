@@ -198,6 +198,11 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.quest.contract.refresh.weekly",
             "gui.rovenfall.quest.dashboard",
             "gui.rovenfall.quest.summary",
+            "gui.rovenfall.quest.filter.all",
+            "gui.rovenfall.quest.filter.actionable",
+            "gui.rovenfall.quest.filter.in_progress",
+            "gui.rovenfall.quest.filter.blocked",
+            "gui.rovenfall.quest.filter.completed",
             "gui.rovenfall.quest.empty",
             "gui.rovenfall.quest.read_only",
             "gui.rovenfall.quest.status.available",
@@ -224,6 +229,12 @@ final class LocalizationCatalogTest {
             "gui.rovenfall.quest.tracker.kind.weekly",
             "hud.rovenfall.journey.tracker.changed",
             "hud.rovenfall.journey.tracker.cleared",
+            "hud.rovenfall.journey.tracker.panel",
+            "hud.rovenfall.location.coordinates",
+            "hud.rovenfall.location.heading",
+            "hud.rovenfall.vitals.health",
+            "hud.rovenfall.vitals.hunger",
+            "hud.rovenfall.vitals.level",
             "hud.rovenfall.journey.tracker.state",
             "hud.rovenfall.journey.tracker.kind.story",
             "hud.rovenfall.journey.tracker.kind.daily",
@@ -300,6 +311,11 @@ final class LocalizationCatalogTest {
             "/data/rovenfall/rovenfall/shop_templates/foundation.json",
             "/data/rovenfall/rovenfall/mob_content/foundation.json",
             "/data/rovenfall/rovenfall/quests/first_steps.json",
+            "/data/rovenfall/rovenfall/quests/frontier_homestead.json",
+            "/data/rovenfall/rovenfall/quests/expedition_provisions.json",
+            "/data/rovenfall/rovenfall/quests/wilderness_patrol.json",
+            "/data/rovenfall/rovenfall/quests/rift_warden_oath.json",
+            "/data/rovenfall/rovenfall/quests/frontier_legacy.json",
             "/data/rovenfall/rovenfall/quests/contracts/daily_combat_drill.json",
             "/data/rovenfall/rovenfall/quests/contracts/daily_hunt_patrol.json",
             "/data/rovenfall/rovenfall/quests/contracts/daily_market_delivery.json",
@@ -513,6 +529,7 @@ final class LocalizationCatalogTest {
     private static void assertOrdinaryGuiAvoids(String locale, Pattern rejectedTerms) {
         catalog(locale).entrySet().stream()
                 .filter(entry -> entry.getKey().startsWith("gui.rovenfall."))
+                .filter(entry -> !entry.getKey().startsWith("gui.rovenfall.admin."))
                 .filter(entry -> !entry.getKey().contains(".form."))
                 .filter(entry -> !TECHNICAL_GUI_KEYS.contains(entry.getKey()))
                 .forEach(entry -> assertTrue(

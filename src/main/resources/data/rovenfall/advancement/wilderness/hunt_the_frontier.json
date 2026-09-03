@@ -1,0 +1,139 @@
+{
+  "parent": "rovenfall:wilderness/root",
+  "criteria": {
+    "ashen_stalker": {
+      "conditions": {
+        "entity": [
+          {
+            "condition": "minecraft:entity_properties",
+            "entity": "this",
+            "predicate": {
+              "minecraft:entity_type": "rovenfall:ashen_stalker"
+            }
+          }
+        ]
+      },
+      "trigger": "minecraft:player_killed_entity"
+    },
+    "runebound_archer": {
+      "conditions": {
+        "entity": [
+          {
+            "condition": "minecraft:entity_properties",
+            "entity": "this",
+            "predicate": {
+              "minecraft:entity_type": "rovenfall:runebound_archer"
+            }
+          }
+        ]
+      },
+      "trigger": "minecraft:player_killed_entity"
+    },
+    "mirefang": {
+      "conditions": {
+        "entity": [
+          {
+            "condition": "minecraft:entity_properties",
+            "entity": "this",
+            "predicate": {
+              "minecraft:entity_type": "rovenfall:mirefang"
+            }
+          }
+        ]
+      },
+      "trigger": "minecraft:player_killed_entity"
+    },
+    "cinder_wisp": {
+      "conditions": {
+        "entity": [
+          {
+            "condition": "minecraft:entity_properties",
+            "entity": "this",
+            "predicate": {
+              "minecraft:entity_type": "rovenfall:cinder_wisp"
+            }
+          }
+        ]
+      },
+      "trigger": "minecraft:player_killed_entity"
+    },
+    "frostbound_reaver": {
+      "conditions": {
+        "entity": [
+          {
+            "condition": "minecraft:entity_properties",
+            "entity": "this",
+            "predicate": {
+              "minecraft:entity_type": "rovenfall:frostbound_reaver"
+            }
+          }
+        ]
+      },
+      "trigger": "minecraft:player_killed_entity"
+    },
+    "tidebound_raider": {
+      "conditions": {
+        "entity": [
+          {
+            "condition": "minecraft:entity_properties",
+            "entity": "this",
+            "predicate": {
+              "minecraft:entity_type": "rovenfall:tidebound_raider"
+            }
+          }
+        ]
+      },
+      "trigger": "minecraft:player_killed_entity"
+    },
+    "deepstone_husk": {
+      "conditions": {
+        "entity": [
+          {
+            "condition": "minecraft:entity_properties",
+            "entity": "this",
+            "predicate": {
+              "minecraft:entity_type": "rovenfall:deepstone_husk"
+            }
+          }
+        ]
+      },
+      "trigger": "minecraft:player_killed_entity"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancements.rovenfall.wilderness.hunt_the_frontier.description"
+    },
+    "frame": "goal",
+    "icon": {
+      "id": "rovenfall:runebound_fragment"
+    },
+    "title": {
+      "translate": "advancements.rovenfall.wilderness.hunt_the_frontier.title"
+    }
+  },
+  "requirements": [
+    [
+      "ashen_stalker"
+    ],
+    [
+      "runebound_archer"
+    ],
+    [
+      "mirefang"
+    ],
+    [
+      "cinder_wisp"
+    ],
+    [
+      "frostbound_reaver"
+    ],
+    [
+      "tidebound_raider"
+    ],
+    [
+      "deepstone_husk"
+    ]
+  ],
+  "sends_telemetry_event": false
+}

@@ -164,6 +164,72 @@ final class ClaimProtectionServiceTest {
     }
 
     @Test
+    void administratorPortalRegionsArePublicToEnterButProtectedInEveryDimension() {
+        PlatformSavedData state = new PlatformSavedData();
+        UUID visitor = id(250);
+        ClaimKey wildernessPortal = new ClaimKey(WorldCombatService.WILDERNESS_DIMENSION, 4, -3);
+
+        for (ClaimProtectionService.Action action : java.util.List.of(
+                ClaimProtectionService.Action.BUILD,
+                ClaimProtectionService.Action.INTERACT,
+                ClaimProtectionService.Action.ENTITY)) {
+            var decision = ClaimProtectionService.evaluate(
+                    state, visitor, false, Level.OVERWORLD, SPAWN, 2,
+                    true, wildernessPortal, action);
+            assertFalse(decision.allowed());
+            assertEquals(ClaimProtectionService.Reason.PROTECTED_PORTAL_REGION, decision.reason());
+        }
+
+        assertTrue(ClaimProtectionService.evaluate(
+                state, visitor, false, Level.OVERWORLD, SPAWN, 2,
+                true, wildernessPortal, ClaimProtectionService.Action.ENTRY).allowed());
+        assertTrue(ClaimProtectionService.evaluate(
+                state, visitor, true, Level.OVERWORLD, SPAWN, 2,
+                true, wildernessPortal, ClaimProtectionService.Action.BUILD).allowed());
+        UUID contentManager = id(251);
+        role(state, contentManager, AdminRole.CONTENT_MANAGER, 3_000);
+        assertTrue(ClaimProtectionService.evaluate(
+                state, contentManager, false, Level.OVERWORLD, SPAWN, 2,
+                true, wildernessPortal, ClaimProtectionService.Action.BUILD).allowed());
+        assertTrue(ClaimProtectionService.evaluate(
+                state, contentManager, false, Level.OVERWORLD, SPAWN, 2,
+                false, wildernessPortal, ClaimProtectionService.Action.BUILD).allowed());
+        assertFalse(ClaimProtectionService.evaluate(
+                state, contentManager, false, Level.OVERWORLD, SPAWN, 2,
+                false, new ClaimKey(Level.OVERWORLD, 30, 30),
+                ClaimProtectionService.Action.BUILD).allowed());
+        assertFalse(ClaimProtectionService.environmentMayModify(
+                state, Level.OVERWORLD, SPAWN, 2,
+                wildernessPortal, wildernessPortal, true));
+        assertTrue(ClaimProtectionService.environmentMayModify(
+                state, Level.OVERWORLD, SPAWN, 2,
+                wildernessPortal, wildernessPortal, false));
+    }
+
+    @Test
+    void actionEvaluationIsReadOnlyAndExposesStableRuleCodes() {
+        UUID owner = id(260);
+        UUID visitor = id(261);
+        PlatformSavedData state = claimed(owner, CLAIM, 260);
+        int auditCount = state.auditCount();
+
+        var decision = ClaimProtectionService.evaluate(
+                state, visitor, false, Level.OVERWORLD, SPAWN, 2,
+                CLAIM, ClaimProtectionService.Action.BUILD);
+
+        assertFalse(decision.allowed());
+        assertEquals(ClaimProtectionService.Reason.ROLE_REQUIRED, decision.reason());
+        assertEquals("role_required", decision.reason().id());
+        assertEquals("claim_policy.rovenfall.role_required", decision.reason().translationKey());
+        assertEquals(ClaimRole.VISITOR, decision.role());
+        assertEquals(auditCount, state.auditCount());
+        assertEquals(Optional.of(ClaimProtectionService.Action.BUILD),
+                ClaimProtectionService.Action.fromId("BUILD"));
+        assertEquals("claim_action.rovenfall.build",
+                ClaimProtectionService.Action.BUILD.translationKey());
+    }
+
+    @Test
     void auditLedgerEvictsOldestEntriesAtItsHardLimit() {
         PlatformSavedData state = new PlatformSavedData();
         UUID actor = id(300);

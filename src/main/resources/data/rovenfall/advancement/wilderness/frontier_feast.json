@@ -1,0 +1,31 @@
+{
+  "parent": "rovenfall:wilderness/root",
+  "criteria": {
+    "eat_frontier_stew": {
+      "conditions": {
+        "item": {
+          "items": "rovenfall:frontier_stew"
+        }
+      },
+      "trigger": "minecraft:consume_item"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancements.rovenfall.wilderness.frontier_feast.description"
+    },
+    "frame": "task",
+    "icon": {
+      "id": "rovenfall:frontier_stew"
+    },
+    "title": {
+      "translate": "advancements.rovenfall.wilderness.frontier_feast.title"
+    }
+  },
+  "requirements": [
+    [
+      "eat_frontier_stew"
+    ]
+  ],
+  "sends_telemetry_event": false
+}

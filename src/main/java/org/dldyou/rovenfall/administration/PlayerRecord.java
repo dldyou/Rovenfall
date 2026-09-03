@@ -10,12 +10,16 @@ public record PlayerRecord(
         long lastSeenEpochMillis,
         Optional<String> displayName) {
     static final int MAX_DISPLAY_NAME_LENGTH = 16;
+    public static final int MAX_NAME_LENGTH = MAX_DISPLAY_NAME_LENGTH;
 
     public static final Codec<PlayerRecord> CODEC = RecordCodecBuilder.<PlayerRecord>create(instance -> instance.group(
             Codec.LONG.fieldOf("first_seen").forGetter(PlayerRecord::firstSeenEpochMillis),
             Codec.LONG.fieldOf("last_seen").forGetter(PlayerRecord::lastSeenEpochMillis),
-            Codec.STRING.optionalFieldOf("display_name").forGetter(PlayerRecord::displayName)
-    ).apply(instance, PlayerRecord::new)).validate(PlayerRecord::validate);
+            Codec.STRING.optionalFieldOf("display_name").forGetter(PlayerRecord::displayName),
+            Codec.STRING.optionalFieldOf("last_known_name").forGetter(ignored -> Optional.empty())
+    ).apply(instance, (firstSeen, lastSeen, displayName, legacyName) ->
+            new PlayerRecord(firstSeen, lastSeen, displayName.or(() -> legacyName))))
+            .validate(PlayerRecord::validate);
 
     public PlayerRecord {
         displayName = normalizeDisplayName(displayName == null ? null : displayName.orElse(null));
@@ -23,6 +27,14 @@ public record PlayerRecord(
 
     public PlayerRecord(long firstSeenEpochMillis, long lastSeenEpochMillis) {
         this(firstSeenEpochMillis, lastSeenEpochMillis, Optional.empty());
+    }
+
+    public PlayerRecord(long firstSeenEpochMillis, long lastSeenEpochMillis, String lastKnownName) {
+        this(firstSeenEpochMillis, lastSeenEpochMillis, Optional.ofNullable(lastKnownName));
+    }
+
+    public String lastKnownName() {
+        return displayName.orElse("");
     }
 
     PlayerRecord observe(long timestampEpochMillis) {
@@ -36,6 +48,10 @@ public record PlayerRecord(
         return observedAt != lastSeenEpochMillis || !updatedName.equals(displayName)
                 ? new PlayerRecord(firstSeenEpochMillis, observedAt, updatedName)
                 : this;
+    }
+
+    PlayerRecord observe(String playerName, long timestampEpochMillis) {
+        return observe(timestampEpochMillis, playerName);
     }
 
     private static DataResult<PlayerRecord> validate(PlayerRecord record) {

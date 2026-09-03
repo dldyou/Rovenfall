@@ -1,6 +1,7 @@
 package org.dldyou.rovenfall.quest;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -31,28 +32,38 @@ public record QuestJourneyView(
             boolean writable,
             int requestedPage,
             int pageSize) {
+        return create(
+                definitions, state, definitionRevision, writable,
+                requestedPage, pageSize, Filter.ALL);
+    }
+
+    public static QuestJourneyView create(
+            QuestDefinitionSnapshot definitions,
+            QuestPlayerState state,
+            long definitionRevision,
+            boolean writable,
+            int requestedPage,
+            int pageSize,
+            Filter filter) {
         if (definitions == null || state == null || definitionRevision < 0 || requestedPage < 0
-                || pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
+                || pageSize < 1 || pageSize > MAX_PAGE_SIZE || filter == null) {
             throw new IllegalArgumentException("invalid quest journey view request");
         }
 
         TreeSet<Identifier> ids = new TreeSet<>(definitions.storyQuests().keySet());
         ids.addAll(state.quests().keySet());
-        int totalEntries = ids.size();
+        List<QuestRow> rows = ids.stream()
+                .map(id -> row(id, definitions, state))
+                .sorted(Comparator.comparingInt((QuestRow value) -> statusPriority(value.status()))
+                        .thenComparing(QuestRow::id))
+                .filter(row -> filter.includes(row.status()))
+                .toList();
+        int totalEntries = rows.size();
         int totalPages = totalEntries == 0 ? 0 : (totalEntries + pageSize - 1) / pageSize;
         int page = totalPages == 0 ? 0 : Math.min(requestedPage, totalPages - 1);
         int from = page * pageSize;
         int to = Math.min(from + pageSize, totalEntries);
-        List<QuestRow> entries = new ArrayList<>(to - from);
-        int index = 0;
-        for (Identifier id : ids) {
-            if (index >= from && index < to) {
-                entries.add(row(id, definitions, state));
-            }
-            if (++index >= to) {
-                break;
-            }
-        }
+        List<QuestRow> entries = new ArrayList<>(rows.subList(from, to));
 
         return new QuestJourneyView(
                 definitionRevision,
@@ -63,6 +74,18 @@ public record QuestJourneyView(
                 totalEntries,
                 entries,
                 nextStep(definitions, state));
+    }
+
+    private static int statusPriority(Status status) {
+        return switch (status) {
+            case IN_PROGRESS -> 0;
+            case AVAILABLE -> 1;
+            case PENDING -> 2;
+            case PREREQUISITE_LOCKED -> 3;
+            case COMPLETED -> 4;
+            case DEFINITION_CHANGED -> 5;
+            case UNRESOLVED -> 6;
+        };
     }
 
     static QuestRow row(
@@ -279,5 +302,27 @@ public record QuestJourneyView(
         COMPLETED,
         UNRESOLVED,
         DEFINITION_CHANGED
+    }
+
+    public enum Filter {
+        ALL,
+        ACTIONABLE,
+        IN_PROGRESS,
+        BLOCKED,
+        COMPLETED;
+
+        boolean includes(Status status) {
+            return switch (this) {
+                case ALL -> true;
+                case ACTIONABLE -> status == Status.AVAILABLE
+                        || status == Status.IN_PROGRESS
+                        || status == Status.PENDING;
+                case IN_PROGRESS -> status == Status.IN_PROGRESS;
+                case BLOCKED -> status == Status.PREREQUISITE_LOCKED
+                        || status == Status.DEFINITION_CHANGED
+                        || status == Status.UNRESOLVED;
+                case COMPLETED -> status == Status.COMPLETED;
+            };
+        }
     }
 }

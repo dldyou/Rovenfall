@@ -1,0 +1,27 @@
+{
+  "translation_key": "quest.rovenfall.frontier_homestead",
+  "description_translation_key": "quest.rovenfall.frontier_homestead.description",
+  "version": 1,
+  "prerequisites": ["rovenfall:first_steps"],
+  "objectives": [
+    {
+      "id": "rovenfall:frontier_homestead/building",
+      "kind": "activity",
+      "target": "rovenfall:building",
+      "required_count": 80
+    },
+    {
+      "id": "rovenfall:frontier_homestead/farming",
+      "kind": "activity",
+      "target": "rovenfall:farming",
+      "required_count": 80
+    }
+  ],
+  "rewards": {
+    "currency": 150,
+    "activity_xp": {
+      "activity": "rovenfall:building",
+      "amount": 20
+    }
+  }
+}

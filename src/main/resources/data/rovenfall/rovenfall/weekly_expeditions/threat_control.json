@@ -1,0 +1,16 @@
+{
+  "translation_key": "weekly_expedition.rovenfall.threat_control",
+  "description_translation_key": "weekly_expedition_description.rovenfall.threat_control",
+  "daily_contracts": {
+    "rovenfall:zombie_cull": 2,
+    "rovenfall:bone_patrol": 2,
+    "rovenfall:ashen_pursuit": 1,
+    "rovenfall:rune_breaker": 1,
+    "rovenfall:mirefang_hunt": 1,
+    "rovenfall:cinder_containment": 1,
+    "rovenfall:frozen_front": 1,
+    "rovenfall:sunken_patrol": 1,
+    "rovenfall:depths_watch": 1
+  },
+  "currency_reward": 1450
+}

@@ -145,6 +145,7 @@ public final class ClaimProtectionEvents {
         }
         access = access(level, event.getPos(), player, ClaimProtectionService.Action.INTERACT);
         if (access.decision.reason() != ClaimProtectionService.Reason.OUTSIDE_HUB
+                && access.decision.reason() != ClaimProtectionService.Reason.ADMINISTRATOR_OVERRIDE
                 && !access.decision.role().atLeast(ClaimRole.BUILDER)) {
             event.setUseItem(TriState.FALSE);
         }
@@ -294,9 +295,8 @@ public final class ClaimProtectionEvents {
             denied = denyAny(level, targets, player, action);
         } else {
             Entity owner = event.getProjectile().getOwner();
-            ClaimKey source = owner == null ? null : ClaimKey.at(level.dimension(), owner.blockPosition());
-            ClaimKey deniedTarget = targets.stream()
-                    .map(target -> ClaimKey.at(level.dimension(), target))
+            BlockPos source = owner == null ? null : owner.blockPosition();
+            BlockPos deniedTarget = targets.stream()
                     .filter(target -> source == null
                             ? !systemMayModify(level, target)
                             : !environmentMayModify(level, source, target))
@@ -328,9 +328,9 @@ public final class ClaimProtectionEvents {
             }
             return;
         }
-        ClaimKey source = ClaimKey.at(level.dimension(), event.getPos());
-        if (!systemMayModify(level, source)) {
-            auditEnvironmentDenied(level, source, ClaimProtectionService.Action.BUILD);
+        BlockPos position = event.getPos();
+        if (!systemMayModify(level, position)) {
+            auditEnvironmentDenied(level, position, ClaimProtectionService.Action.BUILD);
             event.setCanceled(true);
         }
     }
@@ -353,9 +353,9 @@ public final class ClaimProtectionEvents {
             }
             return;
         }
-        ClaimKey key = ClaimKey.at(level.dimension(), event.getPos());
-        if (!systemMayModify(level, key)) {
-            auditEnvironmentDenied(level, key, ClaimProtectionService.Action.BUILD);
+        BlockPos position = event.getPos();
+        if (!systemMayModify(level, position)) {
+            auditEnvironmentDenied(level, position, ClaimProtectionService.Action.BUILD);
             event.setCanceled(true);
         }
     }
@@ -370,7 +370,7 @@ public final class ClaimProtectionEvents {
             }
             return;
         }
-        ClaimKey target = ClaimKey.at(level.dimension(), event.getPos());
+        BlockPos target = event.getPos();
         if (!systemMayModify(level, target)) {
             auditEnvironmentDenied(level, target, ClaimProtectionService.Action.BUILD);
             event.setCanceled(true);
@@ -381,8 +381,8 @@ public final class ClaimProtectionEvents {
         if (!(event.getLevel() instanceof ServerLevel level)) {
             return;
         }
-        ClaimKey source = ClaimKey.at(level.dimension(), event.getLiquidPos());
-        ClaimKey target = ClaimKey.at(level.dimension(), event.getPos());
+        BlockPos source = event.getLiquidPos();
+        BlockPos target = event.getPos();
         if (!environmentMayModify(level, source, target)) {
             auditEnvironmentDenied(level, target, ClaimProtectionService.Action.BUILD);
             event.setCanceled(true);
@@ -390,9 +390,9 @@ public final class ClaimProtectionEvents {
     }
 
     private void onCreateFluidSource(CreateFluidSourceEvent event) {
-        ClaimKey key = ClaimKey.at(event.getLevel().dimension(), event.getPos());
-        if (!environmentMayModify(event.getLevel(), key, key)) {
-            auditEnvironmentDenied(event.getLevel(), key, ClaimProtectionService.Action.BUILD);
+        BlockPos position = event.getPos();
+        if (!environmentMayModify(event.getLevel(), position, position)) {
+            auditEnvironmentDenied(event.getLevel(), position, ClaimProtectionService.Action.BUILD);
             event.setCanConvert(false);
         }
     }
@@ -401,10 +401,9 @@ public final class ClaimProtectionEvents {
         if (!(event.getLevel() instanceof ServerLevel level)) {
             return;
         }
-        ClaimKey source = ClaimKey.at(level.dimension(), event.getPos());
+        BlockPos source = event.getPos();
         boolean denied = event.getNotifiedSides().stream()
                 .map(event.getPos()::relative)
-                .map(pos -> ClaimKey.at(level.dimension(), pos))
                 .anyMatch(target -> !environmentMayModify(level, source, target));
         if (denied) {
             auditEnvironmentDenied(level, source, ClaimProtectionService.Action.INTERACT);
@@ -420,18 +419,17 @@ public final class ClaimProtectionEvents {
         if (resolver == null || !resolver.resolve()) {
             return;
         }
-        ClaimKey piston = ClaimKey.at(level.dimension(), event.getPos());
-        ClaimKey arm = ClaimKey.at(level.dimension(), event.getPos().relative(event.getDirection()));
+        BlockPos piston = event.getPos();
+        BlockPos arm = event.getPos().relative(event.getDirection());
         Direction movement = event.getPistonMoveType().isExtend
                 ? event.getDirection()
                 : event.getDirection().getOpposite();
         boolean denied = !environmentMayModify(level, piston, arm)
                 || resolver.getToDestroy().stream()
-                        .map(pos -> ClaimKey.at(level.dimension(), pos))
                         .anyMatch(target -> !environmentMayModify(level, piston, target))
                 || resolver.getToPush().stream().anyMatch(pos -> {
-                    ClaimKey source = ClaimKey.at(level.dimension(), pos);
-                    ClaimKey target = ClaimKey.at(level.dimension(), pos.relative(movement));
+                    BlockPos source = pos;
+                    BlockPos target = pos.relative(movement);
                     return !environmentMayModify(level, piston, source)
                             || !environmentMayModify(level, piston, target);
                 });
@@ -451,16 +449,15 @@ public final class ClaimProtectionEvents {
         }
         ServerPlayer player = sourceEntity instanceof ServerPlayer value ? value : null;
         event.getAffectedBlocks().removeIf(pos -> {
-            ClaimKey target = ClaimKey.at(level.dimension(), pos);
             Access playerAccess = player == null
                     ? null
                     : access(level, pos, player, ClaimProtectionService.Action.BUILD);
             boolean denied = playerAccess == null
-                    ? !systemMayModify(level, target)
+                    ? !systemMayModify(level, pos)
                     : !playerAccess.decision.allowed();
             if (denied) {
                 if (player == null) {
-                    auditEnvironmentDenied(level, target, ClaimProtectionService.Action.BUILD);
+                    auditEnvironmentDenied(level, pos, ClaimProtectionService.Action.BUILD);
                 } else {
                     deny(playerAccess, player);
                 }
@@ -469,7 +466,7 @@ public final class ClaimProtectionEvents {
         });
         event.getAffectedEntities().removeIf(entity -> {
             if (player == null) {
-                ClaimKey target = ClaimKey.at(level.dimension(), entity.blockPosition());
+                BlockPos target = entity.blockPosition();
                 boolean denied = !systemMayModify(level, target);
                 if (denied) {
                     auditEnvironmentDenied(level, target, ClaimProtectionService.Action.ENTITY);
@@ -608,22 +605,25 @@ public final class ClaimProtectionEvents {
                 WorldTopology.HUB,
                 hub.getRespawnData().pos(),
                 ClaimConfig.protectedSpawnRadiusChunks(),
+                state.isPortalProtected(level.dimension(), position)
+                        || action != ClaimProtectionService.Action.ENTITY
+                        && state.isBossArenaProtected(level.dimension(), position),
                 key,
                 action);
         return new Access(state, key, action, decision);
     }
 
-    private boolean environmentMayModify(ServerLevel level, ClaimKey source, ClaimKey target) {
+    private boolean environmentMayModify(ServerLevel level, BlockPos source, BlockPos target) {
         return ClaimProtectionHooks.environmentMayModify(level, source, target);
     }
 
-    private boolean systemMayModify(ServerLevel level, ClaimKey target) {
+    private boolean systemMayModify(ServerLevel level, BlockPos target) {
         return ClaimProtectionHooks.systemMayModify(level, target);
     }
 
     private void auditEnvironmentDenied(
-            ServerLevel level, ClaimKey key, ClaimProtectionService.Action action) {
-        ClaimProtectionHooks.auditEnvironmentDenied(level, key, action);
+            ServerLevel level, BlockPos position, ClaimProtectionService.Action action) {
+        ClaimProtectionHooks.auditEnvironmentDenied(level, position, action);
     }
 
     private record Access(

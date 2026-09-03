@@ -1,0 +1,33 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_mirefang_gland": {
+      "conditions": {
+        "items": [
+          {
+            "items": "rovenfall:mirefang_gland"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "rovenfall:mireguard_tonic"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_mirefang_gland"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "rovenfall:mireguard_tonic",
+      "rovenfall:mirefang_dagger"
+    ]
+  }
+}

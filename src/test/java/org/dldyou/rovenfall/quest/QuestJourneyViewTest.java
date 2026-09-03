@@ -104,6 +104,46 @@ final class QuestJourneyViewTest {
     }
 
     @Test
+    void actionableJourneysAppearBeforeLexicallyEarlierLockedJourneys() {
+        QuestDefinitionSnapshot definitions = definitions(
+                quest("a_locked", 1, List.of(id("z_starter")), 0, 1),
+                quest("z_starter", 1, List.of(), 0, 1));
+
+        QuestJourneyView view = QuestJourneyView.create(
+                definitions, QuestPlayerState.EMPTY, 1, true, 0, 28);
+
+        assertEquals(List.of(id("z_starter"), id("a_locked")),
+                view.entries().stream().map(QuestJourneyView.QuestRow::id).toList());
+        assertEquals(QuestJourneyView.Status.AVAILABLE, view.entries().getFirst().status());
+    }
+
+    @Test
+    void filtersStoryJourneysBeforePagingWithoutChangingNextStep() {
+        QuestDefinitionSnapshot definitions = definitions(
+                quest("available", 1, List.of(), 0, 1),
+                quest("completed", 1, List.of(), 0, 1),
+                quest("locked", 1, List.of(id("available")), 0, 1),
+                activityQuest("started", 1, 10, id("mining")));
+        QuestPlayerState state = new QuestPlayerState(Map.of(
+                id("completed"), legacyCompleted(1, 51),
+                id("started"), progress("started", 1, 3)));
+
+        QuestJourneyView actionable = QuestJourneyView.create(
+                definitions, state, 2, true, 0, 28, QuestJourneyView.Filter.ACTIONABLE);
+        QuestJourneyView completed = QuestJourneyView.create(
+                definitions, state, 2, true, 0, 28, QuestJourneyView.Filter.COMPLETED);
+
+        assertEquals(List.of(id("started"), id("available")),
+                actionable.entries().stream().map(QuestJourneyView.QuestRow::id).toList());
+        assertEquals(List.of(id("completed")),
+                completed.entries().stream().map(QuestJourneyView.QuestRow::id).toList());
+        assertEquals(2, actionable.totalEntries());
+        assertEquals(id("started"), completed.nextStep().orElseThrow().questId());
+        assertThrows(IllegalArgumentException.class, () -> QuestJourneyView.create(
+                definitions, state, 2, true, 0, 28, null));
+    }
+
+    @Test
     void pagesInIdentifierOrderAndBoundsThePublishedWindow() {
         List<QuestDefinitionSnapshot.Source> sources = new ArrayList<>();
         for (int index = 29; index >= 0; index--) {
@@ -141,9 +181,9 @@ final class QuestJourneyViewTest {
 
         QuestJourneyView view = QuestJourneyView.create(definitions, legacy, 1, true, 0, 28);
 
-        assertEquals(List.of(id("contract"), id("story")),
+        assertEquals(List.of(id("story"), id("contract")),
                 view.entries().stream().map(QuestJourneyView.QuestRow::id).toList());
-        assertEquals(QuestJourneyView.Status.DEFINITION_CHANGED, view.entries().getFirst().status());
+        assertEquals(QuestJourneyView.Status.DEFINITION_CHANGED, view.entries().getLast().status());
         assertEquals(2, view.totalEntries());
     }
 

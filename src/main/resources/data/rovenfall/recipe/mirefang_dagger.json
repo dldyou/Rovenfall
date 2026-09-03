@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "equipment",
+  "key": {
+    "G": "rovenfall:mirefang_gland",
+    "I": "#minecraft:iron_tool_materials",
+    "S": "minecraft:stick"
+  },
+  "pattern": [
+    "G",
+    "I",
+    "S"
+  ],
+  "result": {
+    "id": "rovenfall:mirefang_dagger"
+  }
+}

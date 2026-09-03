@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.depths_watch",
+  "description_translation_key": "daily_contract_description.rovenfall.depths_watch",
+  "kind": "hunting_contribution",
+  "target": "rovenfall:deepstone_husk",
+  "required_experience": 210,
+  "currency_reward": 220
+}

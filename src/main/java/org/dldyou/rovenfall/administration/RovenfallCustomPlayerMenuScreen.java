@@ -331,6 +331,29 @@ final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
+        int key = event.key();
+        if (key == GLFW.GLFW_KEY_ESCAPE) {
+            if (query != null && query.isFocused()) {
+                query.setFocused(false);
+                setFocused(cards.isEmpty() ? technicalButton : cards.getFirst());
+                return true;
+            }
+            if (activateIfPresent(backSlot())) {
+                return true;
+            }
+        }
+        if (query != null && !query.isFocused()
+                && (key == GLFW.GLFW_KEY_SLASH
+                || key == GLFW.GLFW_KEY_F && (event.modifiers() & GLFW.GLFW_MOD_CONTROL) != 0)) {
+            setFocused(query);
+            query.setFocused(true);
+            return true;
+        }
+        if (key == GLFW.GLFW_KEY_R && event.modifiers() == 0
+                && activateIfPresent(PlayerMenuKeyboardNavigation.refreshSlot(
+                kind == PlayerMenuNetwork.MenuKind.DASHBOARD))) {
+            return true;
+        }
         if (advanced && event.key() == GLFW.GLFW_KEY_C
                 && (event.modifiers() & GLFW.GLFW_MOD_CONTROL) != 0
                 && (query == null || !query.isFocused())) {
@@ -349,6 +372,26 @@ final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
             return true;
         }
         return super.keyPressed(event);
+    }
+
+    private int backSlot() {
+        boolean dashboard = kind == PlayerMenuNetwork.MenuKind.DASHBOARD;
+        return PlayerMenuKeyboardNavigation.backSlot(
+                dashboard,
+                hasItem(PlayerMenuKeyboardNavigation.DASHBOARD_BACK_SLOT),
+                hasItem(PlayerMenuKeyboardNavigation.TOOLBAR_BACK_SLOT));
+    }
+
+    private boolean activateIfPresent(int slotId) {
+        if (!hasItem(slotId)) {
+            return false;
+        }
+        activate(slotId);
+        return true;
+    }
+
+    private boolean hasItem(int slotId) {
+        return slotId >= 0 && slotId < menu.getRowCount() * 9 && menu.getSlot(slotId).hasItem();
     }
 
     private void copyAdvancedDetails() {

@@ -1,0 +1,30 @@
+{
+  "criteria": {
+    "entered_wilderness": {
+      "conditions": {
+        "to": "rovenfall:wilderness"
+      },
+      "trigger": "minecraft:changed_dimension"
+    }
+  },
+  "display": {
+    "announce_to_chat": false,
+    "background": "minecraft:gui/advancements/backgrounds/adventure",
+    "description": {
+      "translate": "advancements.rovenfall.wilderness.root.description"
+    },
+    "icon": {
+      "id": "minecraft:compass"
+    },
+    "show_toast": false,
+    "title": {
+      "translate": "advancements.rovenfall.wilderness.root.title"
+    }
+  },
+  "requirements": [
+    [
+      "entered_wilderness"
+    ]
+  ],
+  "sends_telemetry_event": false
+}

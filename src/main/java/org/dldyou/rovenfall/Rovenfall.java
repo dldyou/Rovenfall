@@ -7,7 +7,9 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import net.minecraft.gametest.framework.BuiltinTestFunctions;
 import net.minecraft.gametest.framework.FunctionGameTestInstance;
@@ -27,6 +29,7 @@ import net.minecraft.gametest.framework.TestEnvironmentDefinition;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.RegistryOps;
 import net.minecraft.world.level.Explosion;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.ServerExplosion;
 import net.minecraft.world.item.ItemStack;
@@ -68,6 +71,7 @@ import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.AdvancementEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.UseItemOnBlockEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.level.BlockDropsEvent;
@@ -75,6 +79,8 @@ import net.neoforged.neoforge.event.level.ExplosionEvent;
 import net.neoforged.neoforge.event.level.PistonEvent;
 import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
 import org.dldyou.rovenfall.administration.EconomyConfig;
+import org.dldyou.rovenfall.administration.AdminBridgeConfig;
+import org.dldyou.rovenfall.administration.AdminHttpServer;
 import org.dldyou.rovenfall.administration.EconomyService;
 import org.dldyou.rovenfall.administration.EconomyReversalService;
 import org.dldyou.rovenfall.administration.EconomyTransactionReceipt;
@@ -108,13 +114,40 @@ import org.dldyou.rovenfall.administration.ShopTradeService;
 import org.dldyou.rovenfall.administration.ClaimManagementService;
 import org.dldyou.rovenfall.administration.ClaimPurchaseService;
 import org.dldyou.rovenfall.administration.ClaimProtectionEvents;
+import org.dldyou.rovenfall.administration.ClaimProtectionHooks;
 import org.dldyou.rovenfall.administration.ClaimProtectionService;
 import org.dldyou.rovenfall.administration.ProtectedRegionService;
 import org.dldyou.rovenfall.administration.PortalEvents;
 import org.dldyou.rovenfall.administration.PortalService;
+import org.dldyou.rovenfall.administration.ManagedPortalService;
 import org.dldyou.rovenfall.administration.PortalTravelService;
+import org.dldyou.rovenfall.administration.RestartWildernessResetService;
 import org.dldyou.rovenfall.administration.WildernessResetEvents;
 import org.dldyou.rovenfall.administration.WildernessResetService;
+import org.dldyou.rovenfall.administration.CareerPromotionService;
+import org.dldyou.rovenfall.administration.CareerSkillService;
+import org.dldyou.rovenfall.administration.ActiveSkillService;
+import org.dldyou.rovenfall.administration.WorldCombatEvents;
+import org.dldyou.rovenfall.administration.WorldCombatService;
+import org.dldyou.rovenfall.administration.WorldTravelService;
+import org.dldyou.rovenfall.administration.ActivityProgressionService;
+import org.dldyou.rovenfall.administration.ActivityChallengeService;
+import org.dldyou.rovenfall.administration.DailyContractService;
+import org.dldyou.rovenfall.administration.WeeklyExpeditionService;
+import org.dldyou.rovenfall.administration.BossEncounterService;
+import org.dldyou.rovenfall.activities.ActivityChallengeReloadListener;
+import org.dldyou.rovenfall.activities.DailyContractReloadListener;
+import org.dldyou.rovenfall.activities.WeeklyExpeditionReloadListener;
+import org.dldyou.rovenfall.activities.ActivityEvents;
+import org.dldyou.rovenfall.activities.ActivityKind;
+import org.dldyou.rovenfall.activities.ActivityLevelReloadListener;
+import org.dldyou.rovenfall.activities.ActivityObservation;
+import org.dldyou.rovenfall.activities.ActivityProvenance;
+import org.dldyou.rovenfall.activities.ActivityRewardReloadListener;
+import org.dldyou.rovenfall.activities.ActivityTrack;
+import org.dldyou.rovenfall.careers.CareerDefinitionReloadListener;
+import org.dldyou.rovenfall.client.ActiveSkillClient;
+import org.dldyou.rovenfall.client.MobClient;
 import org.dldyou.rovenfall.claims.ClaimConfig;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimRole;
@@ -168,6 +201,17 @@ import org.dldyou.rovenfall.quest.QuestProgressService;
 import org.dldyou.rovenfall.world.ProtectedRegion;
 import org.dldyou.rovenfall.world.PortalDefinition;
 import org.dldyou.rovenfall.world.WorldTopology;
+import org.dldyou.rovenfall.worlds.WorldConfig;
+import org.dldyou.rovenfall.worlds.SafeArrivalResolver;
+import org.dldyou.rovenfall.worlds.Portal;
+import org.dldyou.rovenfall.network.ActiveSkillNetworking;
+import org.dldyou.rovenfall.mobs.MobSpawnPolicy;
+import org.dldyou.rovenfall.mobs.MobMutationEvents;
+import org.dldyou.rovenfall.mobs.MobMutationReloadListener;
+import org.dldyou.rovenfall.mobs.BossEvents;
+import org.dldyou.rovenfall.mobs.MobMutationApplicator;
+import org.dldyou.rovenfall.mobs.RovenfallEntityTypes;
+import org.dldyou.rovenfall.items.RovenfallItems;
 
 @Mod(Rovenfall.MOD_ID)
 public final class Rovenfall {
@@ -178,22 +222,37 @@ public final class Rovenfall {
     private final QuestDefinitionReloadListener questDefinitions = new QuestDefinitionReloadListener();
     private final ExplorationDefinitionReloadListener explorationDefinitions =
             new ExplorationDefinitionReloadListener();
+    private final ActivityRewardReloadListener activityRewards = new ActivityRewardReloadListener();
+    private final ActivityLevelReloadListener activityLevels = new ActivityLevelReloadListener();
+    private final ActivityChallengeReloadListener activityChallenges = new ActivityChallengeReloadListener();
+    private final DailyContractReloadListener dailyContracts = new DailyContractReloadListener();
+    private final WeeklyExpeditionReloadListener weeklyExpeditions = new WeeklyExpeditionReloadListener();
+    private final CareerDefinitionReloadListener careerDefinitions = new CareerDefinitionReloadListener();
+    private final MobMutationReloadListener mobMutations = new MobMutationReloadListener();
 
     public Rovenfall(IEventBus modBus, ModContainer modContainer) {
         RovenfallMobEntities.register(modBus);
         RovenfallAdministrationMenus.register(modBus);
+        RovenfallItems.register(modBus);
+        RovenfallEntityTypes.register(modBus);
         modContainer.registerConfig(ModConfig.Type.SERVER, EconomyConfig.SPEC);
         modContainer.registerConfig(ModConfig.Type.SERVER, ActivityXpConfig.SPEC, "rovenfall-rpg-server.toml");
+        modContainer.registerConfig(
+                ModConfig.Type.SERVER, AdminBridgeConfig.SPEC, "rovenfall-admin-server.toml");
         modContainer.registerConfig(ModConfig.Type.SERVER, ClaimConfig.SPEC, "rovenfall-claims-server.toml");
+        modContainer.registerConfig(ModConfig.Type.SERVER, WorldConfig.SPEC, "rovenfall-worlds-server.toml");
         modBus.addListener(this::registerGameTests);
         modBus.addListener(RpgSkillNetwork::registerPayloads);
         modBus.addListener(PlayerMenuNetwork::registerPayloads);
         modBus.addListener(ActiveJourneyTrackerNetwork::registerPayloads);
+        modBus.addListener(ActiveSkillNetworking::registerPayloads);
         if (FMLEnvironment.getDist() == Dist.CLIENT) {
             RpgSkillClient.register(modBus);
             RovenfallMobClient.register(modBus);
             RovenfallInventoryClient.register(modBus);
             ActiveJourneyTrackerClient.register(modBus);
+            ActiveSkillClient.register(modBus);
+            MobClient.register(modBus);
         }
         NeoForge.EVENT_BUS.addListener(RovenfallCommands::register);
         NeoForge.EVENT_BUS.addListener(EconomyService::onPlayerLoggedIn);
@@ -217,6 +276,14 @@ public final class Rovenfall {
         BossEncounterRuntime.register(NeoForge.EVENT_BUS);
         QuestProgressRuntime.register(NeoForge.EVENT_BUS);
         ExplorationRuntime.register(NeoForge.EVENT_BUS);
+        AdminHttpServer.register(NeoForge.EVENT_BUS);
+        WorldCombatEvents.register(NeoForge.EVENT_BUS);
+        WorldTravelService.register(NeoForge.EVENT_BUS);
+        RestartWildernessResetService.register(NeoForge.EVENT_BUS);
+        ActivityEvents.register(NeoForge.EVENT_BUS);
+        MobSpawnPolicy.registerGameplayEvents(NeoForge.EVENT_BUS);
+        MobMutationEvents.register(NeoForge.EVENT_BUS);
+        BossEvents.register(NeoForge.EVENT_BUS);
         NeoForge.EVENT_BUS.addListener(this::addServerReloadListeners);
         NeoForge.EVENT_BUS.addListener(shopTemplates::onDefaultDataComponentsBound);
         NeoForge.EVENT_BUS.addListener(RpgActivityEvents::onDamage);
@@ -2414,6 +2481,639 @@ public final class Rovenfall {
                 helper.succeed();
             }
         });
+        event.registerTest(id("wilderness_definition"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                helper.assertTrue(
+                        helper.getLevel().getServer().getResourceManager().getResource(
+                                id("dimension/wilderness.json")).isPresent(),
+                        "Wilderness dimension definition was not packaged in the Rovenfall data pack");
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("mob_spawn_boundaries"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                BlockPos position = new BlockPos(0, 70, 0);
+
+                helper.assertTrue(MobSpawnPolicy.allowedOrdinarySpawn(
+                                WorldCombatService.WILDERNESS_DIMENSION,
+                                net.minecraft.world.entity.EntitySpawnReason.NATURAL),
+                        "Wilderness natural spawn policy rejected an ordinary Rovenfall mob");
+                helper.assertTrue(!MobSpawnPolicy.allowedOrdinarySpawn(
+                                helper.getLevel().dimension(),
+                                net.minecraft.world.entity.EntitySpawnReason.NATURAL),
+                        "Hub natural spawn policy allowed an ordinary Rovenfall mob");
+
+                List<net.minecraft.world.entity.EntityType<? extends net.minecraft.world.entity.monster.Monster>>
+                        ordinaryTypes = List.of(
+                                RovenfallEntityTypes.ASHEN_STALKER.get(),
+                                RovenfallEntityTypes.RUNEBOUND_ARCHER.get(),
+                                RovenfallEntityTypes.MIREFANG.get(),
+                                RovenfallEntityTypes.CINDER_WISP.get(),
+                                RovenfallEntityTypes.FROSTBOUND_REAVER.get(),
+                                RovenfallEntityTypes.TIDEBOUND_RAIDER.get(),
+                                RovenfallEntityTypes.DEEPSTONE_HUSK.get());
+                for (var entityType : ordinaryTypes) {
+                    var hubMob = entityType.create(
+                            helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.NATURAL);
+                    helper.assertTrue(hubMob != null, "Rovenfall ordinary entity type was not registered");
+                    helper.assertTrue(MobSpawnPolicy.isRovenfallOrdinaryMob(hubMob),
+                            "Registered ordinary entity was missing from spawn policy");
+                    var hubSpawn = new net.neoforged.neoforge.event.entity.living.FinalizeSpawnEvent(
+                            hubMob,
+                            helper.getLevel(),
+                            position.getX(), position.getY(), position.getZ(),
+                            helper.getLevel().getCurrentDifficultyAt(position),
+                            net.minecraft.world.entity.EntitySpawnReason.NATURAL,
+                            null,
+                            null);
+                    NeoForge.EVENT_BUS.post(hubSpawn);
+                    helper.assertTrue(hubSpawn.isSpawnCancelled(),
+                            "Rovenfall ordinary mob was not blocked from Hub natural spawn");
+                }
+
+                var unmanagedBoss = RovenfallEntityTypes.ARENA_WARDEN.get().create(
+                        helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                helper.assertTrue(unmanagedBoss != null, "Arena Warden entity type was not registered");
+                var bossSpawn = new net.neoforged.neoforge.event.entity.living.FinalizeSpawnEvent(
+                        unmanagedBoss,
+                        helper.getLevel(),
+                        position.getX(), position.getY(), position.getZ(),
+                        helper.getLevel().getCurrentDifficultyAt(position),
+                        net.minecraft.world.entity.EntitySpawnReason.COMMAND,
+                        null,
+                        null);
+                NeoForge.EVENT_BUS.post(bossSpawn);
+                helper.assertTrue(bossSpawn.isSpawnCancelled(),
+                        "Unmanaged /summon-style Arena Warden bypassed encounter ownership");
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("hunting_crafting"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var mireguardRecipe = net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.RECIPE, id("mireguard_tonic"));
+                var cinderwardRecipe = net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.RECIPE, id("cinderward_tonic"));
+                var ashveilRecipe = net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.RECIPE, id("ashveil_tonic"));
+                var runewardRecipe = net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.RECIPE, id("runeward_tonic"));
+                var froststepRecipe = net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.RECIPE, id("froststep_tonic"));
+                var tidebreathRecipe = net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.RECIPE, id("tidebreath_tonic"));
+                var deepsightRecipe = net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.RECIPE, id("deepsight_tonic"));
+                var frontierStewRecipe = net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.RECIPE, id("frontier_stew"));
+                var frontierFeedRecipe = net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.RECIPE, id("frontier_feed"));
+                var highlandCheeseRecipe = net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.RECIPE, id("highland_cheese"));
+                var mirefangDaggerRecipe = net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.RECIPE, id("mirefang_dagger"));
+                var cinderbrandRecipe = net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.RECIPE, id("cinderbrand"));
+                var challengeSigilRecipe = net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.RECIPE, id("warden_challenge_sigil"));
+                var wardenbreakerRecipe = net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.RECIPE, id("wardenbreaker"));
+                var wardenRelicLoot = net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.LOOT_TABLE, id("gameplay/warden_relic"));
+                helper.assertTrue(server.getRecipeManager().byKey(mireguardRecipe).isPresent(),
+                        "Mireguard Tonic recipe was not loaded");
+                helper.assertTrue(server.getRecipeManager().byKey(cinderwardRecipe).isPresent(),
+                        "Cinderward Tonic recipe was not loaded");
+                helper.assertTrue(server.getRecipeManager().byKey(ashveilRecipe).isPresent(),
+                        "Ashveil Tonic recipe was not loaded");
+                helper.assertTrue(server.getRecipeManager().byKey(runewardRecipe).isPresent(),
+                        "Runeward Tonic recipe was not loaded");
+                helper.assertTrue(server.getRecipeManager().byKey(froststepRecipe).isPresent(),
+                        "Froststep Tonic recipe was not loaded");
+                helper.assertTrue(server.getRecipeManager().byKey(tidebreathRecipe).isPresent(),
+                        "Tidebreath Tonic recipe was not loaded");
+                helper.assertTrue(server.getRecipeManager().byKey(deepsightRecipe).isPresent(),
+                        "Deepsight Tonic recipe was not loaded");
+                helper.assertTrue(server.getRecipeManager().byKey(frontierStewRecipe).isPresent(),
+                        "Frontier Stew recipe was not loaded");
+                helper.assertTrue(server.getRecipeManager().byKey(frontierFeedRecipe).isPresent(),
+                        "Frontier Feed recipe was not loaded");
+                helper.assertTrue(server.getRecipeManager().byKey(highlandCheeseRecipe).isPresent(),
+                        "Highland Cheese recipe was not loaded");
+                helper.assertTrue(server.getRecipeManager().byKey(mirefangDaggerRecipe).isPresent(),
+                        "Mirefang Dagger recipe was not loaded");
+                helper.assertTrue(server.getRecipeManager().byKey(cinderbrandRecipe).isPresent(),
+                        "Cinderbrand recipe was not loaded");
+                helper.assertTrue(server.getRecipeManager().byKey(challengeSigilRecipe).isPresent(),
+                        "Warden Challenge Sigil recipe was not loaded");
+                helper.assertTrue(server.getRecipeManager().byKey(wardenbreakerRecipe).isPresent(),
+                        "Wardenbreaker recipe was not loaded");
+
+                for (String advancementPath : List.of(
+                        "wilderness/root",
+                        "wilderness/beneath_the_frontier",
+                        "wilderness/frontier_feast",
+                        "wilderness/highland_herd",
+                        "wilderness/highland_provisions",
+                        "wilderness/hunt_the_frontier",
+                        "wilderness/frontier_alchemist",
+                        "wilderness/challenge_the_warden",
+                        "wilderness/warden_defeated",
+                        "wilderness/warden_relic_reward",
+                        "wilderness/forge_the_wardenbreaker")) {
+                    helper.assertTrue(server.getAdvancements().get(id(advancementPath)) != null,
+                            "Wilderness advancement was not loaded: " + advancementPath);
+                }
+                helper.assertTrue(server.getAdvancements().get(id("wilderness/hunt_the_frontier"))
+                                .value().criteria().keySet().equals(Set.of(
+                                        "ashen_stalker", "runebound_archer", "mirefang", "cinder_wisp",
+                                        "frostbound_reaver", "tidebound_raider", "deepstone_husk")),
+                        "Wilderness hunt advancement did not require all seven custom mobs");
+                helper.assertTrue(server.getAdvancements().get(id("wilderness/frontier_alchemist"))
+                                .value().criteria().keySet().equals(Set.of(
+                                        "mireguard_tonic", "cinderward_tonic", "ashveil_tonic", "runeward_tonic",
+                                        "froststep_tonic", "tidebreath_tonic", "deepsight_tonic")),
+                        "Frontier Alchemist advancement did not require all seven hunting tonics");
+                helper.assertTrue(server.getAdvancements().get(id("wilderness/beneath_the_frontier"))
+                                .value().criteria().keySet().equals(Set.of(
+                                        "dripstone_caves", "lush_caves", "sulfur_caves", "deep_dark")),
+                        "Beneath the Frontier advancement did not require all four cave biomes");
+                var relicRewardAdvancement = server.getAdvancements().get(id("wilderness/warden_relic_reward"));
+                helper.assertTrue(relicRewardAdvancement.value().display().isEmpty()
+                                && relicRewardAdvancement.value().rewards().loot().contains(wardenRelicLoot)
+                                && relicRewardAdvancement.value().rewards().recipes().contains(wardenbreakerRecipe),
+                        "Hidden Warden relic advancement did not retain its personal loot reward");
+
+                var ashenStalker = RovenfallEntityTypes.ASHEN_STALKER.get().create(
+                        helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                var runeboundArcher = RovenfallEntityTypes.RUNEBOUND_ARCHER.get().create(
+                        helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                var frostboundReaver = RovenfallEntityTypes.FROSTBOUND_REAVER.get().create(
+                        helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                var tideboundRaider = RovenfallEntityTypes.TIDEBOUND_RAIDER.get().create(
+                        helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                var deepstoneHusk = RovenfallEntityTypes.DEEPSTONE_HUSK.get().create(
+                        helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                helper.assertTrue(ashenStalker != null && runeboundArcher != null
+                                && frostboundReaver != null && tideboundRaider != null && deepstoneHusk != null,
+                        "Hunting loot test entities could not be created");
+                helper.assertTrue(lootTableCanDrop(
+                                helper, "ashen_stalker", ashenStalker, RovenfallItems.ASHEN_RESIDUE.get()),
+                        "Ashen Stalker loot table did not produce Ashen Residue");
+                helper.assertTrue(lootTableCanDrop(
+                                helper, "runebound_archer", runeboundArcher,
+                                RovenfallItems.RUNEBOUND_FRAGMENT.get()),
+                        "Runebound Archer loot table did not produce a Runebound Fragment");
+                helper.assertTrue(lootTableCanDrop(
+                                helper, "frostbound_reaver", frostboundReaver,
+                                RovenfallItems.FROSTBOUND_SHARD.get()),
+                        "Frostbound Reaver loot table did not produce a Frostbound Shard");
+                helper.assertTrue(lootTableCanDrop(
+                                helper, "tidebound_raider", tideboundRaider,
+                                RovenfallItems.TIDEBOUND_SCALE.get()),
+                        "Tidebound Raider loot table did not produce a Tidebound Scale");
+                helper.assertTrue(lootTableCanDrop(
+                                helper, "deepstone_husk", deepstoneHusk,
+                                RovenfallItems.DEEPSTONE_CORE.get()),
+                        "Deepstone Husk loot table did not produce a Deepstone Core");
+
+                var consumer = net.minecraft.world.entity.EntityTypes.COW.create(
+                        helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                helper.assertTrue(consumer != null, "Consumable GameTest entity could not be created");
+                ItemStack frontierStew = RovenfallItems.FRONTIER_STEW.toStack();
+                var frontierFood = frontierStew.get(net.minecraft.core.component.DataComponents.FOOD);
+                helper.assertTrue(frontierFood != null && frontierFood.nutrition() == 10,
+                        "Frontier Stew did not retain its native stew nutrition");
+                helper.assertTrue(frontierStew.get(net.minecraft.core.component.DataComponents.CONSUMABLE) != null,
+                        "Frontier Stew was missing its consumable component");
+                ItemStack frontierStewRemainder = frontierStew.finishUsingItem(helper.getLevel(), consumer);
+                var frontierRegeneration = consumer.getEffect(net.minecraft.world.effect.MobEffects.REGENERATION);
+                helper.assertTrue(frontierRegeneration != null && frontierRegeneration.getDuration() == 20 * 5,
+                        "Frontier Stew did not grant five seconds of regeneration");
+                helper.assertTrue(frontierStewRemainder.getItem() == Items.BOWL,
+                        "Consumed Frontier Stew did not return its bowl");
+                ItemStack highlandCheese = RovenfallItems.HIGHLAND_CHEESE.toStack();
+                var highlandFood = highlandCheese.get(net.minecraft.core.component.DataComponents.FOOD);
+                helper.assertTrue(highlandFood != null && highlandFood.nutrition() == 6,
+                        "Highland Cheese did not retain its configured nutrition");
+                highlandCheese.finishUsingItem(helper.getLevel(), consumer);
+                var cheeseJumpBoost = consumer.getEffect(net.minecraft.world.effect.MobEffects.JUMP_BOOST);
+                helper.assertTrue(cheeseJumpBoost != null && cheeseJumpBoost.getDuration() == 20 * 45,
+                        "Highland Cheese did not grant forty-five seconds of Jump Boost");
+                consumer.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                        net.minecraft.world.effect.MobEffects.POISON, 20 * 30));
+                ItemStack mireguard = RovenfallItems.MIREGUARD_TONIC.toStack(2);
+                helper.assertTrue(mireguard.get(net.minecraft.core.component.DataComponents.CONSUMABLE) != null,
+                        "Mireguard Tonic was missing its consumable component");
+                ItemStack remainingMireguard = mireguard.finishUsingItem(helper.getLevel(), consumer);
+                helper.assertTrue(!consumer.hasEffect(net.minecraft.world.effect.MobEffects.POISON),
+                        "Mireguard Tonic did not cure poison on the server");
+                helper.assertTrue(consumer.hasEffect(net.minecraft.world.effect.MobEffects.REGENERATION),
+                        "Mireguard Tonic did not grant regeneration on the server");
+                helper.assertTrue(remainingMireguard.getCount() == 1,
+                        "Mireguard Tonic did not consume exactly one item");
+
+                ItemStack cinderward = RovenfallItems.CINDERWARD_TONIC.toStack();
+                helper.assertTrue(cinderward.get(net.minecraft.core.component.DataComponents.CONSUMABLE) != null,
+                        "Cinderward Tonic was missing its consumable component");
+                ItemStack cinderwardRemainder = cinderward.finishUsingItem(helper.getLevel(), consumer);
+                var fireResistance = consumer.getEffect(net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE);
+                helper.assertTrue(fireResistance != null && fireResistance.getDuration() == 20 * 60 * 3,
+                        "Cinderward Tonic did not grant three minutes of fire resistance");
+                helper.assertTrue(cinderwardRemainder.getItem() == Items.GLASS_BOTTLE,
+                        "Consumed hunting tonic did not return its glass bottle");
+
+                ItemStack ashveil = RovenfallItems.ASHVEIL_TONIC.toStack();
+                ashveil.finishUsingItem(helper.getLevel(), consumer);
+                var speed = consumer.getEffect(net.minecraft.world.effect.MobEffects.SPEED);
+                var invisibility = consumer.getEffect(net.minecraft.world.effect.MobEffects.INVISIBILITY);
+                helper.assertTrue(speed != null && speed.getDuration() == 20 * 60,
+                        "Ashveil Tonic did not grant one minute of speed");
+                helper.assertTrue(invisibility != null && invisibility.getDuration() == 20 * 15,
+                        "Ashveil Tonic did not grant fifteen seconds of invisibility");
+
+                ItemStack runeward = RovenfallItems.RUNEWARD_TONIC.toStack();
+                runeward.finishUsingItem(helper.getLevel(), consumer);
+                var absorption = consumer.getEffect(net.minecraft.world.effect.MobEffects.ABSORPTION);
+                var resistance = consumer.getEffect(net.minecraft.world.effect.MobEffects.RESISTANCE);
+                helper.assertTrue(absorption != null && absorption.getDuration() == 20 * 60 * 2,
+                        "Runeward Tonic did not grant two minutes of absorption");
+                helper.assertTrue(resistance != null && resistance.getDuration() == 20 * 30,
+                        "Runeward Tonic did not grant thirty seconds of resistance");
+
+                consumer.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                        net.minecraft.world.effect.MobEffects.SLOWNESS, 20 * 30));
+                ItemStack froststep = RovenfallItems.FROSTSTEP_TONIC.toStack();
+                froststep.finishUsingItem(helper.getLevel(), consumer);
+                var jumpBoost = consumer.getEffect(net.minecraft.world.effect.MobEffects.JUMP_BOOST);
+                var slowFalling = consumer.getEffect(net.minecraft.world.effect.MobEffects.SLOW_FALLING);
+                helper.assertTrue(!consumer.hasEffect(net.minecraft.world.effect.MobEffects.SLOWNESS),
+                        "Froststep Tonic did not cure slowness on the server");
+                helper.assertTrue(jumpBoost != null
+                                && jumpBoost.getDuration() == 20 * 60 * 2
+                                && jumpBoost.getAmplifier() == 1,
+                        "Froststep Tonic did not grant two minutes of Jump Boost II");
+                helper.assertTrue(slowFalling != null && slowFalling.getDuration() == 20 * 30,
+                        "Froststep Tonic did not grant thirty seconds of slow falling");
+
+                consumer.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                        net.minecraft.world.effect.MobEffects.MINING_FATIGUE, 20 * 30));
+                ItemStack tidebreath = RovenfallItems.TIDEBREATH_TONIC.toStack();
+                tidebreath.finishUsingItem(helper.getLevel(), consumer);
+                var waterBreathing = consumer.getEffect(net.minecraft.world.effect.MobEffects.WATER_BREATHING);
+                var dolphinsGrace = consumer.getEffect(net.minecraft.world.effect.MobEffects.DOLPHINS_GRACE);
+                helper.assertTrue(!consumer.hasEffect(net.minecraft.world.effect.MobEffects.MINING_FATIGUE),
+                        "Tidebreath Tonic did not cure mining fatigue on the server");
+                helper.assertTrue(waterBreathing != null && waterBreathing.getDuration() == 20 * 60 * 3,
+                        "Tidebreath Tonic did not grant three minutes of water breathing");
+                helper.assertTrue(dolphinsGrace != null && dolphinsGrace.getDuration() == 20 * 45,
+                        "Tidebreath Tonic did not grant forty-five seconds of Dolphin's Grace");
+
+                consumer.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                        net.minecraft.world.effect.MobEffects.DARKNESS, 20 * 30));
+                ItemStack deepsight = RovenfallItems.DEEPSIGHT_TONIC.toStack();
+                deepsight.finishUsingItem(helper.getLevel(), consumer);
+                var nightVision = consumer.getEffect(net.minecraft.world.effect.MobEffects.NIGHT_VISION);
+                var haste = consumer.getEffect(net.minecraft.world.effect.MobEffects.HASTE);
+                helper.assertTrue(!consumer.hasEffect(net.minecraft.world.effect.MobEffects.DARKNESS),
+                        "Deepsight Tonic did not cure darkness on the server");
+                helper.assertTrue(nightVision != null && nightVision.getDuration() == 20 * 60 * 5,
+                        "Deepsight Tonic did not grant five minutes of night vision");
+                helper.assertTrue(haste != null && haste.getDuration() == 20 * 60 * 2 && haste.getAmplifier() == 1,
+                        "Deepsight Tonic did not grant two minutes of Haste II");
+
+                var attacker = net.minecraft.world.entity.EntityTypes.COW.create(
+                        helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                var target = net.minecraft.world.entity.EntityTypes.COW.create(
+                        helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                helper.assertTrue(attacker != null && target != null,
+                        "Hunting weapon GameTest entities could not be created");
+                ItemStack mirefangDagger = RovenfallItems.MIREFANG_DAGGER.toStack();
+                mirefangDagger.postHurtEnemy(target, attacker);
+                var poison = target.getEffect(net.minecraft.world.effect.MobEffects.POISON);
+                helper.assertTrue(poison != null && poison.getDuration() == 20 * 3,
+                        "Mirefang Dagger did not apply three seconds of poison on the server");
+                target.removeEffect(net.minecraft.world.effect.MobEffects.POISON);
+
+                ItemStack cinderbrand = RovenfallItems.CINDERBRAND.toStack();
+                cinderbrand.postHurtEnemy(target, attacker);
+                helper.assertTrue(target.getRemainingFireTicks() >= 20 * 4,
+                        "Cinderbrand did not ignite its target for four seconds on the server");
+                ItemStack wardenbreaker = RovenfallItems.WARDENBREAKER.toStack();
+                wardenbreaker.postHurtEnemy(target, attacker);
+                var weakness = target.getEffect(net.minecraft.world.effect.MobEffects.WEAKNESS);
+                helper.assertTrue(weakness != null && weakness.getDuration() == 20 * 5,
+                        "Wardenbreaker did not weaken its target for five seconds on the server");
+                helper.assertTrue(mirefangDagger.isDamageableItem()
+                                && cinderbrand.isDamageableItem()
+                                && wardenbreaker.isDamageableItem(),
+                        "Hunting weapons did not retain native weapon durability");
+
+                var player = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                var challengeAdvancement = server.getAdvancements().get(id("wilderness/challenge_the_warden"));
+                boolean challengeCompletedBefore = player.getAdvancements()
+                        .getOrStartProgress(challengeAdvancement).isDone();
+                ItemStack challengeSigils = RovenfallItems.WARDEN_CHALLENGE_SIGIL.toStack(2);
+                player.setItemInHand(InteractionHand.MAIN_HAND, challengeSigils);
+                var wrongWorldUse = challengeSigils.use(helper.getLevel(), player, InteractionHand.MAIN_HAND);
+                helper.assertTrue(wrongWorldUse == net.minecraft.world.InteractionResult.FAIL,
+                        "Challenge Sigil did not reject use outside the Wilderness");
+                helper.assertTrue(challengeSigils.getCount() == 2,
+                        "Rejected Challenge Sigil use consumed an item");
+                helper.assertTrue(player.getAdvancements().getOrStartProgress(challengeAdvancement).isDone()
+                                == challengeCompletedBefore,
+                        "Rejected Challenge Sigil use awarded its advancement");
+                var relicProgress = new net.minecraft.advancements.AdvancementProgress();
+                relicProgress.update(relicRewardAdvancement.value().requirements());
+                helper.assertTrue(relicProgress.grantProgress("rewarded") && relicProgress.isDone(),
+                        "Warden relic criterion did not complete on its first grant");
+                helper.assertTrue(!relicProgress.grantProgress("rewarded"),
+                        "Warden relic criterion accepted a duplicate completion");
+                var relicParams = new net.minecraft.world.level.storage.loot.LootParams.Builder(helper.getLevel())
+                        .withParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.THIS_ENTITY,
+                                player)
+                        .withParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.ORIGIN,
+                                player.position())
+                        .create(net.minecraft.world.level.storage.loot.parameters.LootContextParamSets.ADVANCEMENT_REWARD);
+                var relicDrops = server.reloadableRegistries().getLootTable(wardenRelicLoot)
+                        .getRandomItems(relicParams, 0L);
+                helper.assertTrue(relicDrops.size() == 1
+                                && relicDrops.getFirst().getItem() == RovenfallItems.WARDEN_CORE.get()
+                                && relicDrops.getFirst().getCount() == 1,
+                        "Warden relic loot did not grant exactly one Warden Core");
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("frontier_feed"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var level = helper.getLevel();
+                var player = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                var state = PlatformSavedData.get(level.getServer());
+                var parentA = helper.spawnWithNoFreeWill(EntityTypes.GOAT, new BlockPos(1, 2, 0));
+                var parentB = helper.spawnWithNoFreeWill(EntityTypes.GOAT, new BlockPos(2, 2, 0));
+                ItemStack feed = RovenfallItems.FRONTIER_FEED.toStack(2);
+                long farmingBefore = state.activityExperience(player.getUUID(), ActivityTrack.FARMING);
+
+                helper.assertTrue(feed.interactLivingEntity(player, parentA, InteractionHand.MAIN_HAND)
+                                == net.minecraft.world.InteractionResult.SUCCESS_SERVER,
+                        "Frontier Feed did not ready the first eligible animal");
+                helper.assertTrue(feed.interactLivingEntity(player, parentB, InteractionHand.MAIN_HAND)
+                                == net.minecraft.world.InteractionResult.SUCCESS_SERVER,
+                        "Frontier Feed did not ready the second eligible animal");
+                helper.assertTrue(feed.isEmpty() && parentA.isInLove() && parentB.isInLove(),
+                        "Frontier Feed did not consume exactly one item per eligible animal");
+                helper.assertTrue(state.activityExperience(player.getUUID(), ActivityTrack.FARMING) == farmingBefore,
+                        "Frontier Feed awarded farming experience before breeding completed");
+
+                ItemStack repeatedFeed = RovenfallItems.FRONTIER_FEED.toStack();
+                helper.assertTrue(repeatedFeed.interactLivingEntity(player, parentA, InteractionHand.MAIN_HAND)
+                                == net.minecraft.world.InteractionResult.PASS
+                                && repeatedFeed.getCount() == 1,
+                        "Frontier Feed was consumed by an animal already ready to breed");
+                var child = helper.spawnWithNoFreeWill(EntityTypes.GOAT, new BlockPos(3, 2, 0));
+                NeoForge.EVENT_BUS.post(new net.neoforged.neoforge.event.entity.living.BabyEntitySpawnEvent(
+                        parentA, parentB, child));
+                helper.assertTrue(
+                        state.activityExperience(player.getUUID(), ActivityTrack.FARMING) == farmingBefore + 12,
+                        "Completed goat breeding did not award twelve farming experience");
+
+                var rabbit = helper.spawnWithNoFreeWill(EntityTypes.RABBIT, new BlockPos(4, 2, 0));
+                ItemStack rejectedFeed = RovenfallItems.FRONTIER_FEED.toStack();
+                helper.assertTrue(rejectedFeed.interactLivingEntity(player, rabbit, InteractionHand.MAIN_HAND)
+                                == net.minecraft.world.InteractionResult.PASS
+                                && rejectedFeed.getCount() == 1
+                                && !rabbit.isInLove(),
+                        "Frontier Feed affected an animal outside its data tag");
+
+                var automatedGoat = helper.spawnWithNoFreeWill(EntityTypes.GOAT, new BlockPos(5, 2, 0));
+                ItemStack automatedFeed = RovenfallItems.FRONTIER_FEED.toStack();
+                var fakePlayer = FakePlayerFactory.getMinecraft(level);
+                helper.assertTrue(automatedFeed.interactLivingEntity(
+                                fakePlayer, automatedGoat, InteractionHand.MAIN_HAND)
+                                == net.minecraft.world.InteractionResult.FAIL
+                                && automatedFeed.getCount() == 1
+                                && !automatedGoat.isInLove(),
+                        "Automated player bypassed Frontier Feed ownership validation");
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("mob_mutation_composition"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var server = helper.getLevel().getServer();
+                var catalog = MobMutationReloadListener.snapshot(server).orElseThrow();
+                helper.assertTrue(catalog.size() == 4, "Built-in mob mutation catalog did not load exactly four entries");
+                helper.assertTrue(MobMutationEvents.eligibleSpawn(
+                                WorldCombatService.WILDERNESS_DIMENSION,
+                                net.minecraft.world.entity.EntitySpawnReason.NATURAL,
+                                false,
+                                false),
+                        "Eligible Wilderness natural spawn was rejected by mutation policy");
+                helper.assertTrue(!MobMutationEvents.eligibleSpawn(
+                                WorldCombatService.WILDERNESS_DIMENSION,
+                                net.minecraft.world.entity.EntitySpawnReason.COMMAND,
+                                false,
+                                false),
+                        "Command spawn was accepted by mutation policy");
+                var mutation = catalog.get(id("ashen")).orElseThrow();
+                var zombie = net.minecraft.world.entity.EntityTypes.ZOMBIE.create(
+                        helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.NATURAL);
+                helper.assertTrue(zombie != null, "Mutation GameTest zombie could not be created");
+                float previousHealth = zombie.getMaxHealth();
+                helper.assertTrue(MobMutationApplicator.apply(zombie, mutation, false),
+                        "Validated mutation did not compose onto an eligible mob");
+                helper.assertTrue(MobMutationApplicator.mutationId(zombie).equals(Optional.of(id("ashen"))),
+                        "Mutation ID marker was not persisted on the mob");
+                helper.assertTrue(zombie.hasGlowingTag() && zombie.hasCustomName(),
+                        "Mutation did not expose its visible marker");
+                helper.assertTrue(zombie.getMaxHealth() > previousHealth,
+                        "Mutation attribute composition did not change max health");
+                helper.assertTrue(!MobMutationApplicator.apply(zombie, mutation, false),
+                        "Mutation was applied twice to the same live mob");
+
+                var bulwark = catalog.get(id("bulwark")).orElseThrow();
+                var creeper = net.minecraft.world.entity.EntityTypes.CREEPER.create(
+                        helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.NATURAL);
+                helper.assertTrue(creeper != null, "Bulwark mutation GameTest creeper could not be created");
+                float bulwarkHealth = creeper.getMaxHealth();
+                double bulwarkSpeed = creeper.getAttributeValue(
+                        net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED);
+                double bulwarkResistance = creeper.getAttributeValue(
+                        net.minecraft.world.entity.ai.attributes.Attributes.KNOCKBACK_RESISTANCE);
+                helper.assertTrue(MobMutationApplicator.apply(creeper, bulwark, false),
+                        "Bulwark mutation did not compose onto its eligible mob");
+                helper.assertTrue(creeper.getMaxHealth() > bulwarkHealth
+                                && creeper.getAttributeValue(
+                                        net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED) < bulwarkSpeed
+                                && creeper.getAttributeValue(
+                                        net.minecraft.world.entity.ai.attributes.Attributes.KNOCKBACK_RESISTANCE)
+                                        > bulwarkResistance,
+                        "Bulwark mutation did not become tougher, slower, and knockback resistant");
+
+                var frenzied = catalog.get(id("frenzied")).orElseThrow();
+                var caveSpider = net.minecraft.world.entity.EntityTypes.CAVE_SPIDER.create(
+                        helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.NATURAL);
+                helper.assertTrue(caveSpider != null, "Frenzied mutation GameTest cave spider could not be created");
+                double frenziedSpeed = caveSpider.getAttributeValue(
+                        net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED);
+                double frenziedDamage = caveSpider.getAttributeValue(
+                        net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_DAMAGE);
+                helper.assertTrue(MobMutationApplicator.apply(caveSpider, frenzied, false),
+                        "Frenzied mutation did not compose onto its eligible mob");
+                helper.assertTrue(caveSpider.getAttributeValue(
+                                        net.minecraft.world.entity.ai.attributes.Attributes.MOVEMENT_SPEED) > frenziedSpeed
+                                && caveSpider.getAttributeValue(
+                                        net.minecraft.world.entity.ai.attributes.Attributes.ATTACK_DAMAGE) > frenziedDamage,
+                        "Frenzied mutation did not become faster and more damaging");
+
+                var commandZombie = net.minecraft.world.entity.EntityTypes.ZOMBIE.create(
+                        helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                helper.assertTrue(commandZombie != null, "Command-spawned mutation GameTest zombie could not be created");
+                var commandSpawn = new net.neoforged.neoforge.event.entity.living.FinalizeSpawnEvent(
+                        commandZombie,
+                        helper.getLevel(),
+                        0, 70, 0,
+                        helper.getLevel().getCurrentDifficultyAt(new BlockPos(0, 70, 0)),
+                        net.minecraft.world.entity.EntitySpawnReason.COMMAND,
+                        null,
+                        null);
+                NeoForge.EVENT_BUS.post(commandSpawn);
+                helper.assertTrue(MobMutationApplicator.mutationId(commandZombie).isEmpty(),
+                        "Command-spawned vanilla mob received a Wilderness mutation");
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("boss_encounter_persistence"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                PlatformSavedData state = new PlatformSavedData();
+                UUID encounterId = UUID.randomUUID();
+                UUID playerId = UUID.randomUUID();
+                BlockPos origin = new BlockPos(90_000, 72, 90_000);
+                long timestamp = System.currentTimeMillis();
+                var started = BossEncounterService.start(
+                        state,
+                        AdministrationService.SYSTEM_ACTOR,
+                        true,
+                        WorldCombatService.WILDERNESS_DIMENSION,
+                        origin,
+                        24,
+                        "gametest boss",
+                        timestamp,
+                        encounterId,
+                        ignored -> true);
+                helper.assertTrue(started.status() == BossEncounterService.StartStatus.SUCCESS,
+                        "Boss encounter did not enter INTRO");
+                helper.assertTrue(BossEncounterService.activate(state, encounterId, timestamp + 3_000),
+                        "Boss encounter did not enter ACTIVE");
+                var boss = state.bossEncounter().orElseThrow();
+                helper.assertTrue(BossEncounterService.recordContribution(
+                                state, encounterId, boss.bossId(), playerId, origin, 100, timestamp + 3_100),
+                        "Server-observed boss contribution was rejected");
+                helper.assertTrue(BossEncounterService.observePhase(state, encounterId, 2, timestamp + 3_200),
+                        "Boss phase transition was not committed");
+                helper.assertTrue(BossEncounterService.beginRewards(state, encounterId, timestamp + 4_000),
+                        "Boss death did not enter REWARDING");
+                var rewards = BossEncounterService.settleRewards(state, timestamp + 4_100);
+                helper.assertTrue(rewards.size() == 1
+                                && rewards.getFirst().status() == BossEncounterService.RewardStatus.SUCCESS,
+                        "Qualifying boss contributor did not receive one personal reward");
+                var restored = PlatformSavedData.CODEC.parse(
+                        NbtOps.INSTANCE,
+                        PlatformSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow()).getOrThrow();
+                helper.assertTrue(restored.bossEncounter().orElseThrow().status()
+                                == org.dldyou.rovenfall.mobs.BossEncounter.Status.DEFEATED,
+                        "Boss lifecycle did not survive persistence");
+                helper.assertTrue(restored.bossState().rewardReadyAt(playerId) > timestamp + 4_100,
+                        "Personal boss reward cooldown did not survive persistence");
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("safe_arrival"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                BlockPos center = helper.getLevel().getRespawnData().pos();
+                var found = SafeArrivalResolver.resolve(helper.getLevel(), center, 2, ignored -> true);
+                helper.assertTrue(found.status() == SafeArrivalResolver.Status.FOUND,
+                        "Safe arrival resolver did not find the flat test surface");
+                var denied = SafeArrivalResolver.resolve(helper.getLevel(), center, 2, ignored -> false);
+                helper.assertTrue(denied.status() == SafeArrivalResolver.Status.NOT_FOUND,
+                        "Safe arrival resolver ignored destination authorization");
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("portal_region_protection"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var level = helper.getLevel().getServer().getLevel(Level.NETHER);
+                helper.assertTrue(level != null, "Nether level was unavailable for portal protection GameTest");
+                var state = PlatformSavedData.get(level.getServer());
+                Identifier portalId = id("gametest_region_portal_" + UUID.randomUUID());
+                BlockPos origin = new BlockPos(30_000, 70, 30_000);
+                long timestamp = System.currentTimeMillis();
+                for (Identifier staleId : state.portalIds().stream()
+                        .filter(value -> value.getPath().startsWith("gametest_region_portal_")
+                                || value.getPath().startsWith("gametest_portal_")
+                                || value.getPath().startsWith("gametest_travel_portal_"))
+                        .toList()) {
+                    ManagedPortalService.delete(
+                            state,
+                            AdministrationService.SYSTEM_ACTOR,
+                            true,
+                            staleId,
+                            "gametest stale portal cleanup",
+                            timestamp++,
+                            UUID.randomUUID());
+                }
+                Portal portal = new Portal(
+                        level.dimension(), origin, level.dimension(), origin.offset(100, 0, 100), 8, 8, 0);
+                helper.assertTrue(ManagedPortalService.create(
+                                state,
+                                AdministrationService.SYSTEM_ACTOR,
+                                true,
+                                portalId,
+                                portal,
+                                key -> level.getServer().getLevel(key) != null,
+                                "gametest portal protection",
+                                timestamp,
+                                UUID.randomUUID()).status() == ManagedPortalService.Status.SUCCESS,
+                        "GameTest portal creation failed");
+                helper.assertTrue(!ClaimProtectionHooks.systemMayModify(level, origin),
+                        "System block changes were allowed at the protected portal origin");
+                helper.assertTrue(!ClaimProtectionHooks.environmentMayModify(
+                                level, origin.offset(20, 0, 0), origin),
+                        "Environment changes entered the protected portal region");
+                helper.assertTrue(ClaimProtectionHooks.systemMayModify(level, origin.offset(8, 0, 8)),
+                        "Portal protection used its candidate chunk instead of the exact circular radius");
+                helper.assertTrue(ManagedPortalService.delete(
+                                state,
+                                AdministrationService.SYSTEM_ACTOR,
+                                true,
+                                portalId,
+                                "gametest portal cleanup",
+                                timestamp + 1,
+                                UUID.randomUUID()).status() == ManagedPortalService.Status.SUCCESS,
+                        "GameTest portal cleanup failed");
+                helper.assertTrue(ClaimProtectionHooks.systemMayModify(level, origin),
+                        "Deleted portal protection remained active");
+                helper.succeed();
+            }
+        });
         event.registerTest(id("economy_account"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData) {
             @Override
             public void run(GameTestHelper helper) {
@@ -2972,6 +3672,572 @@ public final class Rovenfall {
                 helper.succeed();
             }
         });
+        event.registerTest(id("activity_progression"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var level = helper.getLevel();
+                var server = level.getServer();
+                Identifier plains = Identifier.withDefaultNamespace("plains");
+                var listener = server.getServerResources().managers()
+                        .getListener(ActivityRewardReloadListener.KEY);
+                helper.assertTrue(listener != null,
+                        "Rovenfall activity reward listener was not retained");
+                helper.assertTrue(listener.size() == 80,
+                        "Built-in Rovenfall activity reward catalog was incomplete");
+                var levelListener = server.getServerResources().managers()
+                        .getListener(ActivityLevelReloadListener.KEY);
+                helper.assertTrue(levelListener != null && levelListener.size() == 7,
+                        "Built-in Rovenfall activity level curves were incomplete");
+                helper.assertTrue(ActivityLevelReloadListener.get(server, ActivityTrack.EXPLORATION)
+                                .orElseThrow().progress(300).level() == 2,
+                        "Activity level curve did not resolve cumulative experience");
+                var careers = CareerDefinitionReloadListener.snapshot(server).orElseThrow();
+                helper.assertTrue(careers.size() == 10,
+                        "Built-in Rovenfall career graph was incomplete");
+                helper.assertTrue(careers.skillIds().size() == 20,
+                        "Built-in Rovenfall career skill trees were incomplete");
+                helper.assertTrue(careers.activeSkillIds().size() == 20,
+                        "Built-in Rovenfall active skill definitions were incomplete");
+                helper.assertTrue(careers.definition(id("warrior")).orElseThrow().promotionSkillPoints() == 1,
+                        "Career promotion skill-point reward was not loaded");
+                helper.assertTrue(careers.ancestors(id("warrior")).equals(Set.of(id("adventurer"))),
+                        "Built-in career parent graph was not compiled");
+                helper.assertTrue(careers.ancestors(id("scout")).equals(Set.of(id("adventurer"))),
+                        "Scout career parent graph was not compiled");
+                helper.assertTrue(careers.ancestors(id("vanguard")).equals(
+                                Set.of(id("adventurer"), id("warrior"))),
+                        "Tier-three career specialization graph was not compiled");
+                helper.assertTrue(careers.conflictingLearnedCareers(
+                                id("slayer"), Set.of(id("adventurer"), id("warrior"), id("vanguard")))
+                                .equals(Set.of(id("vanguard"))),
+                        "Tier-three sibling specialization reset was not compiled");
+                var challenges = ActivityChallengeReloadListener.snapshot(server).orElseThrow();
+                helper.assertTrue(challenges.size() == 10,
+                        "Built-in Rovenfall activity challenge catalog was incomplete");
+                var firstSteps = challenges.get(id("first_steps"));
+                helper.assertTrue(firstSteps != null && firstSteps.currencyReward() == 100,
+                        "First Steps challenge definition was not loaded");
+                var legend = challenges.get(id("legend_of_rovenfall"));
+                helper.assertTrue(legend != null
+                                && legend.activityLevelRequirements().size() == 7
+                                && legend.currencyReward() == 2_500,
+                        "Legend of Rovenfall challenge definition was not loaded");
+                var contracts = DailyContractReloadListener.snapshot(server).orElseThrow();
+                helper.assertTrue(contracts.size() == 16,
+                        "Built-in Rovenfall daily contract catalog was incomplete");
+                var ironRush = contracts.get(id("iron_rush"));
+                helper.assertTrue(ironRush != null && ironRush.requiredExperience() == 48,
+                        "Iron Rush daily contract definition was not loaded");
+                var wardenTrial = contracts.get(id("warden_trial"));
+                helper.assertTrue(wardenTrial != null
+                                && wardenTrial.targetId().equals(id("arena_warden"))
+                                && wardenTrial.requiredExperience() == 80
+                                && wardenTrial.currencyReward() == 300,
+                        "Warden Trial daily contract definition was not loaded");
+                var runeBreaker = contracts.get(id("rune_breaker"));
+                helper.assertTrue(runeBreaker != null
+                                && runeBreaker.targetId().equals(id("runebound_archer"))
+                                && runeBreaker.requiredExperience() == 160
+                                && runeBreaker.currencyReward() == 190,
+                        "Rune Breaker daily contract definition was not loaded");
+                var frozenFront = contracts.get(id("frozen_front"));
+                helper.assertTrue(frozenFront != null
+                                && frozenFront.targetId().equals(id("frostbound_reaver"))
+                                && frozenFront.requiredExperience() == 180
+                                && frozenFront.currencyReward() == 200,
+                        "Frozen Front daily contract definition was not loaded");
+                var sunkenPatrol = contracts.get(id("sunken_patrol"));
+                helper.assertTrue(sunkenPatrol != null
+                                && sunkenPatrol.targetId().equals(id("tidebound_raider"))
+                                && sunkenPatrol.requiredExperience() == 210
+                                && sunkenPatrol.currencyReward() == 210,
+                        "Sunken Patrol daily contract definition was not loaded");
+                var depthsWatch = contracts.get(id("depths_watch"));
+                helper.assertTrue(depthsWatch != null
+                                && depthsWatch.targetId().equals(id("deepstone_husk"))
+                                && depthsWatch.requiredExperience() == 210
+                                && depthsWatch.currencyReward() == 220,
+                        "Depths Watch daily contract definition was not loaded");
+                var frontierFeast = contracts.get(id("frontier_feast"));
+                helper.assertTrue(frontierFeast != null
+                                && frontierFeast.kind() == ActivityKind.COOKING_RESULT
+                                && frontierFeast.targetId().equals(id("frontier_stew"))
+                                && frontierFeast.requiredExperience() == 40
+                                && frontierFeast.currencyReward() == 130,
+                        "Frontier Feast daily contract definition was not loaded");
+                var highlandHerd = contracts.get(id("highland_herd"));
+                helper.assertTrue(highlandHerd != null
+                                && highlandHerd.kind() == ActivityKind.BREEDING_COMPLETION
+                                && highlandHerd.targetId().equals(Identifier.withDefaultNamespace("goat"))
+                                && highlandHerd.requiredExperience() == 48
+                                && highlandHerd.currencyReward() == 140,
+                        "Highland Herd daily contract definition was not loaded");
+                var highlandProvisions = contracts.get(id("highland_provisions"));
+                helper.assertTrue(highlandProvisions != null
+                                && highlandProvisions.kind() == ActivityKind.COOKING_RESULT
+                                && highlandProvisions.targetId().equals(id("highland_cheese"))
+                                && highlandProvisions.requiredExperience() == 48
+                                && highlandProvisions.currencyReward() == 150,
+                        "Highland Provisions daily contract definition was not loaded");
+                var expeditions = WeeklyExpeditionReloadListener.snapshot(server).orElseThrow();
+                helper.assertTrue(expeditions.size() == 5,
+                        "Built-in Rovenfall weekly expedition catalog was incomplete");
+                var supplyLines = expeditions.get(id("supply_lines"));
+                helper.assertTrue(supplyLines != null
+                                && supplyLines.dailyContractRequirements().size() == 6
+                                && supplyLines.dailyContractRequirements().get(id("frontier_feast")) == 2
+                                && supplyLines.dailyContractRequirements().get(id("highland_herd")) == 2
+                                && supplyLines.dailyContractRequirements().get(id("highland_provisions")) == 2
+                                && supplyLines.currencyReward() == 1_000,
+                        "Supply Lines weekly expedition definition was not loaded");
+                var wildernessCampaign = expeditions.get(id("wilderness_campaign"));
+                helper.assertTrue(wildernessCampaign != null
+                                && wildernessCampaign.dailyContractRequirements().size() == 16
+                                && wildernessCampaign.currencyReward() == 3_900,
+                        "Expanded Wilderness Campaign definition was not loaded");
+                var frontierAnomalies = expeditions.get(id("frontier_anomalies"));
+                helper.assertTrue(frontierAnomalies != null
+                                && frontierAnomalies.dailyContractRequirements().size() == 5
+                                && frontierAnomalies.currencyReward() == 1_450,
+                        "Expanded Frontier Anomalies definition was not loaded");
+                var wardenOath = expeditions.get(id("warden_oath"));
+                helper.assertTrue(wardenOath != null
+                                && wardenOath.dailyContractRequirements().equals(
+                                        Map.of(id("warden_trial"), 3))
+                                && wardenOath.currencyReward() == 1_000,
+                        "Warden's Oath weekly expedition definition was not loaded");
+                var reward = ActivityRewardReloadListener.get(
+                        server, ActivityKind.EXPLORATION_DISCOVERY, plains);
+                helper.assertTrue(reward.isPresent(),
+                        "Built-in plains discovery reward was not loaded");
+                helper.assertTrue(ActivityRewardReloadListener.get(
+                                server,
+                                ActivityKind.NATURAL_RESOURCE_BREAK,
+                                Identifier.withDefaultNamespace("ancient_debris")).isPresent(),
+                        "Expedition mining rewards were not loaded");
+                helper.assertTrue(ActivityRewardReloadListener.get(
+                                server,
+                                ActivityKind.HUNTING_CONTRIBUTION,
+                                id("runebound_archer")).isPresent(),
+                        "Rovenfall mob hunting rewards were not loaded");
+                helper.assertTrue(ActivityRewardReloadListener.get(
+                                server,
+                                ActivityKind.HUNTING_CONTRIBUTION,
+                                id("cinder_wisp")).isPresent(),
+                        "Cinder Wisp hunting rewards were not loaded");
+                helper.assertTrue(ActivityRewardReloadListener.get(
+                                server,
+                                ActivityKind.HUNTING_CONTRIBUTION,
+                                id("frostbound_reaver")).isPresent(),
+                        "Frostbound Reaver hunting rewards were not loaded");
+                helper.assertTrue(ActivityRewardReloadListener.get(
+                                server,
+                                ActivityKind.HUNTING_CONTRIBUTION,
+                                id("tidebound_raider")).isPresent(),
+                        "Tidebound Raider hunting rewards were not loaded");
+                helper.assertTrue(ActivityRewardReloadListener.get(
+                                server,
+                                ActivityKind.HUNTING_CONTRIBUTION,
+                                id("deepstone_husk")).isPresent(),
+                        "Deepstone Husk hunting rewards were not loaded");
+                helper.assertTrue(ActivityRewardReloadListener.get(
+                                server,
+                                ActivityKind.EXPLORATION_DISCOVERY,
+                                Identifier.withDefaultNamespace("sulfur_caves")).isPresent(),
+                        "Sulfur cave exploration rewards were not loaded");
+                helper.assertTrue(ActivityRewardReloadListener.get(
+                                server,
+                                ActivityKind.COOKING_RESULT,
+                                id("frontier_stew")).orElseThrow().definition().experience() == 5,
+                        "Frontier Stew cooking reward was not loaded");
+                helper.assertTrue(ActivityRewardReloadListener.get(
+                                server,
+                                ActivityKind.COOKING_RESULT,
+                                id("highland_cheese")).orElseThrow().definition().experience() == 4,
+                        "Highland Cheese cooking reward was not loaded");
+                helper.assertTrue(ActivityRewardReloadListener.get(
+                                server,
+                                ActivityKind.BREEDING_COMPLETION,
+                                Identifier.withDefaultNamespace("goat"))
+                                .orElseThrow().definition().experience() == 12,
+                        "Goat breeding farming reward was not loaded");
+
+                UUID playerId = UUID.randomUUID();
+                UUID evidenceId = UUID.randomUUID();
+                long timestamp = System.currentTimeMillis();
+                var observation = new ActivityObservation(
+                        evidenceId,
+                        timestamp,
+                        playerId,
+                        ActivityTrack.EXPLORATION,
+                        ActivityKind.EXPLORATION_DISCOVERY,
+                        Level.OVERWORLD,
+                        0,
+                        0,
+                        plains,
+                        "biome:" + plains,
+                        1,
+                        ActivityProvenance.explorationDiscovery());
+                var state = PlatformSavedData.get(server);
+                var result = ActivityProgressionService.award(
+                        state, observation, reward.orElseThrow());
+                helper.assertTrue(result.status() == ActivityProgressionService.Status.SUCCESS,
+                        "Server-observed activity evidence did not award exploration experience");
+                helper.assertTrue(ActivityProgressionService.award(
+                                state, observation, reward.orElseThrow()).status()
+                                == ActivityProgressionService.Status.DUPLICATE_EVIDENCE,
+                        "Activity evidence replay was not idempotent");
+                UUID careerPlayerId = UUID.randomUUID();
+                UUID careerTransactionId = UUID.randomUUID();
+                helper.assertTrue(CareerPromotionService.evaluate(
+                                state, careers, careerPlayerId, id("adventurer"), Map.of()).allowed(),
+                        "Free root career was not explainable as available");
+                helper.assertTrue(CareerPromotionService.promote(
+                                state, careers, careerPlayerId, id("adventurer"), Map.of(),
+                                timestamp + 1, careerTransactionId).status()
+                                == CareerPromotionService.Status.SUCCESS,
+                        "Free root career promotion was not committed");
+                helper.assertTrue(CareerPromotionService.promote(
+                                state, careers, careerPlayerId, id("adventurer"), Map.of(),
+                                timestamp + 2, careerTransactionId).status()
+                                == CareerPromotionService.Status.DUPLICATE_TRANSACTION,
+                        "Career promotion retry was not idempotent");
+                UUID challengePlayerId = UUID.randomUUID();
+                var challengeLevels = Map.of(
+                        ActivityTrack.EXPLORATION, 1,
+                        ActivityTrack.HUNTING, 1);
+                var challengeClaim = ActivityChallengeService.claim(
+                        state,
+                        challengePlayerId,
+                        id("first_steps"),
+                        firstSteps,
+                        challengeLevels,
+                        timestamp + 3,
+                        EconomyConfig.DEFAULT_INITIAL_BALANCE,
+                        EconomyConfig.DEFAULT_MAXIMUM_BALANCE);
+                helper.assertTrue(challengeClaim.status() == ActivityChallengeService.Status.SUCCESS,
+                        "Eligible activity challenge reward was not committed");
+                helper.assertTrue(ActivityChallengeService.claim(
+                                state,
+                                challengePlayerId,
+                                id("first_steps"),
+                                firstSteps,
+                                challengeLevels,
+                                timestamp + 4,
+                                EconomyConfig.DEFAULT_INITIAL_BALANCE,
+                                EconomyConfig.DEFAULT_MAXIMUM_BALANCE).status()
+                                == ActivityChallengeService.Status.ALREADY_CLAIMED,
+                        "Activity challenge reward replay was not idempotent");
+                UUID contractPlayerId = UUID.randomUUID();
+                long contractTimestamp = DailyContractService.periodStart(timestamp) + 60_000;
+                var ironReward = ActivityRewardReloadListener.get(
+                        server,
+                        ActivityKind.NATURAL_RESOURCE_BREAK,
+                        Identifier.withDefaultNamespace("iron_ore")).orElseThrow();
+                UUID contractEvidenceId = UUID.randomUUID();
+                var contractObservation = new ActivityObservation(
+                        contractEvidenceId,
+                        contractTimestamp,
+                        contractPlayerId,
+                        ActivityTrack.MINING,
+                        ActivityKind.NATURAL_RESOURCE_BREAK,
+                        WorldCombatService.WILDERNESS_DIMENSION,
+                        0,
+                        0,
+                        Identifier.withDefaultNamespace("iron_ore"),
+                        "resource:minecraft:iron_ore:daily_contract",
+                        16,
+                        new ActivityProvenance(true, false, false));
+                helper.assertTrue(ActivityProgressionService.award(
+                                state, contractObservation, ironReward).awarded(),
+                        "Daily contract activity evidence was not awarded");
+                var contractClaim = DailyContractService.claim(
+                        state,
+                        contractPlayerId,
+                        id("iron_rush"),
+                        ironRush,
+                        contractTimestamp + 1,
+                        EconomyConfig.DEFAULT_INITIAL_BALANCE,
+                        EconomyConfig.DEFAULT_MAXIMUM_BALANCE);
+                helper.assertTrue(contractClaim.status() == DailyContractService.Status.SUCCESS,
+                        "Eligible daily contract reward was not committed");
+                helper.assertTrue(DailyContractService.claim(
+                                state,
+                                contractPlayerId,
+                                id("iron_rush"),
+                                ironRush,
+                                contractTimestamp + 2,
+                                EconomyConfig.DEFAULT_INITIAL_BALANCE,
+                                EconomyConfig.DEFAULT_MAXIMUM_BALANCE).status()
+                                == DailyContractService.Status.ALREADY_CLAIMED,
+                        "Daily contract reward replay was not idempotent");
+                UUID expeditionPlayerId = UUID.randomUUID();
+                long expeditionWeekStart = WeeklyExpeditionService.periodStart(timestamp);
+                for (var requirement : supplyLines.dailyContractRequirements().entrySet()) {
+                    for (int day = 0; day < requirement.getValue(); day++) {
+                        long dayStart = expeditionWeekStart
+                                + day * DailyContractService.PERIOD_MILLIS;
+                        helper.assertTrue(EconomyService.award(
+                                        state,
+                                        expeditionPlayerId,
+                                        1,
+                                        "gametest daily contract completion evidence",
+                                        dayStart + 1_000,
+                                        DailyContractService.transactionId(
+                                                expeditionPlayerId, requirement.getKey(), dayStart),
+                                        EconomyConfig.DEFAULT_INITIAL_BALANCE,
+                                        EconomyConfig.DEFAULT_MAXIMUM_BALANCE).status()
+                                        == EconomyService.TransactionStatus.SUCCESS,
+                                "Weekly expedition daily completion evidence was not committed");
+                    }
+                }
+                long expeditionTimestamp = expeditionWeekStart
+                        + 2 * DailyContractService.PERIOD_MILLIS + 60_000;
+                var expeditionClaim = WeeklyExpeditionService.claim(
+                        state,
+                        expeditionPlayerId,
+                        id("supply_lines"),
+                        supplyLines,
+                        expeditionTimestamp,
+                        EconomyConfig.DEFAULT_INITIAL_BALANCE,
+                        EconomyConfig.DEFAULT_MAXIMUM_BALANCE);
+                helper.assertTrue(expeditionClaim.status() == WeeklyExpeditionService.Status.SUCCESS,
+                        "Eligible weekly expedition reward was not committed");
+                helper.assertTrue(WeeklyExpeditionService.claim(
+                                state,
+                                expeditionPlayerId,
+                                id("supply_lines"),
+                                supplyLines,
+                                expeditionTimestamp + 1,
+                                EconomyConfig.DEFAULT_INITIAL_BALANCE,
+                                EconomyConfig.DEFAULT_MAXIMUM_BALANCE).status()
+                                == WeeklyExpeditionService.Status.ALREADY_CLAIMED,
+                        "Weekly expedition reward replay was not idempotent");
+                var decoded = PlatformSavedData.CODEC.parse(NbtOps.INSTANCE,
+                        PlatformSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow()).getOrThrow();
+                helper.assertTrue(decoded.activityExperience(playerId, ActivityTrack.EXPLORATION) == 30,
+                        "Activity experience did not survive persistence");
+                helper.assertTrue(decoded.activityEvidence(evidenceId).isPresent(),
+                        "Activity evidence receipt did not survive persistence");
+                helper.assertTrue(decoded.activeCareer(careerPlayerId).equals(Optional.of(id("adventurer"))),
+                        "Active career did not survive persistence");
+                helper.assertTrue(decoded.careerPromotionReceipt(careerTransactionId).isPresent(),
+                        "Career promotion receipt did not survive persistence");
+                helper.assertTrue(decoded.economyBalance(challengePlayerId).orElseThrow() == 100,
+                        "Activity challenge reward did not survive persistence");
+                helper.assertTrue(decoded.economyReceipt(challengeClaim.evaluation().transactionId()).isPresent(),
+                        "Activity challenge completion evidence did not survive persistence");
+                helper.assertTrue(decoded.economyBalance(contractPlayerId).orElseThrow() == 80,
+                        "Daily contract reward did not survive persistence");
+                helper.assertTrue(decoded.economyReceipt(contractClaim.evaluation().transactionId()).isPresent(),
+                        "Daily contract completion evidence did not survive persistence");
+                helper.assertTrue(decoded.economyBalance(expeditionPlayerId).orElseThrow() == 1_012,
+                        "Weekly expedition reward did not survive persistence");
+                helper.assertTrue(decoded.economyReceipt(
+                                expeditionClaim.evaluation().transactionId()).isPresent(),
+                        "Weekly expedition completion evidence did not survive persistence");
+
+                var player = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                UUID gameplayCareerTransaction = UUID.randomUUID();
+                helper.assertTrue(CareerPromotionService.promote(
+                                state, careers, player.getUUID(), id("adventurer"), Map.of(),
+                                timestamp + 3, gameplayCareerTransaction).status()
+                                == CareerPromotionService.Status.SUCCESS,
+                        "GameTest player could not select the all-track root career");
+                long careerBefore = state.playerCareerState(player.getUUID()).experience(id("adventurer"));
+                long cookingBefore = state.activityExperience(player.getUUID(), ActivityTrack.COOKING);
+                NeoForge.EVENT_BUS.post(new PlayerEvent.ItemCraftedEvent(
+                        player,
+                        RovenfallItems.FRONTIER_STEW.toStack(2),
+                        new net.minecraft.world.SimpleContainer(5)));
+                helper.assertTrue(
+                        state.activityExperience(player.getUUID(), ActivityTrack.COOKING) == cookingBefore + 10,
+                        "Crafting did not create quantity-aware Frontier Stew cooking evidence");
+                NeoForge.EVENT_BUS.post(new PlayerEvent.ItemCraftedEvent(
+                        player,
+                        RovenfallItems.HIGHLAND_CHEESE.toStack(2),
+                        new net.minecraft.world.SimpleContainer(3)));
+                helper.assertTrue(
+                        state.activityExperience(player.getUUID(), ActivityTrack.COOKING) == cookingBefore + 18,
+                        "Crafting did not create quantity-aware Highland Cheese cooking evidence");
+                NeoForge.EVENT_BUS.post(new PlayerEvent.ItemSmeltedEvent(
+                        player, new ItemStack(Items.COOKED_BEEF, 3), 3));
+                helper.assertTrue(
+                        state.activityExperience(player.getUUID(), ActivityTrack.COOKING) == cookingBefore + 24,
+                        "Furnace extraction did not create quantity-aware cooking evidence");
+
+                var activityLevel = server.getLevel(Level.NETHER);
+                helper.assertTrue(activityLevel != null,
+                        "Nether level was unavailable for activity event tests");
+                BlockPos naturalOre = new BlockPos(45_000, 64, 45_000);
+                activityLevel.setBlock(naturalOre, Blocks.DIAMOND_ORE.defaultBlockState(), 3);
+                long miningBefore = state.activityExperience(player.getUUID(), ActivityTrack.MINING);
+                var naturalBreak = new BreakBlockEvent(
+                        activityLevel, naturalOre, Blocks.DIAMOND_ORE.defaultBlockState(), player);
+                NeoForge.EVENT_BUS.post(naturalBreak);
+                helper.assertTrue(!naturalBreak.isCanceled(),
+                        "Non-Hub natural ore break was canceled");
+                helper.assertTrue(
+                        state.activityExperience(player.getUUID(), ActivityTrack.MINING) == miningBefore + 8,
+                        "Natural diamond ore did not create mining evidence");
+
+                BlockPos placedOre = naturalOre.east();
+                activityLevel.setBlock(placedOre, Blocks.DIAMOND_ORE.defaultBlockState(), 3);
+                state.observeActivityResourcePlacement(activityLevel.dimension(), placedOre, true);
+                NeoForge.EVENT_BUS.post(new BreakBlockEvent(
+                        activityLevel, placedOre, Blocks.DIAMOND_ORE.defaultBlockState(), player));
+                helper.assertTrue(
+                        state.activityExperience(player.getUUID(), ActivityTrack.MINING) == miningBefore + 8,
+                        "Player-placed diamond ore awarded mining experience");
+                helper.assertTrue(!state.isActivityResourcePlayerPlaced(activityLevel.dimension(), placedOre),
+                        "Broken player-placed ore provenance was not cleared");
+
+                BlockPos buildingPos = naturalOre.south(2);
+                activityLevel.setBlock(buildingPos, Blocks.AIR.defaultBlockState(), 3);
+                var buildingSnapshot = net.neoforged.neoforge.common.util.BlockSnapshot.create(
+                        activityLevel.dimension(), activityLevel, buildingPos);
+                activityLevel.setBlock(buildingPos, Blocks.COBBLESTONE.defaultBlockState(), 3);
+                long buildingBefore = state.activityExperience(player.getUUID(), ActivityTrack.BUILDING);
+                var placeEvent = new BlockEvent.EntityPlaceEvent(
+                        buildingSnapshot, activityLevel.getBlockState(buildingPos.below()), player);
+                NeoForge.EVENT_BUS.post(placeEvent);
+                helper.assertTrue(!placeEvent.isCanceled(),
+                        "Unclaimed GameTest building placement was canceled");
+                helper.assertTrue(
+                        state.activityExperience(player.getUUID(), ActivityTrack.BUILDING) == buildingBefore + 1,
+                        "Cobblestone placement did not create building evidence");
+
+                BlockPos cropPos = naturalOre.south(3);
+                var matureWheat = Blocks.WHEAT.defaultBlockState()
+                        .setValue(net.minecraft.world.level.block.CropBlock.AGE,
+                                net.minecraft.world.level.block.CropBlock.MAX_AGE);
+                activityLevel.setBlock(cropPos, matureWheat, 3);
+                long farmingBefore = state.activityExperience(player.getUUID(), ActivityTrack.FARMING);
+                NeoForge.EVENT_BUS.post(new BreakBlockEvent(activityLevel, cropPos, matureWheat, player));
+                helper.assertTrue(
+                        state.activityExperience(player.getUUID(), ActivityTrack.FARMING) == farmingBefore + 4,
+                        "Mature wheat harvest did not create farming evidence");
+
+                var parentA = helper.spawnWithNoFreeWill(EntityTypes.COW, new BlockPos(1, 2, 0));
+                var parentB = helper.spawnWithNoFreeWill(EntityTypes.COW, new BlockPos(2, 2, 0));
+                var child = helper.spawnWithNoFreeWill(EntityTypes.COW, new BlockPos(3, 2, 0));
+                parentA.setInLove(player);
+                parentB.setInLove(player);
+                NeoForge.EVENT_BUS.post(new net.neoforged.neoforge.event.entity.living.BabyEntitySpawnEvent(
+                        parentA, parentB, child));
+                helper.assertTrue(
+                        state.activityExperience(player.getUUID(), ActivityTrack.FARMING) == farmingBefore + 14,
+                        "Player-caused cow breeding did not create farming evidence");
+
+                long combatBefore = state.activityExperience(player.getUUID(), ActivityTrack.COMBAT);
+                long huntingBefore = state.activityExperience(player.getUUID(), ActivityTrack.HUNTING);
+                var zombie = helper.spawnWithNoFreeWill(EntityTypes.ZOMBIE, new BlockPos(0, 2, 0));
+                var playerDamage = level.damageSources().playerAttack(player);
+                var damageContainer = new net.neoforged.neoforge.common.damagesource.DamageContainer(
+                        playerDamage, 20.0F);
+                damageContainer.captureInflictedDamage();
+                NeoForge.EVENT_BUS.post(new net.neoforged.neoforge.event.entity.living.LivingDamageEvent.Post(
+                        zombie, damageContainer));
+                var deathEvent = new net.neoforged.neoforge.event.entity.living.LivingDeathEvent(
+                        zombie, playerDamage);
+                NeoForge.EVENT_BUS.post(deathEvent);
+                helper.assertTrue(!deathEvent.isCanceled(),
+                        "Synthetic completed zombie death was canceled");
+                helper.assertTrue(
+                        state.activityExperience(player.getUUID(), ActivityTrack.COMBAT) == combatBefore + 20,
+                        "Applied zombie damage did not create capped combat contribution evidence");
+                helper.assertTrue(
+                        state.activityExperience(player.getUUID(), ActivityTrack.HUNTING) == huntingBefore + 20,
+                        "Zombie death did not award the recorded hunting contribution");
+                helper.assertTrue(
+                        state.playerCareerState(player.getUUID()).experience(id("adventurer"))
+                                == careerBefore + 87,
+                        "Server activity events did not atomically advance the active career");
+                var decodedEvents = PlatformSavedData.CODEC.parse(
+                        NbtOps.INSTANCE,
+                        PlatformSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow()).getOrThrow();
+                helper.assertTrue(
+                        decodedEvents.playerCareerState(player.getUUID()).experience(id("adventurer"))
+                                == careerBefore + 87,
+                        "Activity-derived career experience did not survive persistence");
+
+                long activeSkillTrainingStart = Math.max(0, timestamp - 18L * 61_000L);
+                for (int index = 0; index < 18; index++) {
+                    long observedAt = activeSkillTrainingStart + index * 61_000L;
+                    var training = new ActivityObservation(
+                            UUID.randomUUID(),
+                            observedAt,
+                            player.getUUID(),
+                            ActivityTrack.EXPLORATION,
+                            ActivityKind.EXPLORATION_DISCOVERY,
+                            Level.OVERWORLD,
+                            0,
+                            0,
+                            plains,
+                            "gametest:active_skill_training_" + index,
+                            1,
+                            ActivityProvenance.explorationDiscovery());
+                    helper.assertTrue(ActivityProgressionService.award(
+                                    state, training, reward.orElseThrow(), careers).status()
+                                    == ActivityProgressionService.Status.SUCCESS,
+                            "Active skill training evidence was not awarded");
+                }
+                long activeSkillTimestamp = timestamp + 10_000;
+                UUID activeSkillUnlockTransaction = UUID.randomUUID();
+                helper.assertTrue(CareerSkillService.unlock(
+                                state,
+                                careers,
+                                player.getUUID(),
+                                id("well_traveled"),
+                                activeSkillTimestamp,
+                                activeSkillUnlockTransaction).status()
+                                == CareerSkillService.Status.SUCCESS,
+                        "GameTest player could not unlock an active career skill");
+                helper.assertTrue(ActiveSkillService.equip(
+                                state,
+                                careers,
+                                player.getUUID(),
+                                1,
+                                id("well_traveled"),
+                                activeSkillTimestamp + 1).status()
+                                == ActiveSkillService.Status.SUCCESS,
+                        "Unlocked active skill could not be equipped");
+                var activeUse = ActiveSkillService.use(
+                        state,
+                        careers,
+                        player.getUUID(),
+                        1,
+                        activeSkillTimestamp + 2,
+                        net.minecraft.core.registries.BuiltInRegistries.MOB_EFFECT::containsKey);
+                helper.assertTrue(activeUse.status() == ActiveSkillService.Status.SUCCESS,
+                        "Server-authoritative active skill use failed");
+                helper.assertTrue(activeUse.evaluation().activeDefinition().orElseThrow().effectId()
+                                .equals(Identifier.withDefaultNamespace("speed")),
+                        "Active skill use did not retain its validated status effect");
+                helper.assertTrue(ActiveSkillService.use(
+                                state,
+                                careers,
+                                player.getUUID(),
+                                1,
+                                activeSkillTimestamp + 3,
+                                net.minecraft.core.registries.BuiltInRegistries.MOB_EFFECT::containsKey).status()
+                                == ActiveSkillService.Status.COOLDOWN,
+                        "Immediate active skill packet replay bypassed cooldown validation");
+                var decodedActiveSkill = PlatformSavedData.CODEC.parse(
+                        NbtOps.INSTANCE,
+                        PlatformSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow()).getOrThrow();
+                helper.assertTrue(decodedActiveSkill.playerCareerState(player.getUUID())
+                                .activeSkills().slot(1).equals(Optional.of(id("well_traveled"))),
+                        "Active skill slot did not survive persistence");
+                helper.assertTrue(decodedActiveSkill.playerCareerState(player.getUUID())
+                                .activeSkills().cooldownReadyAt(id("well_traveled"))
+                                > activeSkillTimestamp + 3,
+                        "Active skill cooldown did not survive persistence");
+                helper.succeed();
+            }
+        });
         event.registerTest(id("shop_template_reload"), new FunctionGameTestInstance(BuiltinTestFunctions.ALWAYS_PASS, testData) {
             @Override
             public void run(GameTestHelper helper) {
@@ -2984,6 +4250,142 @@ public final class Rovenfall {
                 helper.assertTrue(item.getMaxStackSize() == 16, "Shop offer exact max-stack component was not retained");
                 helper.assertTrue(offer.buyPrice().orElseThrow() == 12L, "Shop offer buy price was not retained");
                 helper.assertTrue(offer.sellPrice().orElseThrow() == 6L, "Shop offer sell price was not retained");
+
+                var outfitter = ShopTemplateReloadListener.get(
+                        helper.getLevel().getServer(), id("wilderness_outfitter"));
+                helper.assertTrue(outfitter.isPresent(), "Wilderness Outfitter shop template was not loaded");
+                helper.assertTrue(outfitter.orElseThrow().offers().size() == 21,
+                        "Wilderness Outfitter did not retain all twenty-one offers");
+                var frontierStew = outfitter.orElseThrow().offers().stream()
+                        .filter(candidate -> candidate.id().equals(id("outfitter_frontier_stew")))
+                        .findFirst()
+                        .orElseThrow();
+                helper.assertTrue(frontierStew.item().getItem() == RovenfallItems.FRONTIER_STEW.get()
+                                && frontierStew.item().get(net.minecraft.core.component.DataComponents.FOOD) != null
+                                && frontierStew.buyPrice().orElseThrow() == 24L
+                                && frontierStew.sellPrice().orElseThrow() == 12L
+                                && frontierStew.stock().initial().orElseThrow() == 8L
+                                && frontierStew.stock().maximum().orElseThrow() == 16L,
+                        "Wilderness Outfitter Frontier Stew policy was not retained");
+                var frontierFeed = outfitter.orElseThrow().offers().stream()
+                        .filter(candidate -> candidate.id().equals(id("outfitter_frontier_feed")))
+                        .findFirst()
+                        .orElseThrow();
+                helper.assertTrue(frontierFeed.item().getItem() == RovenfallItems.FRONTIER_FEED.get()
+                                && frontierFeed.item().getCount() == 4
+                                && frontierFeed.buyPrice().orElseThrow() == 12L
+                                && frontierFeed.sellPrice().orElseThrow() == 6L
+                                && frontierFeed.stock().initial().orElseThrow() == 16L
+                                && frontierFeed.stock().maximum().orElseThrow() == 32L
+                                && frontierFeed.stock().restockAmount().orElseThrow() == 4L
+                                && frontierFeed.stock().restockIntervalTicks().orElseThrow() == 1_200L,
+                        "Wilderness Outfitter Frontier Feed policy was not retained");
+                var highlandCheeseOffer = outfitter.orElseThrow().offers().stream()
+                        .filter(candidate -> candidate.id().equals(id("outfitter_highland_cheese")))
+                        .findFirst()
+                        .orElseThrow();
+                helper.assertTrue(highlandCheeseOffer.item().getItem() == RovenfallItems.HIGHLAND_CHEESE.get()
+                                && highlandCheeseOffer.item().getCount() == 2
+                                && highlandCheeseOffer.buyPrice().orElseThrow() == 20L
+                                && highlandCheeseOffer.sellPrice().orElseThrow() == 10L
+                                && highlandCheeseOffer.stock().initial().orElseThrow() == 8L
+                                && highlandCheeseOffer.stock().maximum().orElseThrow() == 16L
+                                && highlandCheeseOffer.stock().restockAmount().orElseThrow() == 2L
+                                && highlandCheeseOffer.stock().restockIntervalTicks().orElseThrow() == 2_400L,
+                        "Wilderness Outfitter Highland Cheese policy was not retained");
+                var mireguard = outfitter.orElseThrow().offers().stream()
+                        .filter(candidate -> candidate.id().equals(id("outfitter_mireguard_tonic")))
+                        .findFirst()
+                        .orElseThrow();
+                helper.assertTrue(mireguard.item().getItem() == RovenfallItems.MIREGUARD_TONIC.get(),
+                        "Wilderness Outfitter did not resolve the custom Mireguard Tonic item");
+                helper.assertTrue(mireguard.item().get(net.minecraft.core.component.DataComponents.CONSUMABLE) != null,
+                        "Wilderness Outfitter tonic lost its default consumable component");
+                helper.assertTrue(mireguard.buyPrice().orElseThrow() == 28L
+                                && mireguard.sellPrice().orElseThrow() == 14L,
+                        "Wilderness Outfitter tonic prices were not retained");
+                helper.assertTrue(mireguard.stock().initial().orElseThrow() == 4L
+                                && mireguard.stock().maximum().orElseThrow() == 12L
+                                && mireguard.stock().restockAmount().orElseThrow() == 2L
+                                && mireguard.stock().restockIntervalTicks().orElseThrow() == 2_400L,
+                        "Wilderness Outfitter tonic stock policy was not retained");
+                var cinderCore = outfitter.orElseThrow().offers().stream()
+                        .filter(candidate -> candidate.id().equals(id("outfitter_cinder_core")))
+                        .findFirst()
+                        .orElseThrow();
+                helper.assertTrue(cinderCore.item().getItem() == RovenfallItems.CINDER_CORE.get()
+                                && cinderCore.buyPrice().isEmpty()
+                                && cinderCore.sellPrice().orElseThrow() == 14L
+                                && cinderCore.stock().unlimited(),
+                        "Wilderness Outfitter Cinder Core buyback policy was not retained");
+                var ashveil = outfitter.orElseThrow().offers().stream()
+                        .filter(candidate -> candidate.id().equals(id("outfitter_ashveil_tonic")))
+                        .findFirst()
+                        .orElseThrow();
+                helper.assertTrue(ashveil.item().getItem() == RovenfallItems.ASHVEIL_TONIC.get()
+                                && ashveil.buyPrice().orElseThrow() == 32L
+                                && ashveil.sellPrice().orElseThrow() == 16L,
+                        "Wilderness Outfitter Ashveil Tonic policy was not retained");
+                var runeboundFragment = outfitter.orElseThrow().offers().stream()
+                        .filter(candidate -> candidate.id().equals(id("outfitter_runebound_fragment")))
+                        .findFirst()
+                        .orElseThrow();
+                helper.assertTrue(runeboundFragment.item().getItem() == RovenfallItems.RUNEBOUND_FRAGMENT.get()
+                                && runeboundFragment.buyPrice().isEmpty()
+                                && runeboundFragment.sellPrice().orElseThrow() == 12L
+                                && runeboundFragment.stock().unlimited(),
+                        "Wilderness Outfitter Runebound Fragment buyback policy was not retained");
+                var froststep = outfitter.orElseThrow().offers().stream()
+                        .filter(candidate -> candidate.id().equals(id("outfitter_froststep_tonic")))
+                        .findFirst()
+                        .orElseThrow();
+                helper.assertTrue(froststep.item().getItem() == RovenfallItems.FROSTSTEP_TONIC.get()
+                                && froststep.buyPrice().orElseThrow() == 38L
+                                && froststep.sellPrice().orElseThrow() == 19L,
+                        "Wilderness Outfitter Froststep Tonic policy was not retained");
+                var frostboundShard = outfitter.orElseThrow().offers().stream()
+                        .filter(candidate -> candidate.id().equals(id("outfitter_frostbound_shard")))
+                        .findFirst()
+                        .orElseThrow();
+                helper.assertTrue(frostboundShard.item().getItem() == RovenfallItems.FROSTBOUND_SHARD.get()
+                                && frostboundShard.buyPrice().isEmpty()
+                                && frostboundShard.sellPrice().orElseThrow() == 11L
+                                && frostboundShard.stock().unlimited(),
+                        "Wilderness Outfitter Frostbound Shard buyback policy was not retained");
+                var tidebreath = outfitter.orElseThrow().offers().stream()
+                        .filter(candidate -> candidate.id().equals(id("outfitter_tidebreath_tonic")))
+                        .findFirst()
+                        .orElseThrow();
+                helper.assertTrue(tidebreath.item().getItem() == RovenfallItems.TIDEBREATH_TONIC.get()
+                                && tidebreath.buyPrice().orElseThrow() == 42L
+                                && tidebreath.sellPrice().orElseThrow() == 21L,
+                        "Wilderness Outfitter Tidebreath Tonic policy was not retained");
+                var tideboundScale = outfitter.orElseThrow().offers().stream()
+                        .filter(candidate -> candidate.id().equals(id("outfitter_tidebound_scale")))
+                        .findFirst()
+                        .orElseThrow();
+                helper.assertTrue(tideboundScale.item().getItem() == RovenfallItems.TIDEBOUND_SCALE.get()
+                                && tideboundScale.buyPrice().isEmpty()
+                                && tideboundScale.sellPrice().orElseThrow() == 13L
+                                && tideboundScale.stock().unlimited(),
+                        "Wilderness Outfitter Tidebound Scale buyback policy was not retained");
+                var deepsight = outfitter.orElseThrow().offers().stream()
+                        .filter(candidate -> candidate.id().equals(id("outfitter_deepsight_tonic")))
+                        .findFirst()
+                        .orElseThrow();
+                helper.assertTrue(deepsight.item().getItem() == RovenfallItems.DEEPSIGHT_TONIC.get()
+                                && deepsight.buyPrice().orElseThrow() == 44L
+                                && deepsight.sellPrice().orElseThrow() == 22L,
+                        "Wilderness Outfitter Deepsight Tonic policy was not retained");
+                var deepstoneCore = outfitter.orElseThrow().offers().stream()
+                        .filter(candidate -> candidate.id().equals(id("outfitter_deepstone_core")))
+                        .findFirst()
+                        .orElseThrow();
+                helper.assertTrue(deepstoneCore.item().getItem() == RovenfallItems.DEEPSTONE_CORE.get()
+                                && deepstoneCore.buyPrice().isEmpty()
+                                && deepstoneCore.sellPrice().orElseThrow() == 15L
+                                && deepstoneCore.stock().unlimited(),
+                        "Wilderness Outfitter Deepstone Core buyback policy was not retained");
                 helper.succeed();
             }
         });
@@ -3339,6 +4741,13 @@ public final class Rovenfall {
         event.addRetainedListener(RpgDefinitionReloadListener.KEY, rpgDefinitions);
         event.addRetainedListener(QuestDefinitionReloadListener.KEY, questDefinitions);
         event.addRetainedListener(ExplorationDefinitionReloadListener.KEY, explorationDefinitions);
+        event.addRetainedListener(ActivityRewardReloadListener.KEY, activityRewards);
+        event.addRetainedListener(ActivityLevelReloadListener.KEY, activityLevels);
+        event.addRetainedListener(ActivityChallengeReloadListener.KEY, activityChallenges);
+        event.addRetainedListener(DailyContractReloadListener.KEY, dailyContracts);
+        event.addRetainedListener(WeeklyExpeditionReloadListener.KEY, weeklyExpeditions);
+        event.addRetainedListener(CareerDefinitionReloadListener.KEY, careerDefinitions);
+        event.addRetainedListener(MobMutationReloadListener.KEY, mobMutations);
     }
 
     private static Identifier id(String path) {
@@ -3352,5 +4761,27 @@ public final class Rovenfall {
                 event.setCanceled(true);
             }
         }
+    }
+
+    private static boolean lootTableCanDrop(
+            GameTestHelper helper,
+            String entityPath,
+            net.minecraft.world.entity.Entity entity,
+            net.minecraft.world.item.Item expectedItem) {
+        var key = net.minecraft.resources.ResourceKey.create(
+                net.minecraft.core.registries.Registries.LOOT_TABLE,
+                id("entities/" + entityPath));
+        var params = new net.minecraft.world.level.storage.loot.LootParams.Builder(helper.getLevel())
+                .withParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.THIS_ENTITY,
+                        entity)
+                .withParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.ORIGIN,
+                        entity.position())
+                .withParameter(net.minecraft.world.level.storage.loot.parameters.LootContextParams.DAMAGE_SOURCE,
+                        helper.getLevel().damageSources().generic())
+                .create(net.minecraft.world.level.storage.loot.parameters.LootContextParamSets.ENTITY);
+        var table = helper.getLevel().getServer().reloadableRegistries().getLootTable(key);
+        return java.util.stream.LongStream.range(0, 64).anyMatch(seed ->
+                table.getRandomItems(params, seed).stream()
+                        .anyMatch(stack -> stack.getItem() == expectedItem));
     }
 }

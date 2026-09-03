@@ -1,0 +1,56 @@
+{
+  "translation_key": "career.rovenfall.artisan",
+  "tier": 2,
+  "parents": ["rovenfall:adventurer"],
+  "activity_levels": {
+    "cooking": 1,
+    "building": 2,
+    "farming": 1
+  },
+  "experience_tracks": ["cooking", "building", "farming"],
+  "level_thresholds": [0, 750, 2250, 5000, 9500, 16000],
+  "promotion_cost": 100,
+  "promotion_skill_points": 1,
+  "skill_reset_cost": 100,
+  "skills": {
+    "rovenfall:craftsmanship": {
+      "translation_key": "career_skill.rovenfall.craftsmanship",
+      "maximum_rank": 3,
+      "point_cost": 1,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:haste",
+        "duration_ticks": 300,
+        "amplifier": 0,
+        "cooldown_seconds": 45
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "building",
+          "magnitude_per_rank_bps": 1000
+        }
+      ]
+    },
+    "rovenfall:bountiful_harvest": {
+      "translation_key": "career_skill.rovenfall.bountiful_harvest",
+      "prerequisites": ["rovenfall:craftsmanship"],
+      "maximum_rank": 2,
+      "point_cost": 1,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:regeneration",
+        "duration_ticks": 100,
+        "amplifier": 0,
+        "cooldown_seconds": 60
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "farming",
+          "magnitude_per_rank_bps": 1000
+        }
+      ]
+    }
+  }
+}

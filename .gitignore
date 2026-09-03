@@ -101,6 +101,8 @@ $RECYCLE.BIN/
 *.lnk
 
 .gradle
+.pnpm-store/
+.worktrees/
 build/
 
 # Ignore Gradle GUI config

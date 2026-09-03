@@ -1,0 +1,11 @@
+{
+  "type": "neoforge:add_spawn_costs",
+  "biomes": "#rovenfall:frostbound_reaver_spawns",
+  "entity_types": [
+    "rovenfall:frostbound_reaver"
+  ],
+  "spawn_cost": {
+    "energy_budget": 0.24,
+    "charge": 0.14
+  }
+}

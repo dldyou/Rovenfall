@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.bone_patrol",
+  "description_translation_key": "daily_contract_description.rovenfall.bone_patrol",
+  "kind": "hunting_contribution",
+  "target": "minecraft:skeleton",
+  "required_experience": 120,
+  "currency_reward": 120
+}

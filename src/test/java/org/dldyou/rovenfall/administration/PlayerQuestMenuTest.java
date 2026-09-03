@@ -46,10 +46,16 @@ final class PlayerQuestMenuTest {
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 50));
         assertEquals(PlayerQuestMenu.Action.CLEAR_TRACKER,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 51));
+        assertEquals(PlayerQuestMenu.Action.FILTER_STORY,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 0));
+        assertEquals(PlayerQuestMenu.Action.FILTER_STORY,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 7));
+        assertEquals(PlayerQuestMenu.Action.NONE,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DETAIL, 7));
         assertEquals(PlayerQuestMenu.Action.REFRESH,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 53));
         assertEquals(PlayerQuestMenu.Action.NONE,
-                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 0));
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 5));
         assertEquals(PlayerQuestMenu.Action.TRACK_CONTRACT,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.CONTRACTS, 20));
         assertEquals(PlayerQuestMenu.Action.NONE,
@@ -112,6 +118,9 @@ final class PlayerQuestMenuTest {
         assertEquals(1, PlayerQuestMenu.contractOffset(22));
         assertEquals(2, PlayerQuestMenu.contractOffset(24));
         assertEquals(-1, PlayerQuestMenu.contractOffset(21));
+        assertEquals(0, PlayerQuestMenu.storyFilterOffset(0));
+        assertEquals(4, PlayerQuestMenu.storyFilterOffset(7));
+        assertEquals(-1, PlayerQuestMenu.storyFilterOffset(5));
         assertTrue(PlayerQuestMenu.tracksStory(story, storyId));
         assertFalse(PlayerQuestMenu.tracksStory(contract, storyId));
         assertTrue(PlayerQuestMenu.tracksContract(contract, contractKey));

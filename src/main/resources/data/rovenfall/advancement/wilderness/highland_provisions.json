@@ -1,0 +1,31 @@
+{
+  "parent": "rovenfall:wilderness/highland_herd",
+  "criteria": {
+    "eat_highland_cheese": {
+      "conditions": {
+        "item": {
+          "items": "rovenfall:highland_cheese"
+        }
+      },
+      "trigger": "minecraft:consume_item"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancements.rovenfall.wilderness.highland_provisions.description"
+    },
+    "frame": "task",
+    "icon": {
+      "id": "rovenfall:highland_cheese"
+    },
+    "title": {
+      "translate": "advancements.rovenfall.wilderness.highland_provisions.title"
+    }
+  },
+  "requirements": [
+    [
+      "eat_highland_cheese"
+    ]
+  ],
+  "sends_telemetry_event": false
+}

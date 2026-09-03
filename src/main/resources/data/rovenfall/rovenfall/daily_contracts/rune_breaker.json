@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.rune_breaker",
+  "description_translation_key": "daily_contract_description.rovenfall.rune_breaker",
+  "kind": "hunting_contribution",
+  "target": "rovenfall:runebound_archer",
+  "required_experience": 160,
+  "currency_reward": 190
+}

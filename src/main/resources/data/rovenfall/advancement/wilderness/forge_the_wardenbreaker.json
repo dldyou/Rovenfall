@@ -1,0 +1,33 @@
+{
+  "parent": "rovenfall:wilderness/warden_defeated",
+  "criteria": {
+    "has_wardenbreaker": {
+      "conditions": {
+        "items": [
+          {
+            "items": "rovenfall:wardenbreaker"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancements.rovenfall.wilderness.forge_the_wardenbreaker.description"
+    },
+    "frame": "challenge",
+    "icon": {
+      "id": "rovenfall:wardenbreaker"
+    },
+    "title": {
+      "translate": "advancements.rovenfall.wilderness.forge_the_wardenbreaker.title"
+    }
+  },
+  "requirements": [
+    [
+      "has_wardenbreaker"
+    ]
+  ],
+  "sends_telemetry_event": false
+}

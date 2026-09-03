@@ -1,0 +1,27 @@
+{
+  "translation_key": "quest.rovenfall.wilderness_patrol",
+  "description_translation_key": "quest.rovenfall.wilderness_patrol.description",
+  "version": 1,
+  "prerequisites": ["rovenfall:first_steps"],
+  "objectives": [
+    {
+      "id": "rovenfall:wilderness_patrol/exploration",
+      "kind": "activity",
+      "target": "rovenfall:exploration",
+      "required_count": 80
+    },
+    {
+      "id": "rovenfall:wilderness_patrol/hunting",
+      "kind": "activity",
+      "target": "rovenfall:hunting",
+      "required_count": 80
+    }
+  ],
+  "rewards": {
+    "currency": 180,
+    "activity_xp": {
+      "activity": "rovenfall:exploration",
+      "amount": 25
+    }
+  }
+}

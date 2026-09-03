@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.ashen_pursuit",
+  "description_translation_key": "daily_contract_description.rovenfall.ashen_pursuit",
+  "kind": "hunting_contribution",
+  "target": "rovenfall:ashen_stalker",
+  "required_experience": 160,
+  "currency_reward": 180
+}

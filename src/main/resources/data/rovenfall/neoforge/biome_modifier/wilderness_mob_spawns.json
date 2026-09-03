@@ -1,0 +1,18 @@
+{
+  "type": "neoforge:add_spawns",
+  "biomes": "#rovenfall:wilderness_mob_spawns",
+  "spawners": [
+    {
+      "type": "rovenfall:ashen_stalker",
+      "weight": 18,
+      "minCount": 1,
+      "maxCount": 2
+    },
+    {
+      "type": "rovenfall:runebound_archer",
+      "weight": 14,
+      "minCount": 1,
+      "maxCount": 2
+    }
+  ]
+}

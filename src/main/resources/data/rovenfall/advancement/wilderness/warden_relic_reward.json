@@ -1,0 +1,22 @@
+{
+  "parent": "rovenfall:wilderness/warden_defeated",
+  "criteria": {
+    "rewarded": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "requirements": [
+    [
+      "rewarded"
+    ]
+  ],
+  "rewards": {
+    "loot": [
+      "rovenfall:gameplay/warden_relic"
+    ],
+    "recipes": [
+      "rovenfall:wardenbreaker"
+    ]
+  },
+  "sends_telemetry_event": false
+}

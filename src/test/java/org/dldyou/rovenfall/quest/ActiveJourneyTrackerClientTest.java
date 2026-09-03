@@ -39,6 +39,15 @@ final class ActiveJourneyTrackerClientTest {
         assertTrue(state.current().isEmpty());
     }
 
+    @Test
+    void adventureHudModeCyclesThroughEveryReadableState() {
+        var full = ActiveJourneyTrackerClient.DisplayMode.FULL;
+        assertEquals(ActiveJourneyTrackerClient.DisplayMode.QUEST_ONLY, full.next());
+        assertEquals(ActiveJourneyTrackerClient.DisplayMode.HIDDEN, full.next().next());
+        assertEquals(full, full.next().next().next());
+        assertEquals("hud.rovenfall.mode.full", full.translationKey());
+    }
+
     private static ActiveJourneyTrackerPayloads.Snapshot active(
             long progress, ActiveJourneyTrackerPayloads.JourneyStatus status) {
         return new ActiveJourneyTrackerPayloads.Snapshot(
