@@ -1,0 +1,10 @@
+{
+  "translation_key": "activity_challenge.rovenfall.frontier_sentinel",
+  "description_translation_key": "activity_challenge_description.rovenfall.frontier_sentinel",
+  "activity_levels": {
+    "combat": 8,
+    "exploration": 8,
+    "hunting": 8
+  },
+  "currency_reward": 1100
+}

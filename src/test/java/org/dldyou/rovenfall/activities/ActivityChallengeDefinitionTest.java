@@ -21,7 +21,11 @@ final class ActivityChallengeDefinitionTest {
                 "homestead", 200L,
                 "monster_hunter", 250L,
                 "wilderness_veteran", 500L,
-                "master_of_trades", 750L);
+                "master_of_trades", 750L,
+                "deep_earth_legend", 700L,
+                "master_artisan", 900L,
+                "frontier_sentinel", 1_100L,
+                "legend_of_rovenfall", 2_500L);
 
         for (var entry : expectedRewards.entrySet()) {
             ActivityChallengeDefinition definition = bundled(entry.getKey());
@@ -31,6 +35,9 @@ final class ActivityChallengeDefinitionTest {
         }
 
         assertEquals(7, bundled("master_of_trades").activityLevelRequirements().size());
+        assertEquals(7, bundled("legend_of_rovenfall").activityLevelRequirements().size());
+        assertTrue(bundled("legend_of_rovenfall").activityLevelRequirements().values().stream()
+                .allMatch(level -> level == 10));
         assertEquals(5, bundled("wilderness_veteran")
                 .activityLevelRequirements().get(ActivityTrack.EXPLORATION));
     }

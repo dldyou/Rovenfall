@@ -1,0 +1,14 @@
+{
+  "translation_key": "activity_challenge.rovenfall.legend_of_rovenfall",
+  "description_translation_key": "activity_challenge_description.rovenfall.legend_of_rovenfall",
+  "activity_levels": {
+    "combat": 10,
+    "cooking": 10,
+    "mining": 10,
+    "exploration": 10,
+    "hunting": 10,
+    "building": 10,
+    "farming": 10
+  },
+  "currency_reward": 2500
+}

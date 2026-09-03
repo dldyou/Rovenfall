@@ -160,8 +160,18 @@ tracker in `ko_kr`, `en_us`, and `ja_jp`; Korean labels must use natural player 
 | Server authority | Change progress, complete the target, expire its request window, remove or version-change its definition, and try a stale menu click | Only the server validates the shown click and progress. The tracker refreshes or clears; stale input cannot retain changed guidance or create progress/rewards. |
 | Synchronization | Log in, pin/clear, make matching server-observed progress, reload definitions, and cross a daily/weekly rotation | The panel updates promptly. Repeated unchanged state does not visibly flicker or cause repeated narration; the periodic reconciliation remains a 20-tick, at-most-16-player batch. |
 | HUD visibility | Pin a journey at minimum, standard, and large GUI scales | The card is inside the upper-right screen edge at every scale. Opening any screen or pressing F1 hides it; returning to gameplay restores it when still active. |
+| HUD mode key | Rebind the Rovenfall HUD key, then cycle it during gameplay | Full → Quest only → Hidden wraps predictably; the action bar and narrator announce each mode, screens keep normal key behavior, and no quest state changes. |
 | Accessibility | Enable Minecraft narration and use mouse plus keyboard Journey controls | Pin/replace/clear controls and the displayed title, kind, state, objective progress, and refresh wording are intelligible without color-only meaning. Narration does not repeat every tick. |
 | Locales | Repeat story, daily, and weekly tracker flows in all three shipped locales | No key is missing, placeholders remain correct, and the same natural player-facing terms appear in each locale. |
+
+## Issue #129 challenge and admin-view release checks
+
+| Case | Required state | Expected result |
+| --- | --- | --- |
+| Challenge ordering | Open **Skills → Challenges** with claimable, in-progress, and completed goals | Claimable goals appear first; every card shows a localized state, reward, and all activity-level requirements without a raw definition ID. |
+| Challenge reward | Select a claimable goal, then repeat the click and try a stale open screen | The first server-validated click pays once and records the existing deterministic receipt and audit event; repeats cannot change the balance. |
+| Late-game catalog | Load the default data pack and inspect the four level 6–10 goals | All ten challenge definitions load, requirements are visible, and the final goal requires level 10 in all seven activities. |
+| Shareable admin view | Apply a query, page, and audit filters, copy **Current view link**, then reload it | Menu, applied query, page, and filters are restored; draft values and authentication tokens never appear in the URL. |
 
 ## Issue #101 release-candidate result
 

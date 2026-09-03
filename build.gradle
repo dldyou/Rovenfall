@@ -243,7 +243,8 @@ def inspectReleaseJar = tasks.register('inspectReleaseJar') {
                     'data/rovenfall/rovenfall/discoveries/hub_arrival.json',
                     'data/rovenfall/rovenfall/discoveries/hub_commons.json',
                     'data/rovenfall/rovenfall/discoveries/wilderness_trailhead.json',
-                    'data/rovenfall/rovenfall/discoveries/weathered_ruins.json'
+                    'data/rovenfall/rovenfall/discoveries/weathered_ruins.json',
+                    'data/rovenfall/rovenfall/activity_challenges/legend_of_rovenfall.json'
             ]
             def missing = required.findAll { !entries.contains(it) }
             if (!missing.isEmpty()) {
@@ -426,6 +427,10 @@ tasks.register('verifyReleaseArtifact') {
                 'data/rovenfall/rovenfall/professions/ranger.json',
                 'data/rovenfall/rovenfall/activity_challenges/first_steps.json',
                 'data/rovenfall/rovenfall/activity_challenges/master_of_trades.json',
+                'data/rovenfall/rovenfall/activity_challenges/deep_earth_legend.json',
+                'data/rovenfall/rovenfall/activity_challenges/master_artisan.json',
+                'data/rovenfall/rovenfall/activity_challenges/frontier_sentinel.json',
+                'data/rovenfall/rovenfall/activity_challenges/legend_of_rovenfall.json',
                 'data/rovenfall/rovenfall/daily_contracts/iron_rush.json',
                 'data/rovenfall/rovenfall/daily_contracts/ashen_pursuit.json',
                 'data/rovenfall/rovenfall/daily_contracts/cinder_containment.json',

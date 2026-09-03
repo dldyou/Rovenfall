@@ -1,8 +1,11 @@
 package org.dldyou.rovenfall.administration;
 
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -20,6 +23,10 @@ import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
+import org.dldyou.rovenfall.activities.ActivityChallengeDefinition;
+import org.dldyou.rovenfall.activities.ActivityChallengeReloadListener;
+import org.dldyou.rovenfall.activities.ActivityLevelReloadListener;
+import org.dldyou.rovenfall.activities.ActivityTrack;
 import org.dldyou.rovenfall.rpg.ActivityDefinition;
 import org.dldyou.rovenfall.rpg.ActivityXpConfig;
 import org.dldyou.rovenfall.rpg.CareerDefinition;
@@ -66,6 +73,7 @@ public final class PlayerRpgMenu extends ChestMenu {
     enum Page {
         HOME,
         ACTIVITIES,
+        CHALLENGES,
         CAREERS,
         CAREER_DETAIL,
         SKILLS,
@@ -88,6 +96,7 @@ public final class PlayerRpgMenu extends ChestMenu {
     private int pageIndex;
     private Identifier selectedCareer;
     private Identifier selectedSkill;
+    private List<Identifier> displayedChallengeIds = List.of();
     private Confirmation confirmation;
     private long renderedRevision;
     private RpgPlayerState renderedState = RpgPlayerState.EMPTY;
@@ -169,6 +178,7 @@ public final class PlayerRpgMenu extends ChestMenu {
             case HOME -> handleHome(slotIndex);
             case ACTIVITIES -> {
             }
+            case CHALLENGES -> claimChallenge(slotIndex);
             case CAREERS -> selectCareer(slotIndex);
             case CAREER_DETAIL -> handleCareerDetail(slotIndex);
             case SKILLS -> selectSkill(slotIndex);
@@ -192,6 +202,7 @@ public final class PlayerRpgMenu extends ChestMenu {
             case 11 -> Page.ACTIVITIES;
             case 13 -> Page.CAREERS;
             case 15 -> Page.SKILLS;
+            case 17 -> Page.CHALLENGES;
             default -> page;
         };
         pageIndex = 0;
@@ -221,6 +232,53 @@ public final class PlayerRpgMenu extends ChestMenu {
         }
         selectedSkill = skills.get(index).id();
         page = Page.SKILL_DETAIL;
+        render();
+    }
+
+    private void claimChallenge(int slot) {
+        int offset = contentOffset(slot);
+        if (offset < 0 || offset >= displayedChallengeIds.size()) {
+            render();
+            return;
+        }
+        Identifier challengeId = displayedChallengeIds.get(offset);
+        var server = viewer.level().getServer();
+        ActivityChallengeDefinition definition = ActivityChallengeReloadListener.snapshot(server)
+                .map(definitions -> definitions.get(challengeId))
+                .orElse(null);
+        Optional<Map<ActivityTrack, Integer>> levels = activityLevels();
+        if (definition == null || levels.isEmpty()) {
+            viewer.sendOverlayMessage(Component.translatable(
+                    "gui.rovenfall.rpg.challenge.result.unavailable"));
+            render();
+            return;
+        }
+        PlatformSavedData platform = PlatformSavedData.get(server);
+        ActivityChallengeService.Evaluation evaluation = ActivityChallengeService.evaluate(
+                platform, viewerId, challengeId, definition, levels.orElseThrow());
+        if (evaluation.status() != ActivityChallengeService.Status.CLAIMABLE) {
+            viewer.sendOverlayMessage(Component.translatable(
+                    "gui.rovenfall.rpg.challenge.result.status",
+                    Component.translatable(evaluation.status().translationKey())));
+            render();
+            return;
+        }
+        if (!beginMutation()) {
+            return;
+        }
+        ActivityChallengeService.ClaimResult result = ActivityChallengeService.claim(
+                platform, viewerId, challengeId, definition, levels.orElseThrow(),
+                Instant.now().toEpochMilli(), EconomyConfig.initialBalance(), EconomyConfig.maximumBalance());
+        if (result.status() == ActivityChallengeService.Status.SUCCESS) {
+            viewer.sendSystemMessage(Component.translatable(
+                    "gui.rovenfall.rpg.challenge.result.claimed",
+                    Component.translatable(definition.translationKey()),
+                    result.awardedCurrency(), result.balance()));
+        } else {
+            viewer.sendOverlayMessage(Component.translatable(
+                    "gui.rovenfall.rpg.challenge.result.status",
+                    Component.translatable(result.status().translationKey())));
+        }
         render();
     }
 
@@ -433,7 +491,7 @@ public final class PlayerRpgMenu extends ChestMenu {
                 PlayerDashboardMenu.open(viewer);
                 return;
             }
-            case ACTIVITIES, CAREERS, SKILLS -> page = Page.HOME;
+            case ACTIVITIES, CHALLENGES, CAREERS, SKILLS -> page = Page.HOME;
             case CAREER_DETAIL -> page = Page.CAREERS;
             case SKILL_DETAIL -> page = Page.SKILLS;
             case CONFIRM -> page = returnPage;
@@ -447,6 +505,7 @@ public final class PlayerRpgMenu extends ChestMenu {
         switch (page) {
             case HOME -> renderHome();
             case ACTIVITIES -> renderActivities();
+            case CHALLENGES -> renderChallenges();
             case CAREERS -> renderCareers();
             case CAREER_DETAIL -> renderCareerDetail();
             case SKILLS -> renderSkills();
@@ -480,6 +539,14 @@ public final class PlayerRpgMenu extends ChestMenu {
                 Items.ENCHANTED_BOOK, Component.translatable("gui.rovenfall.rpg.skills"),
                 Component.translatable("gui.rovenfall.rpg.count", view.skills().size()),
                 Component.translatable("gui.rovenfall.player.click")));
+        List<ChallengeRow> challenges = challengeRows();
+        long claimable = challenges.stream().filter(row ->
+                row.evaluation().status() == ActivityChallengeService.Status.CLAIMABLE).count();
+        content.setItem(17, PlayerDashboardMenu.icon(
+                claimable > 0 ? Items.CHEST : Items.FILLED_MAP,
+                Component.translatable("gui.rovenfall.rpg.challenges"),
+                Component.translatable("gui.rovenfall.rpg.challenge.home", challenges.size(), claimable),
+                Component.translatable("gui.rovenfall.player.click")));
         for (PlayerRpgView.SlotRow slot : view.slots()) {
             content.setItem(28 + slot.slot(), slotIcon(slot));
         }
@@ -492,6 +559,22 @@ public final class PlayerRpgMenu extends ChestMenu {
         content.setItem(4, header(Items.COMPASS, "gui.rovenfall.rpg.activities", rows.size()));
         pageEntries(rows).forEach(entry -> content.setItem(
                 CONTENT_SLOTS[entry.offset()], activityIcon(entry.value())));
+        addNavigation(rows.size());
+    }
+
+    private void renderChallenges() {
+        List<ChallengeRow> rows = challengeRows();
+        pageIndex = boundedPage(pageIndex, rows.size());
+        content.setItem(4, PlayerDashboardMenu.icon(
+                Items.FILLED_MAP,
+                Component.translatable("gui.rovenfall.rpg.challenges"),
+                Component.translatable("gui.rovenfall.rpg.challenge.summary"),
+                Component.translatable("gui.rovenfall.rpg.count", rows.size()),
+                pageLine(rows.size())));
+        List<PageEntry<ChallengeRow>> entries = pageEntries(rows);
+        displayedChallengeIds = entries.stream().map(entry -> entry.value().id()).toList();
+        entries.forEach(entry -> content.setItem(
+                CONTENT_SLOTS[entry.offset()], challengeIcon(entry.value())));
         addNavigation(rows.size());
     }
 
@@ -639,6 +722,36 @@ public final class PlayerRpgMenu extends ChestMenu {
                 unresolved(row.unresolved()));
     }
 
+    private net.minecraft.world.item.ItemStack challengeIcon(ChallengeRow row) {
+        ActivityChallengeService.Status status = row.evaluation().status();
+        List<Component> lore = new java.util.ArrayList<>();
+        lore.add(Component.translatable(row.definition().descriptionTranslationKey()));
+        lore.add(Component.translatable(
+                "gui.rovenfall.rpg.challenge.status",
+                Component.translatable(status.translationKey())));
+        lore.add(Component.translatable(
+                "gui.rovenfall.quest.reward.currency", row.definition().currencyReward()));
+        row.evaluation().requirements().forEach(requirement -> lore.add(Component.translatable(
+                requirement.met()
+                        ? "gui.rovenfall.rpg.requirement.met"
+                        : "gui.rovenfall.rpg.requirement.locked",
+                Component.translatable(requirement.track().translationKey()),
+                requirement.currentLevel(), requirement.requiredLevel())));
+        if (status == ActivityChallengeService.Status.CLAIMABLE) {
+            lore.add(Component.translatable("gui.rovenfall.rpg.challenge.claim"));
+            lore.add(Component.translatable("gui.rovenfall.player.click"));
+        }
+        Item item = switch (status) {
+            case CLAIMABLE -> Items.CHEST;
+            case ALREADY_CLAIMED, SUCCESS -> Items.EMERALD;
+            case REQUIREMENTS_NOT_MET -> Items.IRON_BARS;
+            default -> Items.BARRIER;
+        };
+        return PlayerDashboardMenu.icon(
+                item, Component.translatable(row.definition().translationKey()),
+                lore.toArray(Component[]::new));
+    }
+
     private net.minecraft.world.item.ItemStack careerIcon(PlayerRpgView.CareerRow row, boolean clickable) {
         List<Component> lore = new java.util.ArrayList<>();
         lore.add(Component.translatable("gui.rovenfall.rpg.career.tier", row.tier()));
@@ -765,6 +878,50 @@ public final class PlayerRpgMenu extends ChestMenu {
                 viewer.level().getGameTime());
     }
 
+    private List<ChallengeRow> challengeRows() {
+        var server = viewer.level().getServer();
+        Map<Identifier, ActivityChallengeDefinition> definitions =
+                ActivityChallengeReloadListener.snapshot(server).orElse(Map.of());
+        Optional<Map<ActivityTrack, Integer>> levels = activityLevels();
+        if (definitions.isEmpty() || levels.isEmpty()) {
+            return List.of();
+        }
+        PlatformSavedData platform = PlatformSavedData.get(server);
+        return definitions.entrySet().stream()
+                .map(entry -> new ChallengeRow(
+                        entry.getKey(), entry.getValue(), ActivityChallengeService.evaluate(
+                                platform, viewerId, entry.getKey(), entry.getValue(), levels.orElseThrow())))
+                .sorted(Comparator.comparingInt((ChallengeRow row) ->
+                                challengeStatusPriority(row.evaluation().status()))
+                        .thenComparing(ChallengeRow::id))
+                .toList();
+    }
+
+    private Optional<Map<ActivityTrack, Integer>> activityLevels() {
+        var server = viewer.level().getServer();
+        PlatformSavedData platform = PlatformSavedData.get(server);
+        Map<ActivityTrack, Integer> levels = new EnumMap<>(ActivityTrack.class);
+        for (ActivityTrack track : ActivityTrack.values()) {
+            var definition = ActivityLevelReloadListener.get(server, track);
+            if (definition.isEmpty()) {
+                return Optional.empty();
+            }
+            levels.put(track, definition.orElseThrow()
+                    .progress(platform.activityExperience(viewerId, track)).level());
+        }
+        return Optional.of(Map.copyOf(levels));
+    }
+
+    static int challengeStatusPriority(ActivityChallengeService.Status status) {
+        return switch (status) {
+            case CLAIMABLE -> 0;
+            case REQUIREMENTS_NOT_MET -> 1;
+            case ALREADY_CLAIMED, SUCCESS -> 2;
+            case READ_ONLY_SCHEMA -> 3;
+            case INVALID_REQUEST, TRANSACTION_CONFLICT, REWARD_FAILED -> 4;
+        };
+    }
+
     private RpgPlayerSavedData rpg() {
         return RpgPlayerSavedData.get(viewer.level().getServer());
     }
@@ -889,8 +1046,9 @@ public final class PlayerRpgMenu extends ChestMenu {
             return true;
         }
         return switch (page) {
-            case HOME -> slot == 11 || slot == 13 || slot == 15;
+            case HOME -> slot == 11 || slot == 13 || slot == 15 || slot == 17;
             case ACTIVITIES -> false;
+            case CHALLENGES -> contentOffset(slot) >= 0;
             case CAREERS, SKILLS -> contentOffset(slot) >= 0;
             case CAREER_DETAIL -> slot == 31;
             case SKILL_DETAIL -> slot == 20 || slot >= 28 && slot <= 31 || slot == 33 || slot == 34;
@@ -977,6 +1135,12 @@ public final class PlayerRpgMenu extends ChestMenu {
     }
 
     private record PageEntry<T>(int offset, T value) {
+    }
+
+    private record ChallengeRow(
+            Identifier id,
+            ActivityChallengeDefinition definition,
+            ActivityChallengeService.Evaluation evaluation) {
     }
 
     private record Confirmation(

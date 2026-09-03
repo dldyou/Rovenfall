@@ -71,6 +71,12 @@ final class GameplayLocalizationCatalogTest {
             "command.rovenfall.activity.line_unavailable",
             "activity_challenge.rovenfall.first_steps",
             "activity_challenge_description.rovenfall.master_of_trades",
+            "activity_challenge.rovenfall.legend_of_rovenfall",
+            "activity_challenge_description.rovenfall.legend_of_rovenfall",
+            "gui.rovenfall.rpg.challenges",
+            "gui.rovenfall.rpg.challenge.result.claimed",
+            "key.rovenfall.hud_mode",
+            "hud.rovenfall.mode.changed",
             "command.rovenfall.challenge.header",
             "command.rovenfall.challenge.info.requirement",
             "command.rovenfall.challenge.claim.success",
@@ -290,7 +296,11 @@ final class GameplayLocalizationCatalogTest {
                 "homestead",
                 "monster_hunter",
                 "wilderness_veteran",
-                "master_of_trades")) {
+                "master_of_trades",
+                "deep_earth_legend",
+                "master_artisan",
+                "frontier_sentinel",
+                "legend_of_rovenfall")) {
             assertTrue(english.contains("activity_challenge.rovenfall." + id), id);
             assertTrue(english.contains("activity_challenge_description.rovenfall." + id), id);
         }

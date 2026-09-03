@@ -62,6 +62,11 @@ public final class ActiveJourneyTrackerHud {
                 || minecraft.player == null || minecraft.level == null) {
             return;
         }
+        ActiveJourneyTrackerClient.DisplayMode displayMode =
+                ActiveJourneyTrackerClient.displayMode();
+        if (displayMode == ActiveJourneyTrackerClient.DisplayMode.HIDDEN) {
+            return;
+        }
         ActiveJourneyTrackerPayloads.Snapshot snapshot = ActiveJourneyTrackerClient.current()
                 .filter(ActiveJourneyTrackerPayloads.Snapshot::active)
                 .orElse(null);
@@ -69,7 +74,11 @@ public final class ActiveJourneyTrackerHud {
         Font font = minecraft.font;
         int panelWidth = Math.min(MAX_CARD_WIDTH,
                 Math.max(1, graphics.guiWidth() - SCREEN_MARGIN * 2));
-        renderEnvironment(graphics, minecraft, panelWidth, font);
+        int trackerY = SCREEN_MARGIN;
+        if (displayMode == ActiveJourneyTrackerClient.DisplayMode.FULL) {
+            renderEnvironment(graphics, minecraft, panelWidth, font);
+            trackerY += MAP_PANEL_SIZE + PANEL_GAP;
+        }
 
         List<Component> lines = snapshot == null
                 ? List.of(
@@ -79,7 +88,7 @@ public final class ActiveJourneyTrackerHud {
         int contentWidth = lines.stream().mapToInt(font::width).max().orElse(0);
         Bounds bounds = layoutAt(
                 graphics.guiWidth(), contentWidth, lines.size(), font.lineHeight,
-                SCREEN_MARGIN + MAP_PANEL_SIZE + PANEL_GAP);
+                trackerY);
         graphics.fill(bounds.x(), bounds.y(), bounds.right(), bounds.bottom(), BACKGROUND);
         graphics.outline(bounds.x(), bounds.y(), bounds.width(), bounds.height(), GOLD_DARK);
         graphics.fill(bounds.x() + 2, bounds.y() + 2, bounds.right() - 2,

@@ -3713,11 +3713,16 @@ public final class Rovenfall {
                                 .equals(Set.of(id("vanguard"))),
                         "Tier-three sibling specialization reset was not compiled");
                 var challenges = ActivityChallengeReloadListener.snapshot(server).orElseThrow();
-                helper.assertTrue(challenges.size() == 6,
+                helper.assertTrue(challenges.size() == 10,
                         "Built-in Rovenfall activity challenge catalog was incomplete");
                 var firstSteps = challenges.get(id("first_steps"));
                 helper.assertTrue(firstSteps != null && firstSteps.currencyReward() == 100,
                         "First Steps challenge definition was not loaded");
+                var legend = challenges.get(id("legend_of_rovenfall"));
+                helper.assertTrue(legend != null
+                                && legend.activityLevelRequirements().size() == 7
+                                && legend.currencyReward() == 2_500,
+                        "Legend of Rovenfall challenge definition was not loaded");
                 var contracts = DailyContractReloadListener.snapshot(server).orElseThrow();
                 helper.assertTrue(contracts.size() == 16,
                         "Built-in Rovenfall daily contract catalog was incomplete");

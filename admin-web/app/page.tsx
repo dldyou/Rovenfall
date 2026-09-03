@@ -14,6 +14,7 @@ import {
   KeyRound,
   LandPlot,
   Languages,
+  Link2,
   LoaderCircle,
   LogOut,
   Menu,
@@ -75,6 +76,13 @@ interface AuditFilterState {
   to: string;
 }
 
+interface ConsoleUrlState {
+  active: ViewId;
+  query: string;
+  page: number;
+  auditFilters: AuditFilterState;
+}
+
 const emptyAction: ActionDraft = {
   type: 'set_role',
   playerId: '',
@@ -101,6 +109,54 @@ const navigation: Array<{ id: ViewId; icon: LucideIcon }> = [
   { id: 'claims', icon: LandPlot },
   { id: 'shops', icon: Store },
 ];
+
+function readConsoleUrl(search: string): ConsoleUrlState {
+  const params = new URLSearchParams(search);
+  const requestedView = params.get('view');
+  const active = navigation.some(({ id }) => id === requestedView)
+    ? requestedView as ViewId
+    : 'dashboard';
+  const pageValue = params.get('page') ?? '0';
+  const rawPage = /^\d+$/.test(pageValue) ? Number(pageValue) : 0;
+  const value = (key: string, maximum = 128) => (params.get(key) ?? '').trim().slice(0, maximum);
+  const date = (key: string) => {
+    const candidate = value(key, 16);
+    return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(candidate)
+      && Number.isFinite(new Date(candidate).getTime()) ? candidate : '';
+  };
+  const outcome = value('outcome', 16);
+  return {
+    active,
+    query: value('q'),
+    page: Number.isSafeInteger(rawPage) && rawPage > 0 ? Math.min(rawPage, 1_000) : 0,
+    auditFilters: {
+      player: value('player'),
+      action: value('action'),
+      outcome: ['success', 'denied', 'failed', 'no_change'].includes(outcome) ? outcome : '',
+      from: date('from'),
+      to: date('to'),
+    },
+  };
+}
+
+function consoleUrlSearch(
+  active: ViewId,
+  query: string,
+  page: number,
+  filters: AuditFilterState,
+): string {
+  const params = new URLSearchParams();
+  if (active !== 'dashboard') params.set('view', active);
+  if (query) params.set('q', query);
+  if (page > 0) params.set('page', String(page));
+  if (active === 'audit') {
+    Object.entries(filters).forEach(([key, value]) => {
+      if (value) params.set(key, value);
+    });
+  }
+  const encoded = params.toString();
+  return encoded ? `?${encoded}` : '';
+}
 
 const viewDescription: Record<ViewId, CopyKey> = {
   dashboard: 'dashboardDescription',
@@ -229,15 +285,16 @@ function Console({
   t: Translator;
   onDisconnect: () => void;
 }) {
-  const [active, setActive] = useState<ViewId>('dashboard');
+  const [initialUrl] = useState(() => readConsoleUrl(window.location.search));
+  const [active, setActive] = useState<ViewId>(initialUrl.active);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [pageData, setPageData] = useState<PageData | null>(null);
-  const [queryDraft, setQueryDraft] = useState('');
-  const [query, setQuery] = useState('');
-  const [page, setPage] = useState(0);
-  const [auditDraft, setAuditDraft] = useState(emptyAuditFilters);
-  const [auditFilters, setAuditFilters] = useState(emptyAuditFilters);
+  const [queryDraft, setQueryDraft] = useState(initialUrl.query);
+  const [query, setQuery] = useState(initialUrl.query);
+  const [page, setPage] = useState(initialUrl.page);
+  const [auditDraft, setAuditDraft] = useState(initialUrl.auditFilters);
+  const [auditFilters, setAuditFilters] = useState(initialUrl.auditFilters);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [refreshRevision, setRefreshRevision] = useState(0);
@@ -259,12 +316,22 @@ function Console({
   useEffect(() => registerReadOnlyTools(token, handleFailure), [token, handleFailure]);
 
   useEffect(() => {
+    if (queryDraft.trim() === query) return;
     const timeout = window.setTimeout(() => {
       setPage(0);
       setQuery(queryDraft.trim());
     }, 280);
     return () => window.clearTimeout(timeout);
-  }, [queryDraft]);
+  }, [query, queryDraft]);
+
+  useEffect(() => {
+    const search = consoleUrlSearch(active, query, page, auditFilters);
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${window.location.pathname}${search}${window.location.hash}`,
+    );
+  }, [active, auditFilters, page, query]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -334,6 +401,17 @@ function Console({
     setQuery('');
     applyAuditFilters({ ...emptyAuditFilters, player: playerId });
     switchView('audit');
+  }
+
+  async function copyCurrentView() {
+    const url = new URL(window.location.href);
+    url.search = consoleUrlSearch(active, query, page, auditFilters);
+    try {
+      await navigator.clipboard.writeText(url.toString());
+      setToast(t.viewLinkCopied);
+    } catch {
+      setToast(t.copyFailed);
+    }
   }
 
   useEffect(() => {
@@ -413,6 +491,11 @@ function Console({
               </div>
             </div>
             <div className="heading-actions">
+              {active !== 'dashboard' && (
+                <button className="pixel-button" onClick={() => void copyCurrentView()}>
+                  <Link2 /> {t.copyView}
+                </button>
+              )}
               <button className="pixel-button" onClick={() => setRefreshRevision((value) => value + 1)} disabled={loading}>
                 <RefreshCw className={loading ? 'spin' : ''} /> {t.refresh}
               </button>
