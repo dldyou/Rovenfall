@@ -32,8 +32,21 @@ public record QuestJourneyView(
             boolean writable,
             int requestedPage,
             int pageSize) {
+        return create(
+                definitions, state, definitionRevision, writable,
+                requestedPage, pageSize, Filter.ALL);
+    }
+
+    public static QuestJourneyView create(
+            QuestDefinitionSnapshot definitions,
+            QuestPlayerState state,
+            long definitionRevision,
+            boolean writable,
+            int requestedPage,
+            int pageSize,
+            Filter filter) {
         if (definitions == null || state == null || definitionRevision < 0 || requestedPage < 0
-                || pageSize < 1 || pageSize > MAX_PAGE_SIZE) {
+                || pageSize < 1 || pageSize > MAX_PAGE_SIZE || filter == null) {
             throw new IllegalArgumentException("invalid quest journey view request");
         }
 
@@ -43,6 +56,7 @@ public record QuestJourneyView(
                 .map(id -> row(id, definitions, state))
                 .sorted(Comparator.comparingInt((QuestRow value) -> statusPriority(value.status()))
                         .thenComparing(QuestRow::id))
+                .filter(row -> filter.includes(row.status()))
                 .toList();
         int totalEntries = rows.size();
         int totalPages = totalEntries == 0 ? 0 : (totalEntries + pageSize - 1) / pageSize;
@@ -288,5 +302,27 @@ public record QuestJourneyView(
         COMPLETED,
         UNRESOLVED,
         DEFINITION_CHANGED
+    }
+
+    public enum Filter {
+        ALL,
+        ACTIONABLE,
+        IN_PROGRESS,
+        BLOCKED,
+        COMPLETED;
+
+        boolean includes(Status status) {
+            return switch (this) {
+                case ALL -> true;
+                case ACTIONABLE -> status == Status.AVAILABLE
+                        || status == Status.IN_PROGRESS
+                        || status == Status.PENDING;
+                case IN_PROGRESS -> status == Status.IN_PROGRESS;
+                case BLOCKED -> status == Status.PREREQUISITE_LOCKED
+                        || status == Status.DEFINITION_CHANGED
+                        || status == Status.UNRESOLVED;
+                case COMPLETED -> status == Status.COMPLETED;
+            };
+        }
     }
 }

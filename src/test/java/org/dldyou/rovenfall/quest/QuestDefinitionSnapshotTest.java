@@ -24,9 +24,10 @@ class QuestDefinitionSnapshotTest {
                 shipped("frontier_homestead"),
                 shipped("expedition_provisions"),
                 shipped("wilderness_patrol"),
-                shipped("rift_warden_oath")));
+                shipped("rift_warden_oath"),
+                shipped("frontier_legacy")));
 
-        assertEquals(5, snapshot.storyQuests().size());
+        assertEquals(6, snapshot.storyQuests().size());
         assertEquals(3, snapshot.quest(id("first_steps")).orElseThrow().objectives().size());
         var finale = snapshot.quest(id("rift_warden_oath")).orElseThrow();
         assertEquals(List.of(
@@ -37,6 +38,10 @@ class QuestDefinitionSnapshotTest {
         assertTrue(finale.objectives().stream().anyMatch(objective ->
                 objective.kind() == QuestDefinition.Kind.BOSS_DEFEAT
                         && objective.target().filter(id("rift_warden")::equals).isPresent()));
+        var capstone = snapshot.quest(id("frontier_legacy")).orElseThrow();
+        assertEquals(List.of(id("rift_warden_oath")), capstone.prerequisites());
+        assertEquals(9, capstone.objectives().size());
+        assertEquals(800, capstone.rewards().currency());
     }
 
     @Test

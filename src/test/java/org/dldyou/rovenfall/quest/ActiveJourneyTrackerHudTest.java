@@ -33,6 +33,15 @@ final class ActiveJourneyTrackerHudTest {
                 () -> ActiveJourneyTrackerHud.layout(0, 10, 3, 9));
     }
 
+    @Test
+    void compassUsesMinecraftYawInEightReadableDirections() {
+        assertEquals("hud.rovenfall.direction.south", ActiveJourneyTrackerHud.directionKey(0));
+        assertEquals("hud.rovenfall.direction.west", ActiveJourneyTrackerHud.directionKey(90));
+        assertEquals("hud.rovenfall.direction.north", ActiveJourneyTrackerHud.directionKey(180));
+        assertEquals("hud.rovenfall.direction.east", ActiveJourneyTrackerHud.directionKey(-90));
+        assertEquals("hud.rovenfall.direction.south_east", ActiveJourneyTrackerHud.directionKey(-45));
+    }
+
     private static ActiveJourneyTrackerPayloads.Snapshot active(
             ActiveJourneyTrackerPayloads.JourneyKind kind) {
         return new ActiveJourneyTrackerPayloads.Snapshot(

@@ -18,6 +18,7 @@ public final class ActiveJourneyTrackerClient {
 
     public static void register(IEventBus modBus) {
         ActiveJourneyTrackerHud.register(modBus);
+        RpgStatusHud.register(modBus);
         NeoForge.EVENT_BUS.addListener(ActiveJourneyTrackerClient::onLoggingIn);
         NeoForge.EVENT_BUS.addListener(ActiveJourneyTrackerClient::onLoggingOut);
     }
@@ -91,6 +92,7 @@ public final class ActiveJourneyTrackerClient {
 
         void clear() {
             current = null;
+            ActiveJourneyTrackerHud.clearCache();
         }
     }
 }

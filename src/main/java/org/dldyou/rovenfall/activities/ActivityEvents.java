@@ -7,12 +7,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket;
+import net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
@@ -394,6 +398,7 @@ public final class ActivityEvents {
             ActivityProgressionService.AwardResult result,
             CareerCatalog careerCatalog) {
         boolean leveledUp = false;
+        Component subtitle = null;
         var activityDefinition = ActivityLevelReloadListener.get(level.getServer(), kind.track());
         if (activityDefinition.isPresent()) {
             var definition = activityDefinition.orElseThrow();
@@ -404,6 +409,10 @@ public final class ActivityEvents {
                         "message.rovenfall.activity.level_up",
                         Component.translatable(kind.track().translationKey()),
                         currentLevel));
+                subtitle = Component.translatable(
+                        "message.rovenfall.activity.level_up.subtitle",
+                        Component.translatable(kind.track().translationKey()),
+                        currentLevel);
                 leveledUp = true;
             }
         }
@@ -420,6 +429,10 @@ public final class ActivityEvents {
                             "message.rovenfall.career.level_up",
                             Component.translatable(definition.translationKey()),
                             currentLevel));
+                    subtitle = Component.translatable(
+                            "message.rovenfall.career.level_up.subtitle",
+                            Component.translatable(definition.translationKey()),
+                            currentLevel);
                     leveledUp = true;
                 }
             }
@@ -427,6 +440,11 @@ public final class ActivityEvents {
         if (!leveledUp) {
             return;
         }
+        player.connection.send(new ClientboundSetTitlesAnimationPacket(5, 40, 10));
+        player.connection.send(new ClientboundSetTitleTextPacket(Component.translatable(
+                "message.rovenfall.level_up.title").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD)));
+        player.connection.send(new ClientboundSetSubtitleTextPacket(
+                subtitle.copy().withStyle(ChatFormatting.YELLOW)));
         level.playSound(
                 null,
                 player.blockPosition(),

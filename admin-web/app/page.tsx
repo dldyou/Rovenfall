@@ -67,6 +67,14 @@ interface ActionDraft {
   reason: string;
 }
 
+interface AuditFilterState {
+  player: string;
+  action: string;
+  outcome: string;
+  from: string;
+  to: string;
+}
+
 const emptyAction: ActionDraft = {
   type: 'set_role',
   playerId: '',
@@ -75,6 +83,14 @@ const emptyAction: ActionDraft = {
   originalTransactionId: '',
   compensation: 'none',
   reason: '',
+};
+
+const emptyAuditFilters: AuditFilterState = {
+  player: '',
+  action: '',
+  outcome: '',
+  from: '',
+  to: '',
 };
 
 const navigation: Array<{ id: ViewId; icon: LucideIcon }> = [
@@ -220,12 +236,8 @@ function Console({
   const [queryDraft, setQueryDraft] = useState('');
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
-  const [auditPlayer, setAuditPlayer] = useState('');
-  const [auditAction, setAuditAction] = useState('');
-  const [auditOutcome, setAuditOutcome] = useState('');
-  const [auditFrom, setAuditFrom] = useState('');
-  const [auditTo, setAuditTo] = useState('');
-  const [auditRevision, setAuditRevision] = useState(0);
+  const [auditDraft, setAuditDraft] = useState(emptyAuditFilters);
+  const [auditFilters, setAuditFilters] = useState(emptyAuditFilters);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [refreshRevision, setRefreshRevision] = useState(0);
@@ -265,11 +277,11 @@ function Console({
       } else if (active === 'audit') {
         const value = await apiRequest<PageData<AuditRow>>(token, `/api/v1/audit?${queryString({
           query: query || undefined,
-          player: auditPlayer || undefined,
-          action: auditAction || undefined,
-          outcome: auditOutcome || undefined,
-          from: auditFrom ? new Date(auditFrom).getTime() : undefined,
-          to: auditTo ? new Date(auditTo).getTime() : undefined,
+          player: auditFilters.player || undefined,
+          action: auditFilters.action || undefined,
+          outcome: auditFilters.outcome || undefined,
+          from: auditFilters.from ? new Date(auditFilters.from).getTime() : undefined,
+          to: auditFilters.to ? new Date(auditFilters.to).getTime() : undefined,
           page,
           pageSize: 25,
         })}`);
@@ -288,12 +300,12 @@ function Console({
     } finally {
       setLoading(false);
     }
-  }, [active, auditAction, auditFrom, auditOutcome, auditPlayer, auditTo, handleFailure, page, query, token]);
+  }, [active, auditFilters, handleFailure, page, query, token]);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timeout);
-  }, [auditRevision, load, refreshRevision]);
+  }, [load, refreshRevision]);
 
   useEffect(() => {
     if (!toast) return;
@@ -304,9 +316,25 @@ function Console({
   const switchView = useCallback((view: ViewId) => {
     setActive(view);
     setPage(0);
+    setPageData(null);
+    setLoading(true);
     setError('');
     setMobileMenu(false);
   }, []);
+
+  function applyAuditFilters(filters: AuditFilterState) {
+    setAuditDraft(filters);
+    setAuditFilters(filters);
+    setPage(0);
+  }
+
+  function viewPlayerAudit(playerId: string) {
+    setSelectedPlayer(null);
+    setQueryDraft('');
+    setQuery('');
+    applyAuditFilters({ ...emptyAuditFilters, player: playerId });
+    switchView('audit');
+  }
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
@@ -397,17 +425,10 @@ function Console({
           {active === 'audit' && (
             <AuditFilters
               t={t}
-              player={auditPlayer}
-              action={auditAction}
-              outcome={auditOutcome}
-              from={auditFrom}
-              to={auditTo}
-              setPlayer={setAuditPlayer}
-              setAction={setAuditAction}
-              setOutcome={setAuditOutcome}
-              setFrom={setAuditFrom}
-              setTo={setAuditTo}
-              apply={() => { setPage(0); setAuditRevision((value) => value + 1); }}
+              draft={auditDraft}
+              setDraft={setAuditDraft}
+              activeCount={Object.values(auditFilters).filter(Boolean).length}
+              apply={applyAuditFilters}
             />
           )}
 
@@ -438,6 +459,7 @@ function Console({
       {selectedPlayer && (
         <PlayerDialog token={token} playerId={selectedPlayer} locale={locale} t={t}
           onClose={() => setSelectedPlayer(null)}
+          onAudit={viewPlayerAudit}
           onManage={(playerId) => { setSelectedPlayer(null); setActionDraft({ ...emptyAction, playerId }); }} />
       )}
       {actionDraft && (
@@ -544,24 +566,37 @@ function Dashboard({ dashboard, loading, locale, t, onPlayer, onSelect }: {
 
 function AuditFilters(props: {
   t: Translator;
-  player: string; action: string; outcome: string; from: string; to: string;
-  setPlayer: (value: string) => void; setAction: (value: string) => void;
-  setOutcome: (value: string) => void; setFrom: (value: string) => void; setTo: (value: string) => void;
-  apply: () => void;
+  draft: AuditFilterState;
+  setDraft: (value: AuditFilterState) => void;
+  activeCount: number;
+  apply: (value: AuditFilterState) => void;
 }) {
   const { t } = props;
+  const update = (field: keyof AuditFilterState, value: string) =>
+    props.setDraft({ ...props.draft, [field]: value });
+  const recentDenied = () => props.apply({
+    ...emptyAuditFilters,
+    outcome: 'denied',
+    from: datetimeLocalValue(Date.now() - 86_400_000),
+  });
   return (
-    <section className="filter-bar block-panel">
-      <label>{t.playerFilter}<input value={props.player} onChange={(event) => props.setPlayer(event.target.value)} placeholder="name / UUID" /></label>
-      <label>{t.actionFilter}<input value={props.action} onChange={(event) => props.setAction(event.target.value)} placeholder="rovenfall:…" /></label>
-      <label>{t.outcome}<select value={props.outcome} onChange={(event) => props.setOutcome(event.target.value)}>
+    <form className="filter-bar block-panel" onSubmit={(event) => { event.preventDefault(); props.apply(props.draft); }}>
+      <div className="filter-presets">
+        <strong>{t.quickFilters}</strong>
+        <button type="button" onClick={recentDenied}><FileClock />{t.recentDenied}</button>
+        <button type="button" onClick={() => props.apply(emptyAuditFilters)}><X />{t.clearFilters}</button>
+        <span>{t.activeFilters}: {props.activeCount}</span>
+      </div>
+      <label>{t.playerFilter}<input value={props.draft.player} onChange={(event) => update('player', event.target.value)} placeholder="name / UUID" /></label>
+      <label>{t.actionFilter}<input value={props.draft.action} onChange={(event) => update('action', event.target.value)} placeholder="rovenfall:…" /></label>
+      <label>{t.outcome}<select value={props.draft.outcome} onChange={(event) => update('outcome', event.target.value)}>
         <option value="">{t.all}</option><option value="success">{t.success}</option>
         <option value="denied">{t.deniedResult}</option><option value="failed">{t.failed}</option><option value="no_change">{t.noChange}</option>
       </select></label>
-      <label>{t.from}<input type="datetime-local" value={props.from} onChange={(event) => props.setFrom(event.target.value)} /></label>
-      <label>{t.to}<input type="datetime-local" value={props.to} onChange={(event) => props.setTo(event.target.value)} /></label>
-      <button className="pixel-button" onClick={props.apply}><Search /> {t.apply}</button>
-    </section>
+      <label>{t.from}<input type="datetime-local" value={props.draft.from} onChange={(event) => update('from', event.target.value)} /></label>
+      <label>{t.to}<input type="datetime-local" value={props.draft.to} onChange={(event) => update('to', event.target.value)} /></label>
+      <button className="pixel-button" type="submit"><Search /> {t.apply}</button>
+    </form>
   );
 }
 
@@ -649,8 +684,9 @@ function Pagination({ data, t, onPage }: { data: PageData; t: Translator; onPage
       <button disabled={data.page + 1 >= data.totalPages} onClick={() => onPage(data.page + 1)}>{t.next}<ArrowRight /></button></div></footer>;
 }
 
-function PlayerDialog({ token, playerId, locale, t, onClose, onManage }: {
-  token: string; playerId: string; locale: Locale; t: Translator; onClose: () => void; onManage: (id: string) => void;
+function PlayerDialog({ token, playerId, locale, t, onClose, onAudit, onManage }: {
+  token: string; playerId: string; locale: Locale; t: Translator; onClose: () => void;
+  onAudit: (id: string) => void; onManage: (id: string) => void;
 }) {
   const [data, setData] = useState<PlayerDetail | null>(null);
   const [error, setError] = useState('');
@@ -664,7 +700,8 @@ function PlayerDialog({ token, playerId, locale, t, onClose, onManage }: {
       <div className="player-hero"><div className="player-avatar">{(data.name || '?').slice(0, 1).toUpperCase()}</div><div>
         <span className={`status-badge ${data.online ? 'success' : 'neutral'}`}>{data.online ? t.online : t.offline}</span>
         <h2>{data.name || shortId(data.playerId)}</h2><button className="copy-line" onClick={() => { void navigator.clipboard.writeText(data.playerId); setCopied(true); }}><code>{data.playerId}</code><Clipboard /> {copied ? t.copied : t.copyId}</button>
-      </div><button className="pixel-button primary" onClick={() => onManage(data.playerId)}><UserRoundCog />{t.manage}</button></div>
+      </div><div className="player-actions"><button className="pixel-button" onClick={() => onAudit(data.playerId)}><FileClock />{t.viewPlayerAudit}</button>
+        <button className="pixel-button primary" onClick={() => onManage(data.playerId)}><UserRoundCog />{t.manage}</button></div></div>
       <div className="detail-grid"><Detail label={t.role} value={humanize(data.role)} /><Detail label={t.balance} value={`${formatNumber(data.balance, locale)} G`} gold />
         <Detail label={t.career} value={humanize(data.activeCareer || '—')} /><Detail label={t.claimCount} value={String(data.claimCount)} />
         <Detail label="XP" value={formatNumber(data.activityExperience, locale)} /><Detail label={t.lastSeen} value={formatDate(data.lastSeen, locale)} /></div>
@@ -831,6 +868,10 @@ function formatNumber(value: string | number, locale: Locale): string {
 function formatDate(value: number, locale: Locale): string {
   if (!value) return '—';
   return new Intl.DateTimeFormat(localeTags[locale], { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(value);
+}
+function datetimeLocalValue(value: number): string {
+  const date = new Date(value);
+  return new Date(value - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
 }
 function shortId(value: string): string { return value.length > 12 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value; }
 function humanize(value: string): string { return value.replace(/^rovenfall:/, '').replaceAll('_', ' '); }
