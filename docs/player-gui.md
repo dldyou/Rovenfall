@@ -15,6 +15,7 @@ Rovenfall turns the ordinary survival inventory into the primary player entry po
 - The first journey introduces the opening loop: gain Mining activity progress, trade at a shop, then buy a piece of land. It is guidance rather than a timer; all progress and any reward remain server-owned.
 - Mouse users activate an item with the primary (left) button. Shift-click, drag, number-key swaps, secondary clicks, and other inventory gestures cannot invoke an action.
 - Keyboard users move the visible slot outline with the arrow keys, then activate the focused item with `Enter` or `Space`. `Esc` activates the visible Back control one level at a time (and keeps Minecraft's normal close behavior at a root screen), `R` refreshes, `Ctrl+F` or `/` focuses an available search field, and `Page Up`/`Page Down` changes pages. In administration views, `Tab` moves focus into or out of the search/form field and `Enter` submits it; the first `Esc` leaves a focused text field without discarding the whole menu.
+- During gameplay, `J` opens Journey, `K` opens Skills, and `M` opens Land without first opening the inventory. These are ordinary rebindable Minecraft controls in the Rovenfall Character category and are inactive while another screen is handling input. The server still applies the same player-state, container, revision, and rate-limit checks as a tab click.
 - Screen narration announces the focused item, its menu position, and the activation keys. Empty positions are skipped.
 - Back always returns one level, Refresh discards any open confirmation before rereading server state, and Previous/Next use the same labels in every paged menu.
 - A changed quest definition or player state makes a Journey page stale. The board refreshes from the server instead of accepting a stale interaction. If quest data is temporarily read-only, journeys and current requests keep their existing progress visible and explain that no update can be made.
@@ -78,6 +79,12 @@ The survival HUD replaces vanilla hearts, hunger icons, and the level number wit
 for exact health, hunger, saturation, absorption, and Minecraft experience level. It changes only
 client rendering: server health, food, XP, armor, air, mount health, and gameplay rules remain
 unchanged. Creative and spectator HUDs keep their ordinary behavior.
+
+Activity and career level-ups use three presentation tiers without changing progression. Ordinary
+levels show the compact gold title and particle burst, each crossed five-level boundary uses a
+stronger cyan milestone effect, and the final level of a track or career uses the longest purple
+mastery effect. A large XP award that skips levels selects only the strongest crossed tier, while
+the server-owned XP and reward transaction remain unchanged.
 
 ## Exploration journal
 

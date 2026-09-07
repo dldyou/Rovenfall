@@ -1,6 +1,7 @@
 package org.dldyou.rovenfall.administration;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.client.KeyMapping;
@@ -19,8 +20,10 @@ import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.RegisterMenuScreensEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.network.ClientPacketDistributor;
+import net.neoforged.neoforge.client.settings.KeyConflictContext;
 import net.neoforged.neoforge.common.NeoForge;
 import org.dldyou.rovenfall.Rovenfall;
+import org.lwjgl.glfw.GLFW;
 
 /** Replaces only the ordinary survival inventory with the Rovenfall shell. */
 public final class RovenfallInventoryClient {
@@ -32,6 +35,10 @@ public final class RovenfallInventoryClient {
             InputConstants.Type.KEYSYM,
             InputConstants.KEY_I,
             CHARACTER_CATEGORY);
+    private static final List<MenuShortcut> MENU_SHORTCUTS = List.of(
+            shortcut("journey_screen", GLFW.GLFW_KEY_J, PlayerMenuNetwork.MenuTarget.QUESTS),
+            shortcut("skills_screen", GLFW.GLFW_KEY_K, PlayerMenuNetwork.MenuTarget.SKILLS),
+            shortcut("land_screen", GLFW.GLFW_KEY_M, PlayerMenuNetwork.MenuTarget.CLAIMS));
     private static PlayerMenuNetwork.InventorySummary inventorySummary;
     private static UUID summaryOwner;
 
@@ -110,6 +117,7 @@ public final class RovenfallInventoryClient {
     private static void registerKeyMappings(RegisterKeyMappingsEvent event) {
         event.registerCategory(CHARACTER_CATEGORY);
         event.register(CHARACTER_SCREEN_KEY);
+        MENU_SHORTCUTS.forEach(shortcut -> event.register(shortcut.key()));
     }
 
     private static void registerMenuScreens(RegisterMenuScreensEvent event) {
@@ -151,6 +159,15 @@ public final class RovenfallInventoryClient {
                 ClientPacketDistributor.sendToServer(new PlayerMenuNetwork.InventorySummaryRequest(true));
             }
         }
+        for (MenuShortcut shortcut : MENU_SHORTCUTS) {
+            while (shortcut.key().consumeClick()) {
+                if (minecraft.getConnection() != null
+                        && minecraft.gui.screen() == null
+                        && canOpenCharacterScreen(minecraft.player)) {
+                    request(shortcut.target());
+                }
+            }
+        }
     }
 
     private static boolean canUseCharacterScreen(Player player) {
@@ -159,6 +176,20 @@ public final class RovenfallInventoryClient {
 
     private static boolean canOpenCharacterScreen(Player player) {
         return canUseCharacterScreen(player) && player.containerMenu == player.inventoryMenu;
+    }
+
+    private static MenuShortcut shortcut(
+            String translationSuffix,
+            int keyCode,
+            PlayerMenuNetwork.MenuTarget target) {
+        return new MenuShortcut(
+                new KeyMapping(
+                        "key.rovenfall." + translationSuffix,
+                        KeyConflictContext.IN_GAME,
+                        InputConstants.Type.KEYSYM,
+                        keyCode,
+                        CHARACTER_CATEGORY),
+                target);
     }
 
     private static void onScreenOpening(ScreenEvent.Opening event) {
@@ -175,6 +206,9 @@ public final class RovenfallInventoryClient {
                 return;
             }
         }
+    }
+
+    private record MenuShortcut(KeyMapping key, PlayerMenuNetwork.MenuTarget target) {
     }
 
     private static void replaceCurrentPlayerMenu(Minecraft minecraft) {

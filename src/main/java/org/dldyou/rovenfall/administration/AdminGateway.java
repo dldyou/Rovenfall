@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -22,6 +23,11 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import org.dldyou.rovenfall.Rovenfall;
+import org.dldyou.rovenfall.activities.ActivityChallengeDefinition;
+import org.dldyou.rovenfall.activities.ActivityChallengeReloadListener;
+import org.dldyou.rovenfall.activities.ActivityLevelDefinition;
+import org.dldyou.rovenfall.activities.ActivityLevelReloadListener;
+import org.dldyou.rovenfall.activities.ActivityTrack;
 import org.dldyou.rovenfall.claims.Claim;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.economy.ShopInstance;
@@ -208,6 +214,11 @@ final class AdminGateway {
                 .limit(10)
                 .map(entry -> auditRow(state, entry))
                 .toList();
+        ProgressProjection progression = progressProjection(
+                state,
+                playerId,
+                activityLevelDefinitions(server),
+                ActivityChallengeReloadListener.snapshot(server).orElse(Map.of()));
         return ok(map(
                 "playerId", playerId.toString(),
                 "name", playerName(state, playerId),
@@ -221,9 +232,66 @@ final class AdminGateway {
                 "activeCareer", state.activeCareer(playerId).map(Identifier::toString).orElse(""),
                 "learnedCareers", state.playerCareerState(playerId).learnedCareers().size(),
                 "claimCount", state.claimCount(playerId),
+                "activityProgress", progression.activities(),
+                "challengeProgress", progression.challenges(),
                 "transactions", transactions,
                 "claims", claims,
                 "audit", audit));
+    }
+
+    private static Map<ActivityTrack, ActivityLevelDefinition> activityLevelDefinitions(MinecraftServer server) {
+        Map<ActivityTrack, ActivityLevelDefinition> definitions = new EnumMap<>(ActivityTrack.class);
+        for (ActivityTrack track : ActivityTrack.values()) {
+            ActivityLevelReloadListener.get(server, track).ifPresent(definition -> definitions.put(track, definition));
+        }
+        return Map.copyOf(definitions);
+    }
+
+    static ProgressProjection progressProjection(
+            PlatformSavedData state,
+            UUID playerId,
+            Map<ActivityTrack, ActivityLevelDefinition> levelDefinitions,
+            Map<Identifier, ActivityChallengeDefinition> challengeDefinitions) {
+        if (state == null || playerId == null || levelDefinitions == null || challengeDefinitions == null) {
+            return new ProgressProjection(List.of(), new ChallengeProgress(false, 0, 0, 0));
+        }
+        List<ActivityProgressRow> activities = java.util.Arrays.stream(ActivityTrack.values())
+                .map(levelDefinitions::get)
+                .filter(Objects::nonNull)
+                .map(definition -> {
+                    long experience = state.activityExperience(playerId, definition.track());
+                    var progress = definition.progress(experience);
+                    return new ActivityProgressRow(
+                            definition.track().getSerializedName(),
+                            progress.level(),
+                            progress.maximumLevel(),
+                            Long.toString(progress.totalExperience()),
+                            Long.toString(progress.experienceIntoLevel()),
+                            Long.toString(progress.experienceForNextLevel()),
+                            progress.maximum());
+                })
+                .toList();
+        boolean available = levelDefinitions.size() == ActivityTrack.values().length
+                && java.util.Arrays.stream(ActivityTrack.values()).allMatch(levelDefinitions::containsKey);
+        if (!available) {
+            return new ProgressProjection(activities, new ChallengeProgress(false, 0, 0, 0));
+        }
+        Map<ActivityTrack, Integer> levels = new EnumMap<>(ActivityTrack.class);
+        activities.forEach(row -> ActivityTrack.fromId(row.track()).ifPresent(track -> levels.put(track, row.level())));
+        int claimable = 0;
+        int completed = 0;
+        for (var entry : challengeDefinitions.entrySet().stream().sorted(Map.Entry.comparingByKey()).toList()) {
+            ActivityChallengeService.Status status = ActivityChallengeService.evaluate(
+                    state, playerId, entry.getKey(), entry.getValue(), levels).status();
+            if (status == ActivityChallengeService.Status.CLAIMABLE) {
+                claimable++;
+            } else if (status == ActivityChallengeService.Status.ALREADY_CLAIMED) {
+                completed++;
+            }
+        }
+        return new ProgressProjection(
+                activities,
+                new ChallengeProgress(true, challengeDefinitions.size(), claimable, completed));
     }
 
     static Response action(
@@ -812,6 +880,26 @@ final class AdminGateway {
             result.put((String) values[index], values[index + 1]);
         }
         return result;
+    }
+
+    record ProgressProjection(List<ActivityProgressRow> activities, ChallengeProgress challenges) {
+        ProgressProjection {
+            activities = activities == null ? List.of() : List.copyOf(activities);
+            challenges = challenges == null ? new ChallengeProgress(false, 0, 0, 0) : challenges;
+        }
+    }
+
+    record ActivityProgressRow(
+            String track,
+            int level,
+            int maximumLevel,
+            String totalExperience,
+            String experienceIntoLevel,
+            String experienceForNextLevel,
+            boolean maximum) {
+    }
+
+    record ChallengeProgress(boolean available, int total, int claimable, int completed) {
     }
 
     record Response(int status, Object body) {

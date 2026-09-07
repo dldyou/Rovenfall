@@ -397,7 +397,7 @@ public final class ActivityEvents {
             ActivityKind kind,
             ActivityProgressionService.AwardResult result,
             CareerCatalog careerCatalog) {
-        boolean leveledUp = false;
+        LevelUpPresentation presentation = LevelUpPresentation.NONE;
         Component subtitle = null;
         var activityDefinition = ActivityLevelReloadListener.get(level.getServer(), kind.track());
         if (activityDefinition.isPresent()) {
@@ -413,7 +413,8 @@ public final class ActivityEvents {
                         "message.rovenfall.activity.level_up.subtitle",
                         Component.translatable(kind.track().translationKey()),
                         currentLevel);
-                leveledUp = true;
+                presentation = presentation.strongest(levelUpPresentation(
+                        previousLevel, currentLevel, definition.thresholds().size() - 1));
             }
         }
         if (result.careerId().isPresent() && result.awardedCareerExperience() > 0) {
@@ -429,39 +430,111 @@ public final class ActivityEvents {
                             "message.rovenfall.career.level_up",
                             Component.translatable(definition.translationKey()),
                             currentLevel));
-                    subtitle = Component.translatable(
-                            "message.rovenfall.career.level_up.subtitle",
-                            Component.translatable(definition.translationKey()),
-                            currentLevel);
-                    leveledUp = true;
+                    LevelUpPresentation careerPresentation = levelUpPresentation(
+                            previousLevel, currentLevel, definition.levelThresholds().size() - 1);
+                    if (careerPresentation.ordinal() >= presentation.ordinal()) {
+                        subtitle = Component.translatable(
+                                "message.rovenfall.career.level_up.subtitle",
+                                Component.translatable(definition.translationKey()),
+                                currentLevel);
+                        presentation = careerPresentation;
+                    }
                 }
             }
         }
-        if (!leveledUp) {
+        if (presentation == LevelUpPresentation.NONE) {
             return;
         }
-        player.connection.send(new ClientboundSetTitlesAnimationPacket(5, 40, 10));
+        player.connection.send(new ClientboundSetTitlesAnimationPacket(
+                presentation.fadeInTicks, presentation.stayTicks, presentation.fadeOutTicks));
         player.connection.send(new ClientboundSetTitleTextPacket(Component.translatable(
-                "message.rovenfall.level_up.title").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD)));
+                presentation.titleTranslationKey).withStyle(presentation.color, ChatFormatting.BOLD)));
         player.connection.send(new ClientboundSetSubtitleTextPacket(
-                subtitle.copy().withStyle(ChatFormatting.YELLOW)));
+                subtitle.copy().withStyle(presentation.color)));
         level.playSound(
                 null,
                 player.blockPosition(),
                 SoundEvents.PLAYER_LEVELUP,
                 SoundSource.PLAYERS,
-                0.8F,
-                1.0F);
+                presentation.volume,
+                presentation.pitch);
         level.sendParticles(
                 ParticleTypes.HAPPY_VILLAGER,
                 player.getX(),
                 player.getY() + 1.0,
                 player.getZ(),
-                18,
+                presentation.happyParticles,
                 0.55,
                 0.8,
                 0.55,
                 0.05);
+        if (presentation.endRodParticles > 0) {
+            level.sendParticles(
+                    ParticleTypes.END_ROD,
+                    player.getX(),
+                    player.getY() + 1.0,
+                    player.getZ(),
+                    presentation.endRodParticles,
+                    0.7,
+                    1.0,
+                    0.7,
+                    0.025);
+        }
+    }
+
+    static LevelUpPresentation levelUpPresentation(int previousLevel, int currentLevel, int maximumLevel) {
+        if (previousLevel < 0 || currentLevel <= previousLevel || maximumLevel < currentLevel) {
+            return LevelUpPresentation.NONE;
+        }
+        if (maximumLevel > 0 && currentLevel == maximumLevel) {
+            return LevelUpPresentation.MASTERY;
+        }
+        if (currentLevel / 5 > previousLevel / 5) {
+            return LevelUpPresentation.MILESTONE;
+        }
+        return LevelUpPresentation.STANDARD;
+    }
+
+    enum LevelUpPresentation {
+        NONE("", ChatFormatting.WHITE, 0, 0, 0, 0.0F, 0.0F, 0, 0),
+        STANDARD("message.rovenfall.level_up.title", ChatFormatting.GOLD, 5, 40, 10, 0.8F, 1.0F, 18, 0),
+        MILESTONE("message.rovenfall.level_up.milestone", ChatFormatting.AQUA, 5, 55, 15, 1.0F, 1.1F, 36, 12),
+        MASTERY("message.rovenfall.level_up.mastery", ChatFormatting.LIGHT_PURPLE, 10, 70, 20, 1.2F, 0.9F, 52, 28);
+
+        private final String titleTranslationKey;
+        private final ChatFormatting color;
+        private final int fadeInTicks;
+        private final int stayTicks;
+        private final int fadeOutTicks;
+        private final float volume;
+        private final float pitch;
+        private final int happyParticles;
+        private final int endRodParticles;
+
+        LevelUpPresentation(
+                String titleTranslationKey,
+                ChatFormatting color,
+                int fadeInTicks,
+                int stayTicks,
+                int fadeOutTicks,
+                float volume,
+                float pitch,
+                int happyParticles,
+                int endRodParticles) {
+            this.titleTranslationKey = titleTranslationKey;
+            this.color = color;
+            this.fadeInTicks = fadeInTicks;
+            this.stayTicks = stayTicks;
+            this.fadeOutTicks = fadeOutTicks;
+            this.volume = volume;
+            this.pitch = pitch;
+            this.happyParticles = happyParticles;
+            this.endRodParticles = endRodParticles;
+        }
+
+        LevelUpPresentation strongest(LevelUpPresentation other) {
+            return ordinal() >= other.ordinal() ? this : other;
+        }
     }
 
     private record PistonKey(

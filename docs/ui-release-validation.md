@@ -173,6 +173,17 @@ tracker in `ko_kr`, `en_us`, and `ja_jp`; Korean labels must use natural player 
 | Late-game catalog | Load the default data pack and inspect the four level 6–10 goals | All ten challenge definitions load, requirements are visible, and the final goal requires level 10 in all seven activities. |
 | Shareable admin view | Apply a query, page, and audit filters, copy **Current view link**, then reload it | Menu, applied query, page, and filters are restored; draft values and authentication tokens never appear in the URL. |
 
+## Issue #131 progression shortcut and operator-insight release checks
+
+| Case | Required state | Expected result |
+| --- | --- | --- |
+| Direct menu keys | Rebind and use Journey, Skills, and Land controls during gameplay | Each key opens the intended server-owned menu; another open screen keeps its own input, and rapid or invalid requests cannot bypass the existing server checks. |
+| Level-up tiers | Cross an ordinary level, a five-level boundary, and a final activity or career level | Gold level-up, cyan milestone, and purple mastery presentations are distinct; one award emits only the strongest applicable title, sound, and bounded particle burst. |
+| Player progression | Open a player detail with mixed activity XP at desktop and narrow widths | All seven localized tracks retain level, exact XP, and an accessible progress bar; the grid collapses to two and then one column without horizontal clipping. |
+| Challenge overview | Compare a player with in-progress, claimable, and claimed challenges | Total, claimable, and completed counts match server evaluation and retained reward receipts; opening the detail causes no mutation or audit entry. |
+| Missing definitions | Make the activity-level catalog unavailable in a recovery fixture | The console shows an explicit unavailable message and no guessed challenge counts. |
+| Locales and accessibility | Repeat the detail in Korean, English, and Japanese with keyboard and a screen reader | Track names and summary labels are localized; progress bars expose names and numeric values without relying on color. |
+
 ## Issue #101 release-candidate result
 
 The 2026-08-30 release-candidate run used the Gradle-managed Eclipse Temurin 25.0.4 daemon and

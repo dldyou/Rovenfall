@@ -5,9 +5,21 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonObject;
+import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.Level;
+import org.dldyou.rovenfall.activities.ActivityChallengeDefinition;
+import org.dldyou.rovenfall.activities.ActivityKind;
+import org.dldyou.rovenfall.activities.ActivityLevelDefinition;
+import org.dldyou.rovenfall.activities.ActivityObservation;
+import org.dldyou.rovenfall.activities.ActivityProvenance;
+import org.dldyou.rovenfall.activities.ActivityRewardDefinition;
+import org.dldyou.rovenfall.activities.ActivityRewardReloadListener.ResolvedReward;
+import org.dldyou.rovenfall.activities.ActivityTrack;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -137,6 +149,103 @@ final class AdminGatewayTest {
         assertEquals(400, missingPhrase.status());
         assertEquals(200, committed.status());
         assertEquals(75L, state.economyBalance(playerId).orElseThrow());
+    }
+
+    @Test
+    void progressProjectionShowsEveryTrackAndChallengeReadinessWithoutMutatingIt() {
+        PlatformSavedData state = new PlatformSavedData();
+        UUID playerId = id(6);
+        Identifier firstChallenge = definitionId("first_steps");
+        Identifier secondChallenge = definitionId("veteran");
+        Map<ActivityTrack, ActivityLevelDefinition> levelDefinitions = new EnumMap<>(ActivityTrack.class);
+        for (ActivityTrack track : ActivityTrack.values()) {
+            levelDefinitions.put(track, new ActivityLevelDefinition(track, List.of(0L, 100L, 300L)));
+        }
+        Map<Identifier, ActivityChallengeDefinition> challenges = Map.of(
+                firstChallenge,
+                challenge("first_steps", 1, 100),
+                secondChallenge,
+                challenge("veteran", 2, 250));
+        ActivityProgressionService.AwardResult award = ActivityProgressionService.award(
+                state,
+                combatObservation(playerId),
+                combatReward(150));
+
+        assertTrue(award.awarded());
+        AdminGateway.ProgressProjection before = AdminGateway.progressProjection(
+                state, playerId, levelDefinitions, challenges);
+        AdminGateway.ActivityProgressRow combat = before.activities().stream()
+                .filter(row -> row.track().equals("combat"))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(7, before.activities().size());
+        assertEquals(1, combat.level());
+        assertEquals("150", combat.totalExperience());
+        assertEquals("50", combat.experienceIntoLevel());
+        assertEquals("200", combat.experienceForNextLevel());
+        assertEquals(new AdminGateway.ChallengeProgress(true, 2, 1, 0), before.challenges());
+
+        ActivityChallengeService.ClaimResult claimed = ActivityChallengeService.claim(
+                state,
+                playerId,
+                firstChallenge,
+                challenges.get(firstChallenge),
+                Map.of(ActivityTrack.COMBAT, 1),
+                2_000,
+                0,
+                10_000);
+        assertEquals(ActivityChallengeService.Status.SUCCESS, claimed.status());
+        AdminGateway.ProgressProjection after = AdminGateway.progressProjection(
+                state, playerId, levelDefinitions, challenges);
+        assertEquals(new AdminGateway.ChallengeProgress(true, 2, 0, 1), after.challenges());
+
+        AdminGateway.ProgressProjection incomplete = AdminGateway.progressProjection(
+                state,
+                playerId,
+                Map.of(ActivityTrack.COMBAT, levelDefinitions.get(ActivityTrack.COMBAT)),
+                challenges);
+        assertEquals(new AdminGateway.ChallengeProgress(false, 0, 0, 0), incomplete.challenges());
+    }
+
+    private static ActivityObservation combatObservation(UUID playerId) {
+        return new ActivityObservation(
+                id(601),
+                1_000,
+                playerId,
+                ActivityTrack.COMBAT,
+                ActivityKind.COMBAT_DAMAGE,
+                Level.OVERWORLD,
+                0,
+                0,
+                definitionId("training_dummy"),
+                "admin-projection-fixture",
+                1,
+                new ActivityProvenance(false, false, false));
+    }
+
+    private static ResolvedReward combatReward(long experience) {
+        return new ResolvedReward(
+                definitionId("combat_reward"),
+                new ActivityRewardDefinition(
+                        ActivityTrack.COMBAT,
+                        ActivityKind.COMBAT_DAMAGE,
+                        definitionId("training_dummy"),
+                        experience,
+                        60_000,
+                        1_000,
+                        1_000));
+    }
+
+    private static ActivityChallengeDefinition challenge(String path, int level, long reward) {
+        return new ActivityChallengeDefinition(
+                "activity_challenge.rovenfall." + path,
+                "activity_challenge_description.rovenfall." + path,
+                Map.of(ActivityTrack.COMBAT, level),
+                reward);
+    }
+
+    private static Identifier definitionId(String path) {
+        return Identifier.fromNamespaceAndPath("rovenfall", path);
     }
 
     private static JsonObject body(
