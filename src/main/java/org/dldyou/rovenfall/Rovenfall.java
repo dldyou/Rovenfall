@@ -23,6 +23,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.network.HashedStack;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
 import net.minecraft.gametest.framework.TestData;
 import net.minecraft.gametest.framework.TestEnvironmentDefinition;
@@ -1324,7 +1325,7 @@ public final class Rovenfall {
             @Override
             public void run(GameTestHelper helper) {
                 var snapshot = MobContentReloadListener.snapshot(helper.getLevel().getServer());
-                helper.assertTrue(snapshot.size() == 11, "Built-in mob content catalog did not load atomically");
+                helper.assertTrue(snapshot.size() == 13, "Built-in mob content catalog did not load atomically");
                 helper.assertTrue(snapshot.mob(id("grove_stalker")).orElseThrow().loot()
                                 .equals(id("grove_stalker_loot")),
                         "Custom mob reward reference was not preserved");
@@ -1354,6 +1355,15 @@ public final class Rovenfall {
                 helper.succeed();
             }
         });
+        if (Boolean.getBoolean("rovenfall.wildernessGameTests")) {
+            event.registerTest(id("rune_sentinel_strike"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                org.dldyou.rovenfall.mobs.RuneSentinelGameTests.runeStrike(helper);
+            }
+            });
+        }
         event.registerTest(id("ordinary_custom_mobs"), new FunctionGameTestInstance(
                 BuiltinTestFunctions.ALWAYS_PASS, testData) {
             @Override
@@ -2552,6 +2562,275 @@ public final class Rovenfall {
                 helper.succeed();
             }
         });
+        event.registerTest(id("expedition_equipment_crafting"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var level = helper.getLevel();
+                var server = level.getServer();
+                var enchantments = server.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT);
+                var player = helper.makeMockServerPlayer(net.minecraft.world.level.GameType.SURVIVAL);
+                for (String name : List.of("rimeblade", "deepstone_pickaxe")) {
+                    boolean blade = name.equals("rimeblade");
+                    String enchantmentName = blade ? "rime_edge" : "delvers_reach";
+                    var enchantment = enchantments.getOrThrow(net.minecraft.resources.ResourceKey.create(
+                            net.minecraft.core.registries.Registries.ENCHANTMENT, id(enchantmentName)));
+                    var material = blade ? RovenfallItems.FROSTBOUND_SHARD : RovenfallItems.DEEPSTONE_CORE;
+                    var recipe = (net.minecraft.world.item.crafting.CraftingRecipe) server.getRecipeManager()
+                            .byKey(net.minecraft.resources.ResourceKey.create(
+                                    net.minecraft.core.registries.Registries.RECIPE, id(name))).orElseThrow().value();
+                    var input = net.minecraft.world.item.crafting.CraftingInput.of(3, 3, blade
+                            ? List.of(ItemStack.EMPTY, material.toStack(), ItemStack.EMPTY,
+                                    material.toStack(), new ItemStack(Items.IRON_INGOT), material.toStack(),
+                                    ItemStack.EMPTY, new ItemStack(Items.STICK), ItemStack.EMPTY)
+                            : List.of(new ItemStack(Items.DIAMOND), new ItemStack(Items.DIAMOND), new ItemStack(Items.DIAMOND),
+                                    ItemStack.EMPTY, material.toStack(), ItemStack.EMPTY,
+                                    ItemStack.EMPTY, new ItemStack(Items.STICK), ItemStack.EMPTY));
+                    helper.assertTrue(recipe.matches(input, level)
+                                    && !recipe.matches(net.minecraft.world.item.crafting.CraftingInput.EMPTY, level),
+                            "Equipment recipe ingredient validation failed: " + name);
+                    ItemStack crafted = recipe.assemble(input);
+                    helper.assertTrue(crafted.getItem() == (blade ? RovenfallItems.RIMEBLADE.get()
+                                    : RovenfallItems.DEEPSTONE_PICKAXE.get()) && crafted.getCount() == 1
+                                    && crafted.getEnchantmentLevel(enchantment) == 1 && crafted.supportsEnchantment(enchantment),
+                            "Equipment recipe did not produce a compatible rank-I enchanted item: " + name);
+                    helper.assertTrue(crafted.getMaxDamage() == (blade ? 250 : 1561),
+                            "Equipment lost its native material durability: " + name);
+                    if (!blade) {
+                        helper.assertTrue(crafted.isCorrectToolForDrops(Blocks.OBSIDIAN.defaultBlockState()),
+                                "Deepstone Pickaxe lost diamond-tier mining capability");
+                    }
+                    var ops = server.registryAccess().createSerializationContext(NbtOps.INSTANCE);
+                    ItemStack restored = ItemStack.CODEC.parse(ops, ItemStack.CODEC.encodeStart(ops, crafted).getOrThrow())
+                            .getOrThrow();
+                    helper.assertTrue(ItemStack.isSameItemSameComponents(crafted, restored),
+                            "Crafted equipment components did not survive serialization: " + name);
+                    String bookName = enchantmentName + "_book";
+                    var bookRecipe = (net.minecraft.world.item.crafting.CraftingRecipe) server.getRecipeManager()
+                            .byKey(net.minecraft.resources.ResourceKey.create(
+                                    net.minecraft.core.registries.Registries.RECIPE, id(bookName))).orElseThrow().value();
+                    var bookInput = net.minecraft.world.item.crafting.CraftingInput.of(2, 2,
+                            List.of(new ItemStack(Items.BOOK), RovenfallItems.RUNEBOUND_FRAGMENT.toStack(),
+                                    material.toStack(), ItemStack.EMPTY));
+                    helper.assertTrue(bookRecipe.matches(bookInput, level), "Enchantment book recipe rejected materials");
+                    ItemStack book = bookRecipe.assemble(bookInput);
+                    helper.assertTrue(book.is(Items.ENCHANTED_BOOK)
+                                    && book.get(net.minecraft.core.component.DataComponents.STORED_ENCHANTMENTS)
+                                            .getLevel(enchantment) == 1,
+                            "Crafted book did not store rank I: " + bookName);
+                    var anvil = new net.minecraft.world.inventory.AnvilMenu(1, player.getInventory());
+                    anvil.getSlot(0).set(crafted.copy());
+                    anvil.getSlot(1).set(book.copy());
+                    anvil.createResult();
+                    helper.assertTrue(anvil.getSlot(2).getItem().getEnchantmentLevel(enchantment) == 2,
+                            "Matching book did not upgrade equipment to rank II in a native anvil");
+                    anvil.getSlot(0).set(new ItemStack(Items.BREAD));
+                    anvil.createResult();
+                    helper.assertTrue(anvil.getSlot(2).getItem().isEmpty(), "Enchantment book was accepted on food");
+                    var grindstone = new net.minecraft.world.inventory.GrindstoneMenu(2, player.getInventory());
+                    grindstone.getSlot(0).set(crafted.copy());
+                    helper.assertTrue(grindstone.getSlot(2).getItem().getItem() == crafted.getItem()
+                                    && grindstone.getSlot(2).getItem().getEnchantmentLevel(enchantment) == 0,
+                            "Native grindstone did not remove the enchantment without losing the item");
+                    for (String unlock : List.of(name, bookName)) {
+                        helper.assertTrue(server.getAdvancements().get(id("recipes/equipment/" + unlock)) != null,
+                                "Equipment or book recipe-book unlock was missing: " + unlock);
+                    }
+                }
+                helper.succeed();
+            }
+        });
+        event.registerTest(id("expedition_enchantment_effects"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS,
+                new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 20, 0, true)) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var level = helper.getLevel();
+                var player = helper.makeMockServerPlayerInLevel();
+                var enchantments = level.registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.ENCHANTMENT);
+                var rime = enchantments.getOrThrow(net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.ENCHANTMENT, id("rime_edge")));
+                var reach = enchantments.getOrThrow(net.minecraft.resources.ResourceKey.create(
+                        net.minecraft.core.registries.Registries.ENCHANTMENT, id("delvers_reach")));
+                var target = net.minecraft.world.entity.EntityTypes.COW.create(level,
+                        net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                var arrow = net.minecraft.world.entity.EntityTypes.ARROW.create(level,
+                        net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                helper.assertTrue(target != null && arrow != null, "Enchantment targets could not be created");
+                ItemStack sword = RovenfallItems.RIMEBLADE.toStack();
+                sword.enchant(rime, 2);
+                net.minecraft.world.item.enchantment.EnchantmentHelper.doPostAttackEffectsWithItemSource(
+                        level, target, player.damageSources().arrow(arrow, player), sword);
+                helper.assertTrue(!target.hasEffect(net.minecraft.world.effect.MobEffects.SLOWNESS),
+                        "Rime Edge incorrectly applied to an indirect arrow hit");
+                net.minecraft.world.item.enchantment.EnchantmentHelper.doPostAttackEffectsWithItemSource(
+                        level, target, player.damageSources().playerAttack(player), sword);
+                var slow = target.getEffect(net.minecraft.world.effect.MobEffects.SLOWNESS);
+                helper.assertTrue(slow != null && slow.getDuration() == 60 && slow.getAmplifier() == 0,
+                        "Rank-II Rime Edge did not apply three seconds of Slowness I");
+                ItemStack pickaxe = RovenfallItems.DEEPSTONE_PICKAXE.toStack();
+                pickaxe.enchant(reach, 2);
+                helper.runAfterDelay(2, () -> {
+                    // Embedded clients send no movement packets, so run the native player simulation explicitly.
+                    player.doTick();
+                    double baseReach = player.getAttributeValue(
+                            net.minecraft.world.entity.ai.attributes.Attributes.BLOCK_INTERACTION_RANGE);
+                    player.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, pickaxe);
+                    helper.runAfterDelay(2, () -> {
+                        player.doTick();
+                        helper.assertTrue(Math.abs(player.getAttributeValue(
+                                        net.minecraft.world.entity.ai.attributes.Attributes.BLOCK_INTERACTION_RANGE)
+                                        - baseReach - 1.0) < 0.0001,
+                                "Rank-II Delver's Reach did not add one block in the main hand; baseline=" + baseReach
+                                        + ", actual=" + player.getAttributeValue(
+                                                net.minecraft.world.entity.ai.attributes.Attributes.BLOCK_INTERACTION_RANGE));
+                        player.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+                        player.setItemSlot(net.minecraft.world.entity.EquipmentSlot.OFFHAND, pickaxe);
+                        helper.runAfterDelay(2, () -> {
+                            player.doTick();
+                            helper.assertTrue(Math.abs(player.getAttributeValue(
+                                            net.minecraft.world.entity.ai.attributes.Attributes.BLOCK_INTERACTION_RANGE)
+                                            - baseReach) < 0.0001,
+                                    "Delver's Reach remained active in the offhand");
+                            player.discard();
+                            helper.succeed();
+                        });
+                    });
+                });
+            }
+        });
+        event.registerTest(id("daily_tasks_menu_rewards"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS,
+                new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 20, 0, true)) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var player = helper.makeMockServerPlayerInLevel();
+                var server = helper.getLevel().getServer();
+                var platform = PlatformSavedData.get(server);
+                var balanceBeforeMenu = platform.economyBalance(player.getUUID());
+                PlayerQuestMenu.open(player);
+                player.containerMenu.clicked(52, 0, ContainerInput.PICKUP, player);
+                Component taskName = Component.translatable("daily_contract.rovenfall.trail_ration_supplies");
+                int originalSlot = java.util.stream.IntStream.range(0, 54)
+                        .filter(slot -> taskName.equals(player.containerMenu.getSlot(slot).getItem()
+                                .get(net.minecraft.core.component.DataComponents.CUSTOM_NAME)))
+                        .findFirst().orElseThrow();
+                helper.assertTrue(platform.economyBalance(player.getUUID()).equals(balanceBeforeMenu),
+                        "Opening daily tasks created an account or claimed a reward");
+                var observation = new ActivityObservation(UUID.randomUUID(), System.currentTimeMillis(),
+                        player.getUUID(), ActivityTrack.COOKING, ActivityKind.COOKING_RESULT,
+                        WorldCombatService.WILDERNESS_DIMENSION, 0, 0, id("trail_ration"),
+                        "item:rovenfall:trail_ration", 16, new ActivityProvenance(false, false, false));
+                helper.assertTrue(ActivityProgressionService.award(platform, observation,
+                        ActivityRewardReloadListener.get(server, ActivityKind.COOKING_RESULT, id("trail_ration"))
+                                .orElseThrow()).awarded(), "Could not seed server-observed cooking evidence");
+                helper.runAfterDelay(1, () -> {
+                    player.containerMenu.clicked(originalSlot, 0, ContainerInput.PICKUP, player);
+                    helper.assertTrue(platform.economyBalance(player.getUUID()).equals(balanceBeforeMenu)
+                                    && platform.auditPage(0, 20).entries().stream().anyMatch(entry ->
+                                            entry.actionType().equals(id("player_daily_contract_denied"))),
+                            "Stale daily task click was not rejected and audited");
+                    helper.assertTrue(taskName.equals(player.containerMenu.getSlot(10).getItem()
+                                    .get(net.minecraft.core.component.DataComponents.CUSTOM_NAME)),
+                            "Claimable task was not sorted first after refresh");
+                    helper.runAfterDelay(1, () -> {
+                        player.containerMenu.clicked(10, 0, ContainerInput.PICKUP, player);
+                        helper.assertTrue(platform.economyBalance(player.getUUID()).orElseThrow() == 100,
+                                "Daily task could not be claimed from Journey");
+                        var restored = PlatformSavedData.CODEC.parse(NbtOps.INSTANCE,
+                                PlatformSavedData.CODEC.encodeStart(NbtOps.INSTANCE, platform).getOrThrow()).getOrThrow();
+                        helper.assertTrue(DailyContractService.evaluate(restored, player.getUUID(),
+                                id("trail_ration_supplies"), DailyContractReloadListener.snapshot(server)
+                                        .orElseThrow().get(id("trail_ration_supplies")), System.currentTimeMillis())
+                                .status() == DailyContractService.Status.ALREADY_CLAIMED,
+                                "Menu reward receipt did not survive persistence");
+                        helper.runAfterDelay(1, () -> {
+                            player.containerMenu.clicked(1, 0, ContainerInput.PICKUP, player);
+                            int claimedSlot = java.util.stream.IntStream.range(10, 44)
+                                    .filter(slot -> taskName.equals(player.containerMenu.getSlot(slot).getItem()
+                                            .get(net.minecraft.core.component.DataComponents.CUSTOM_NAME)))
+                                    .findFirst().orElseThrow();
+                            helper.assertTrue(Component.translatable("gui.rovenfall.quest.daily_tasks.cooking")
+                                    .equals(player.containerMenu.getSlot(1).getItem()
+                                            .get(net.minecraft.core.component.DataComponents.CUSTOM_NAME)),
+                                    "Cooking filter was not applied");
+                            var expectedCookingTasks = DailyContractReloadListener.snapshot(server).orElseThrow()
+                                    .values().stream().filter(definition -> definition.kind() == ActivityKind.COOKING_RESULT)
+                                    .map(definition -> Component.translatable(definition.translationKey()))
+                                    .collect(java.util.stream.Collectors.toSet());
+                            var visibleCookingTasks = java.util.stream.IntStream.range(10, 44)
+                                    .mapToObj(slot -> player.containerMenu.getSlot(slot).getItem())
+                                    .filter(stack -> !stack.isEmpty())
+                                    .map(stack -> stack.get(net.minecraft.core.component.DataComponents.CUSTOM_NAME))
+                                    .collect(java.util.stream.Collectors.toSet());
+                            helper.assertTrue(visibleCookingTasks.equals(expectedCookingTasks),
+                                    "Cooking filter showed non-cooking tasks or hid a food task");
+                            helper.runAfterDelay(1, () -> {
+                                player.containerMenu.clicked(claimedSlot, 0, ContainerInput.PICKUP, player);
+                                helper.assertTrue(platform.economyBalance(player.getUUID()).orElseThrow() == 100,
+                                        "Repeated menu claim duplicated currency");
+                                helper.runAfterDelay(1, () -> {
+                                    player.containerMenu.clicked(45, 0, ContainerInput.PICKUP, player);
+                                    helper.assertTrue(player.containerMenu instanceof PlayerQuestMenu
+                                            && Component.translatable("gui.rovenfall.quest.title").equals(
+                                                    player.containerMenu.getSlot(4).getItem()
+                                                            .get(net.minecraft.core.component.DataComponents.CUSTOM_NAME)),
+                                            "Back did not return to the Journey board");
+                                    helper.succeed();
+                                });
+                            });
+                        });
+                    });
+                });
+            }
+        });
+        event.registerTest(id("expedition_food_crafting"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS, testData) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var level = helper.getLevel();
+                var server = level.getServer();
+                var player = (net.minecraft.server.level.ServerPlayer) helper.makeMockServerPlayer(
+                        net.minecraft.world.level.GameType.SURVIVAL);
+                var state = PlatformSavedData.get(server);
+                long before = state.activityExperience(player.getUUID(), ActivityTrack.COOKING);
+                for (String name : List.of("trail_ration", "orchard_pie")) {
+                    boolean ration = name.equals("trail_ration");
+                    var recipe = (net.minecraft.world.item.crafting.ShapelessRecipe) server.getRecipeManager()
+                            .byKey(net.minecraft.resources.ResourceKey.create(
+                                    net.minecraft.core.registries.Registries.RECIPE, id(name)))
+                            .orElseThrow().value();
+                    var input = net.minecraft.world.item.crafting.CraftingInput.of(2, 2, ration
+                            ? List.of(new ItemStack(Items.COOKED_RABBIT), new ItemStack(Items.WHEAT),
+                                    new ItemStack(Items.DRIED_KELP), ItemStack.EMPTY)
+                            : List.of(new ItemStack(Items.APPLE), new ItemStack(Items.HONEY_BOTTLE),
+                                    new ItemStack(Items.EGG), new ItemStack(Items.WHEAT)));
+                    helper.assertTrue(recipe.matches(input, level), "Food recipe rejected its ingredients: " + name);
+                    helper.assertTrue(!recipe.matches(net.minecraft.world.item.crafting.CraftingInput.EMPTY, level),
+                            "Food recipe accepted an empty crafting grid: " + name);
+                    ItemStack result = recipe.assemble(input);
+                    helper.assertTrue(result.getItem() == (ration
+                                    ? RovenfallItems.TRAIL_RATION.get() : RovenfallItems.ORCHARD_PIE.get())
+                                    && result.getCount() == 2 && result.getMaxStackSize() == (ration ? 64 : 16),
+                            "Food recipe produced the wrong item, quantity, or stack limit: " + name);
+                    if (!ration) {
+                        helper.assertTrue(recipe.getRemainingItems(input).get(1).getItem() == Items.GLASS_BOTTLE,
+                                "Orchard Pie crafting did not return the honey bottle");
+                    }
+                    helper.assertTrue(server.getAdvancements().get(id("recipes/cooking/" + name)) != null,
+                            "Food recipe unlock was not loaded: " + name);
+                    NeoForge.EVENT_BUS.post(new PlayerEvent.ItemCraftedEvent(
+                            player, result.copy(), new net.minecraft.world.SimpleContainer(4)));
+                    player.getFoodData().setFoodLevel(0);
+                    ItemStack remaining = result.finishUsingItem(level, player);
+                    helper.assertTrue(player.getFoodData().getFoodLevel() == 8 && remaining.getCount() == 1,
+                            "Food did not restore eight hunger and consume exactly one item: " + name);
+                }
+                helper.assertTrue(state.activityExperience(player.getUUID(), ActivityTrack.COOKING) == before + 14,
+                        "New food crafting did not award quantity-aware cooking XP");
+                helper.succeed();
+            }
+        });
         event.registerTest(id("hunting_crafting"), new FunctionGameTestInstance(
                 BuiltinTestFunctions.ALWAYS_PASS, testData) {
             @Override
@@ -3683,7 +3962,7 @@ public final class Rovenfall {
                         .getListener(ActivityRewardReloadListener.KEY);
                 helper.assertTrue(listener != null,
                         "Rovenfall activity reward listener was not retained");
-                helper.assertTrue(listener.size() == 80,
+                helper.assertTrue(listener.size() == 84,
                         "Built-in Rovenfall activity reward catalog was incomplete");
                 var levelListener = server.getServerResources().managers()
                         .getListener(ActivityLevelReloadListener.KEY);
@@ -3724,8 +4003,15 @@ public final class Rovenfall {
                                 && legend.currencyReward() == 2_500,
                         "Legend of Rovenfall challenge definition was not loaded");
                 var contracts = DailyContractReloadListener.snapshot(server).orElseThrow();
-                helper.assertTrue(contracts.size() == 16,
+                helper.assertTrue(contracts.size() == 19,
                         "Built-in Rovenfall daily contract catalog was incomplete");
+                for (String food : List.of("trail_ration", "orchard_pie")) {
+                    var supply = contracts.get(id(food + "_supplies"));
+                    helper.assertTrue(supply != null && supply.targetId().equals(id(food))
+                                    && supply.kind() == ActivityKind.COOKING_RESULT
+                                    && supply.requiredExperience() == 48,
+                            "Expedition food request was not loaded: " + food);
+                }
                 var ironRush = contracts.get(id("iron_rush"));
                 helper.assertTrue(ironRush != null && ironRush.requiredExperience() == 48,
                         "Iron Rush daily contract definition was not loaded");

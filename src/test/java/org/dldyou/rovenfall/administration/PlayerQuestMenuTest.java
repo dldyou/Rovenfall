@@ -6,6 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
+import org.dldyou.rovenfall.activities.ActivityKind;
+import org.dldyou.rovenfall.activities.DailyContractDefinition;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.ChunkPos;
@@ -94,6 +97,58 @@ final class PlayerQuestMenuTest {
         assertFalse(PlayerQuestMenu.isCurrent(4, rendered, true, 5, rendered, true));
         assertFalse(PlayerQuestMenu.isCurrent(4, rendered, true, 4, state(2), true));
         assertFalse(PlayerQuestMenu.isCurrent(4, rendered, true, 4, rendered, false));
+    }
+
+    @Test
+    void dailyTasksHaveTheirOwnClaimFilterAndNavigationSlots() {
+        assertEquals(PlayerQuestMenu.Action.DAILY_TASKS,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 52));
+        assertEquals(PlayerQuestMenu.Action.NONE,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DETAIL, 52));
+        assertEquals(PlayerQuestMenu.Action.CLAIM_DAILY,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DAILY_TASKS, 10));
+        assertEquals(PlayerQuestMenu.Action.FILTER_DAILY,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DAILY_TASKS, 1));
+        assertEquals(PlayerQuestMenu.Action.BACK,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DAILY_TASKS, 45));
+        assertEquals(PlayerQuestMenu.Action.NONE,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DAILY_TASKS, 49));
+        assertEquals(PlayerQuestMenu.Action.PREVIOUS,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DAILY_TASKS, 48));
+        assertEquals(PlayerQuestMenu.Action.NEXT,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DAILY_TASKS, 50));
+        assertFalse(PlayerQuestMenu.shouldEnsureAssignments(PlayerQuestMenu.Page.DAILY_TASKS));
+        assertTrue(PlayerQuestMenu.dailyPriority(DailyContractService.Status.CLAIMABLE)
+                < PlayerQuestMenu.dailyPriority(DailyContractService.Status.IN_PROGRESS));
+        assertTrue(PlayerQuestMenu.dailyPriority(DailyContractService.Status.IN_PROGRESS)
+                < PlayerQuestMenu.dailyPriority(DailyContractService.Status.ALREADY_CLAIMED));
+    }
+
+    @Test
+    void dailyClaimsRejectChangedDefinitionProgressDayAndWriteStatus() {
+        var id = Identifier.parse("rovenfall:trail_ration_supplies");
+        var definition = new DailyContractDefinition("daily_contract.rovenfall.trail_ration_supplies",
+                "daily_contract_description.rovenfall.trail_ration_supplies", ActivityKind.COOKING_RESULT,
+                Identifier.parse("rovenfall:trail_ration"), 48, 100);
+        var state = new PlatformSavedData();
+        var player = UUID.randomUUID();
+        var initial = DailyContractService.evaluate(state, player, id, definition, 1_000);
+        var row = new PlayerQuestMenu.DailyRow(id, definition, initial);
+        assertTrue(PlayerQuestMenu.dailyCurrent(row, definition,
+                DailyContractService.evaluate(state, player, id, definition, 2_000)));
+        assertFalse(PlayerQuestMenu.dailyCurrent(row, null, initial));
+        var changedReward = new DailyContractDefinition(definition.translationKey(),
+                definition.descriptionTranslationKey(), definition.kind(), definition.targetId(), 48, 200);
+        assertFalse(PlayerQuestMenu.dailyCurrent(row, changedReward, initial));
+        assertFalse(PlayerQuestMenu.dailyCurrent(row, definition,
+                DailyContractService.evaluate(state, player, id, definition, DailyContractService.PERIOD_MILLIS)));
+        for (var status : new DailyContractService.Status[] {
+                DailyContractService.Status.CLAIMABLE, DailyContractService.Status.READ_ONLY_SCHEMA,
+                DailyContractService.Status.ALREADY_CLAIMED}) {
+            assertFalse(PlayerQuestMenu.dailyCurrent(row, definition, new DailyContractService.Evaluation(
+                    status, initial.transactionId(), 48, 48, initial.periodStartEpochMillis(),
+                    initial.nextResetEpochMillis())));
+        }
     }
 
     @Test

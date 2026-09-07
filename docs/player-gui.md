@@ -32,6 +32,19 @@ The server remains authoritative. The client sends only an open-tab request or a
 
 ## Daily and weekly requests
 
+Journey also has **Wilderness Daily Tasks** in toolbar slot 52. This opens all
+legacy `/rovenfall contract` tasks, including the [new expedition food tasks](expedition-food.md),
+without typing a command. A top-row All / Cooking filter narrows the list; ready
+rewards sort first and already collected rewards last. Each card shows the
+objective, accepted XP, currency, status, and UTC reset rule. Select a ready card
+to collect its once-per-day reward. `Esc` goes back to Journey and `R` refreshes
+the current task page. Changed definitions, progress, or day windows refresh
+instead of executing an outdated reward request. The existing server-owned
+receipt prevents a command and menu click from awarding the same task twice.
+
+This task list is separate from the rotating Requests roster described below;
+opening it does not initialize or replace rotating assignments.
+
 Open **Journey**, then select **Requests** in slot 46. The server initializes the current UTC roster before projecting the screen; the menu itself is read-only and contains no completion or reward button. Cards use the same server-observed activity, shop, and boss outcomes as journeys.
 
 - Daily requests refresh at 00:00 UTC and weekly requests refresh on Monday at 00:00 UTC.

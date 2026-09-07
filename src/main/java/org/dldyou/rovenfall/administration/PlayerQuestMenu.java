@@ -1,6 +1,8 @@
 package org.dldyou.rovenfall.administration;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Map;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -24,6 +26,9 @@ import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.waypoints.Waypoint;
 import net.minecraft.world.waypoints.WaypointStyleAssets;
 import org.dldyou.rovenfall.exploration.ExplorationDefinitionReloadListener;
+import org.dldyou.rovenfall.activities.ActivityKind;
+import org.dldyou.rovenfall.activities.DailyContractDefinition;
+import org.dldyou.rovenfall.activities.DailyContractReloadListener;
 import org.dldyou.rovenfall.exploration.ExplorationJournalView;
 import org.dldyou.rovenfall.exploration.ExplorationPlayerSavedData;
 import org.dldyou.rovenfall.exploration.ExplorationPlayerState;
@@ -39,7 +44,7 @@ import org.dldyou.rovenfall.quest.RepeatableContractService;
 import org.dldyou.rovenfall.rpg.RpgDefinitionReloadListener;
 import org.dldyou.rovenfall.rpg.RpgDefinitionSnapshot;
 
-/** Read-only, server-owned quest board and next-step guide. */
+/** Server-owned quest board, next-step guide, and daily reward entry point. */
 public final class PlayerQuestMenu extends ChestMenu {
     static final int MENU_SIZE = 54;
     static final int PAGE_SIZE = QuestJourneyView.MAX_PAGE_SIZE;
@@ -60,6 +65,7 @@ public final class PlayerQuestMenu extends ChestMenu {
     private static final int TRACKER_CLEAR_SLOT = 51;
     private static final int[] STORY_FILTER_SLOTS = {0, 1, 2, 6, 7};
     private static final int REFRESH_SLOT = 53;
+    private static final int DAILY_TASKS_SLOT = 52;
     static final UUID EXPLORATION_MARKER_ID =
             UUID.fromString("aa43fe27-4456-4f81-99cf-93558a69c79f");
 
@@ -67,6 +73,7 @@ public final class PlayerQuestMenu extends ChestMenu {
         LIST,
         DETAIL,
         CONTRACTS,
+        DAILY_TASKS,
         EXPLORATION_LIST,
         EXPLORATION_DETAIL
     }
@@ -76,6 +83,9 @@ public final class PlayerQuestMenu extends ChestMenu {
         SELECT,
         BACK,
         CONTRACTS,
+        DAILY_TASKS,
+        CLAIM_DAILY,
+        FILTER_DAILY,
         EXPLORATION,
         FILTER_ALL,
         FILTER_HUB,
@@ -103,6 +113,10 @@ public final class PlayerQuestMenu extends ChestMenu {
     private QuestJourneyView renderedView;
     private QuestJourneyView.Filter storyFilter = QuestJourneyView.Filter.ALL;
     private ContractJourneyView renderedContracts;
+    private List<DailyRow> displayedDailyRows = List.of();
+    private int dailyPage;
+    private int dailyEntries;
+    private boolean cookingOnly;
     private ExplorationJournalView renderedExploration;
     private List<ExplorationJournalView.Row> displayedExplorationRows = List.of();
     private ExplorationJournalView.Row selectedExploration;
@@ -155,7 +169,7 @@ public final class PlayerQuestMenu extends ChestMenu {
         if (action == Action.REFRESH) {
             if (page == Page.EXPLORATION_DETAIL) {
                 resetToExploration();
-            } else if (page != Page.CONTRACTS && page != Page.EXPLORATION_LIST) {
+            } else if (page != Page.CONTRACTS && page != Page.EXPLORATION_LIST && page != Page.DAILY_TASKS) {
                 resetToList();
             }
             render();
@@ -163,6 +177,33 @@ public final class PlayerQuestMenu extends ChestMenu {
         }
         if (action == Action.BACK) {
             back();
+            return;
+        }
+        if (action == Action.DAILY_TASKS) {
+            page = page == Page.DAILY_TASKS ? Page.LIST : Page.DAILY_TASKS;
+            render();
+            return;
+        }
+        if (page == Page.DAILY_TASKS) {
+            switch (action) {
+                case CLAIM_DAILY -> claimDaily(slotIndex);
+                case FILTER_DAILY -> {
+                    cookingOnly = !cookingOnly;
+                    dailyPage = 0;
+                    render();
+                }
+                case PREVIOUS -> {
+                    dailyPage = Math.max(0, dailyPage - 1);
+                    render();
+                }
+                case NEXT -> {
+                    dailyPage = boundedPage(dailyPage + 1, dailyEntries);
+                    render();
+                }
+                case CONTRACTS -> toggleContracts();
+                case EXPLORATION -> toggleExploration();
+                default -> { }
+            }
             return;
         }
         if (explorationPage(page) ? !explorationSessionCurrent() : !sessionCurrent()) {
@@ -189,7 +230,7 @@ public final class PlayerQuestMenu extends ChestMenu {
             case TRACK_STORY -> trackStory();
             case TRACK_CONTRACT -> trackContract(slotIndex);
             case CLEAR_TRACKER -> clearTracker();
-            case NONE, BACK, REFRESH -> {
+            case NONE, BACK, REFRESH, DAILY_TASKS, CLAIM_DAILY, FILTER_DAILY -> {
             }
         }
     }
@@ -216,6 +257,21 @@ public final class PlayerQuestMenu extends ChestMenu {
         }
         if (slot == REFRESH_SLOT) {
             return Action.REFRESH;
+        }
+        if (slot == DAILY_TASKS_SLOT && page != Page.DETAIL && page != Page.EXPLORATION_DETAIL) {
+            return Action.DAILY_TASKS;
+        }
+        if (page == Page.DAILY_TASKS) {
+            if (slot == 1) {
+                return Action.FILTER_DAILY;
+            }
+            if (slot == PREVIOUS_SLOT) {
+                return Action.PREVIOUS;
+            }
+            if (slot == NEXT_SLOT) {
+                return Action.NEXT;
+            }
+            return contentOffset(slot) >= 0 ? Action.CLAIM_DAILY : Action.NONE;
         }
         if (slot == TRACKER_CLEAR_SLOT && (page == Page.LIST || page == Page.CONTRACTS)) {
             return Action.CLEAR_TRACKER;
@@ -555,7 +611,8 @@ public final class PlayerQuestMenu extends ChestMenu {
             render();
             return;
         }
-        if (page == Page.DETAIL || page == Page.CONTRACTS || page == Page.EXPLORATION_LIST) {
+        if (page == Page.DETAIL || page == Page.CONTRACTS || page == Page.EXPLORATION_LIST
+                || page == Page.DAILY_TASKS) {
             page = Page.LIST;
             selected = null;
             selectedExploration = null;
@@ -667,12 +724,17 @@ public final class PlayerQuestMenu extends ChestMenu {
             case LIST -> renderList();
             case DETAIL -> renderDetail();
             case CONTRACTS -> renderContracts();
+            case DAILY_TASKS -> renderDailyTasks(now);
             case EXPLORATION_LIST -> renderExplorationList();
             case EXPLORATION_DETAIL -> renderExplorationDetail();
         }
         if (page != Page.DETAIL && page != Page.EXPLORATION_DETAIL) {
             addContractsToggle();
             addExplorationToggle();
+            content.setItem(DAILY_TASKS_SLOT, icon(Items.CHEST,
+                    page == Page.DAILY_TASKS ? "gui.rovenfall.quest.story" : "gui.rovenfall.quest.daily_tasks",
+                    Component.translatable("gui.rovenfall.quest.daily_tasks.hint"),
+                    Component.translatable("gui.rovenfall.player.click")));
         }
         content.setItem(REFRESH_SLOT, icon(
                 Items.CLOCK,
@@ -680,6 +742,118 @@ public final class PlayerQuestMenu extends ChestMenu {
                 Component.translatable("gui.rovenfall.player.click")));
         broadcastChanges();
     }
+
+    private void renderDailyTasks(long now) {
+        var server = viewer.level().getServer();
+        var platform = PlatformSavedData.get(server);
+        var definitions = DailyContractReloadListener.snapshot(server);
+        List<DailyRow> rows = definitions.orElse(Map.of()).entrySet().stream()
+                .filter(entry -> !cookingOnly || entry.getValue().kind() == ActivityKind.COOKING_RESULT)
+                .map(entry -> new DailyRow(entry.getKey(), entry.getValue(), DailyContractService.evaluate(
+                        platform, viewerId, entry.getKey(), entry.getValue(), now)))
+                .sorted(Comparator.comparingInt((DailyRow row) -> dailyPriority(row.evaluation().status()))
+                        .thenComparing(DailyRow::id))
+                .toList();
+        dailyEntries = rows.size();
+        dailyPage = boundedPage(dailyPage, dailyEntries);
+        int from = Math.min(dailyEntries, dailyPage * PAGE_SIZE);
+        displayedDailyRows = List.copyOf(rows.subList(from, Math.min(dailyEntries, from + PAGE_SIZE)));
+        content.setItem(4, icon(Items.CHEST, "gui.rovenfall.quest.daily_tasks",
+                Component.translatable("gui.rovenfall.quest.daily_tasks.hint"),
+                pageLine(dailyPage, dailyEntries == 0 ? 0 : (dailyEntries - 1) / PAGE_SIZE + 1, dailyEntries)));
+        content.setItem(1, icon(cookingOnly ? Items.BREAD : Items.BOOK,
+                cookingOnly ? "gui.rovenfall.quest.daily_tasks.cooking" : "gui.rovenfall.quest.daily_tasks.all",
+                Component.translatable("gui.rovenfall.quest.daily_tasks.filter")));
+        for (int index = 0; index < displayedDailyRows.size(); index++) {
+            DailyRow row = displayedDailyRows.get(index);
+            var evaluation = row.evaluation();
+            Item item = switch (evaluation.status()) {
+                case CLAIMABLE -> Items.EMERALD;
+                case ALREADY_CLAIMED -> Items.BOOK;
+                case IN_PROGRESS -> row.definition().kind() == ActivityKind.COOKING_RESULT ? Items.BREAD : Items.COMPASS;
+                default -> Items.BARRIER;
+            };
+            content.setItem(CONTENT_SLOTS[index], PlayerDashboardMenu.icon(item,
+                    Component.translatable(row.definition().translationKey()),
+                    Component.translatable("gui.rovenfall.quest.daily_tasks.progress",
+                            evaluation.progressExperience(), evaluation.requiredExperience())
+                            .append(" · ").append(Component.translatable(evaluation.status().translationKey())),
+                    Component.translatable(row.definition().descriptionTranslationKey()),
+                    Component.translatable("gui.rovenfall.quest.reward.currency", row.definition().currencyReward()),
+                    Component.translatable("gui.rovenfall.quest.contract.refresh.daily"),
+                    Component.translatable(evaluation.status() == DailyContractService.Status.CLAIMABLE
+                            ? "gui.rovenfall.quest.daily_tasks.claim" : "gui.rovenfall.quest.daily_tasks.hint")));
+        }
+        if (rows.isEmpty()) {
+            content.setItem(22, icon(Items.PAPER, definitions.isEmpty()
+                    ? "command.rovenfall.contract.error.catalog_unavailable" : "gui.rovenfall.quest.empty"));
+        }
+        addBack();
+        if (dailyPage > 0) {
+            content.setItem(PREVIOUS_SLOT, icon(Items.ARROW, "gui.rovenfall.player.previous"));
+        }
+        if (from + PAGE_SIZE < dailyEntries) {
+            content.setItem(NEXT_SLOT, icon(Items.ARROW, "gui.rovenfall.player.next"));
+        }
+    }
+
+    private void claimDaily(int slot) {
+        int offset = contentOffset(slot);
+        if (offset < 0 || offset >= displayedDailyRows.size()) {
+            return;
+        }
+        DailyRow row = displayedDailyRows.get(offset);
+        var server = viewer.level().getServer();
+        var platform = PlatformSavedData.get(server);
+        long now = System.currentTimeMillis();
+        DailyContractDefinition current = DailyContractReloadListener.snapshot(server)
+                .map(definitions -> definitions.get(row.id())).orElse(null);
+        DailyContractService.Evaluation evaluation = DailyContractService.evaluate(
+                platform, viewerId, row.id(), current, now);
+        if (!dailyCurrent(row, current, evaluation)) {
+            platform.appendDeniedAudit(new AuditEntry(now, viewerId,
+                    Identifier.fromNamespaceAndPath("rovenfall", "player_daily_contract_denied"),
+                    row.id().toString(), Optional.of(viewer.level().dimension().identifier()),
+                    Optional.of(viewer.blockPosition()), row.evaluation().status().name(),
+                    evaluation.status().name(), "stale_daily_task", UUID.randomUUID()), 1_000L);
+            viewer.sendOverlayMessage(Component.translatable("gui.rovenfall.quest.stale"));
+            render();
+            return;
+        }
+        if (evaluation.status() != DailyContractService.Status.CLAIMABLE) {
+            viewer.sendOverlayMessage(Component.translatable(evaluation.status().translationKey()));
+            return;
+        }
+        if (!PlayerMenuNetwork.beginMutation(viewerId, viewer.level().getGameTime())) {
+            viewer.sendOverlayMessage(Component.translatable("gui.rovenfall.rpg.result.rate_limit"));
+            return;
+        }
+        var result = DailyContractService.claim(platform, viewerId, row.id(), current, now,
+                EconomyConfig.initialBalance(), EconomyConfig.maximumBalance());
+        if (result.status() == DailyContractService.Status.SUCCESS) {
+            viewer.sendSystemMessage(Component.translatable("command.rovenfall.contract.claim.success",
+                    Component.translatable(current.translationKey()), result.awardedCurrency(), result.balance()));
+        } else {
+            viewer.sendOverlayMessage(Component.translatable(result.status().translationKey()));
+        }
+        render();
+    }
+
+    static boolean dailyCurrent(DailyRow row, DailyContractDefinition definition,
+            DailyContractService.Evaluation evaluation) {
+        return row != null && row.definition().equals(definition) && row.evaluation().equals(evaluation);
+    }
+
+    static int dailyPriority(DailyContractService.Status status) {
+        return switch (status) {
+            case CLAIMABLE -> 0;
+            case IN_PROGRESS -> 1;
+            case ALREADY_CLAIMED -> 3;
+            default -> 2;
+        };
+    }
+
+    record DailyRow(Identifier id, DailyContractDefinition definition, DailyContractService.Evaluation evaluation) { }
 
     private void renderList() {
         List<Component> header = new ArrayList<>();

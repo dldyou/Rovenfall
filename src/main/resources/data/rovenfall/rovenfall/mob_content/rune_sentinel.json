@@ -1,0 +1,32 @@
+{
+  "mobs": [{
+    "id": "rovenfall:rune_sentinel",
+    "translation_key": "mob.rovenfall.rune_sentinel",
+    "entity_type": "rovenfall:rune_sentinel",
+    "max_health": 40.0,
+    "attack_damage": 5.0,
+    "movement_speed": 0.24,
+    "loot": "rovenfall:rune_sentinel_loot",
+    "spawn": {
+      "dimension": "rovenfall:wilderness",
+      "chance_per_million": 100000,
+      "minimum_y": -64,
+      "maximum_y": 96
+    },
+    "rune_strike": {
+      "windup_ticks": 28,
+      "recovery_ticks": 24,
+      "cooldown_ticks": 100,
+      "range": 8.0,
+      "radius": 1.75,
+      "damage": 7.0
+    }
+  }],
+  "loot": [{
+    "id": "rovenfall:rune_sentinel_loot",
+    "loot_table": "rovenfall:entities/rune_sentinel",
+    "rolls": 1,
+    "currency": 0,
+    "experience": 18
+  }]
+}

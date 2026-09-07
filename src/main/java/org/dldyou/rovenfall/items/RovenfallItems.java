@@ -82,6 +82,10 @@ public final class RovenfallItems {
                     .component(DataComponents.LORE, new ItemLore(List.of(
                             Component.translatable("item.rovenfall.highland_cheese.effect")
                                     .withStyle(ChatFormatting.GRAY)))));
+    public static final DeferredItem<Item> TRAIL_RATION = ITEMS.registerSimpleItem(
+            "trail_ration", properties -> properties.food(Foods.COOKED_BEEF));
+    public static final DeferredItem<Item> ORCHARD_PIE = ITEMS.registerSimpleItem(
+            "orchard_pie", properties -> properties.stacksTo(16).food(Foods.PUMPKIN_PIE));
     public static final DeferredItem<FrontierFeedItem> FRONTIER_FEED = ITEMS.registerItem(
             "frontier_feed",
             properties -> new FrontierFeedItem(properties.component(
@@ -94,6 +98,11 @@ public final class RovenfallItems {
                     weapon(properties.sword(ToolMaterial.IRON, 2.0F, -1.8F),
                             "item.rovenfall.mirefang_dagger.effect"),
                     HuntingWeaponItem.HitEffect.POISON));
+    public static final DeferredItem<Item> RIMEBLADE = ITEMS.registerSimpleItem(
+            "rimeblade", properties -> properties.sword(ToolMaterial.IRON, 3.0F, -2.4F).rarity(Rarity.UNCOMMON));
+    public static final DeferredItem<Item> DEEPSTONE_PICKAXE = ITEMS.registerSimpleItem(
+            "deepstone_pickaxe", properties -> properties.pickaxe(ToolMaterial.DIAMOND, 1.0F, -2.8F)
+                    .rarity(Rarity.RARE));
     public static final DeferredItem<HuntingWeaponItem> CINDERBRAND = ITEMS.registerItem(
             "cinderbrand",
             properties -> new HuntingWeaponItem(

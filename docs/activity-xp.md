@@ -1,5 +1,8 @@
 # Authoritative activity XP
 
+For craftable Trail Rations, Orchard Pies, and their daily requests, see
+[Expedition food](expedition-food.md).
+
 Activity XP is awarded only from NeoForge events observed on the dedicated
 server. There is no client packet that can request an award. The seven initial
 tracks use these completion seams:

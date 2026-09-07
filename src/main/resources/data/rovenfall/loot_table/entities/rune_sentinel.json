@@ -1,0 +1,9 @@
+{
+  "type": "minecraft:entity",
+  "random_sequence": "rovenfall:entities/rune_sentinel",
+  "pools": [{
+    "rolls": 1,
+    "conditions": [{ "condition": "minecraft:killed_by_player" }],
+    "entries": [{ "type": "minecraft:item", "name": "rovenfall:runebound_fragment" }]
+  }]
+}

@@ -97,6 +97,20 @@ final class ActivityRewardDefinitionTest {
     }
 
     @Test
+    void portableFoodRewardsUseQuantityAwareCookingWithBoundedWindows() throws Exception {
+        for (var entry : Map.of("trail_ration", 3L, "orchard_pie", 4L).entrySet()) {
+            var definition = bundledReward(entry.getKey());
+            assertEquals(ActivityKind.COOKING_RESULT, definition.kind());
+            assertEquals(ActivityTrack.COOKING, definition.track());
+            assertEquals("rovenfall:" + entry.getKey(), definition.targetId().toString());
+            assertEquals(entry.getValue().longValue(), definition.experience());
+            assertEquals(60_000, definition.windowMillis());
+            assertEquals(48, definition.targetWindowCap());
+            assertEquals(100, definition.playerWindowCap());
+        }
+    }
+
+    @Test
     void newWildernessMobsHaveCombatAndHuntingRewards() throws Exception {
         var mirefangCombat = bundledReward("mirefang_combat");
         var mirefangHunting = bundledReward("mirefang_hunting");

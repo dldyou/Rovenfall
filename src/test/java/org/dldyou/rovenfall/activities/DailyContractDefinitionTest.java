@@ -24,6 +24,7 @@ final class DailyContractDefinitionTest {
                 Map.entry("bone_patrol", 120L),
                 Map.entry("ashen_pursuit", 180L),
                 Map.entry("rune_breaker", 190L),
+                Map.entry("sentinel_suppression", 240L),
                 Map.entry("mirefang_hunt", 170L),
                 Map.entry("cinder_containment", 220L),
                 Map.entry("frozen_front", 200L),
@@ -32,6 +33,8 @@ final class DailyContractDefinitionTest {
                 Map.entry("frontier_feast", 130L),
                 Map.entry("highland_herd", 140L),
                 Map.entry("highland_provisions", 150L),
+                Map.entry("trail_ration_supplies", 100L),
+                Map.entry("orchard_pie_supplies", 120L),
                 Map.entry("warden_trial", 300L));
 
         for (var entry : expectedRewards.entrySet()) {
@@ -66,6 +69,12 @@ final class DailyContractDefinitionTest {
         assertEquals(48, bundled("highland_provisions").requiredExperience());
         assertEquals(id("arena_warden"), bundled("warden_trial").targetId());
         assertEquals(80, bundled("warden_trial").requiredExperience());
+        for (String food : List.of("trail_ration", "orchard_pie")) {
+            var contract = bundled(food + "_supplies");
+            assertEquals(ActivityKind.COOKING_RESULT, contract.kind());
+            assertEquals(id(food), contract.targetId());
+            assertEquals(48, contract.requiredExperience());
+        }
     }
 
     @Test

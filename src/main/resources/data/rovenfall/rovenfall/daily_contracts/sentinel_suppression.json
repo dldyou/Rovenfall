@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.sentinel_suppression",
+  "description_translation_key": "daily_contract_description.rovenfall.sentinel_suppression",
+  "kind": "hunting_contribution",
+  "target": "rovenfall:rune_sentinel",
+  "required_experience": 210,
+  "currency_reward": 240
+}
