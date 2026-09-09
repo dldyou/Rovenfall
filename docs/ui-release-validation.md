@@ -25,6 +25,24 @@ multiplayer or full localization acceptance.
 Screenshot SHA-256:
 `7275305EE9E73EE3CA9748A5C1548E2A859043976B90719EC387DCA19203E48E`
 
+### Follow-up with tutorial disabled
+
+At framebuffer 854 × 480 and GUI scale 2, disabling the development client's
+initial tutorial exposed the header buttons. Mouse clicks navigated 1 → 2 → 3;
+Next was disabled on the final page. The [English final-page capture](release-evidence/ui/issue-135/en_us-journey-page-3.png)
+includes Relic Survey. No paging logic defect was established. Automated
+Page Down/Next key inputs remain unverified and should not be counted as a pass.
+
+The Korean client opened the new journeys through the same button navigation.
+The detail page exposed an incorrect activity unit: XP progress was labelled
+as a number of actions (`회`). The shared activity objective and HUD translations
+now explicitly name XP in English, Korean and Japanese. The
+[Korean corrected detail capture](release-evidence/ui/issue-135/ko_kr-expedition-xp.png)
+shows Exploration XP `0/100` alongside the unchanged shop-trade count `0/4회`.
+This correction was visually checked after F3+T resource reload. Japanese live
+rendering, narration, and Rune Sentinel combat feel remain pending. The test
+client was shut down normally after saving these captures.
+
 This is the release evidence contract for the code-drawn inventory, player menus, and operator
 console. Geometry and compatibility have automated checks; visual rendering, narration output,
 and interaction with third-party inventory mods still require a real client.
