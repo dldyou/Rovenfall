@@ -28,6 +28,7 @@ import org.dldyou.rovenfall.mobs.BossRewardOperation;
 import org.dldyou.rovenfall.mobs.BossRewardSavedData;
 import org.dldyou.rovenfall.mobs.MobContentCatalog;
 import org.dldyou.rovenfall.rpg.ActivityXpAwardService;
+import org.dldyou.rovenfall.quest.QuestProgressRuntime;
 import org.dldyou.rovenfall.rpg.RpgDefinitionReloadListener;
 import org.dldyou.rovenfall.rpg.RpgPlayerSavedData;
 import org.dldyou.rovenfall.rpg.RpgPlayerState;
@@ -232,6 +233,7 @@ public final class BossRewardService {
             return ProcessingStatus.RETRY_REQUIRED;
         }
         auditDecision(platform, operation, REWARD_COMPLETED, "delivered", timestamp);
+        QuestProgressRuntime.acceptBossEvidence(server, transactionId);
         ServerPlayer player = rewardPlayer(server, operation.playerId());
         if (player != null) {
             player.sendSystemMessage(Component.translatable(

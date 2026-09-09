@@ -1,0 +1,18 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "equipment",
+  "ingredients": [
+    "rovenfall:warden_core",
+    "rovenfall:cinderbrand",
+    "rovenfall:mirefang_dagger",
+    "rovenfall:ashen_residue",
+    "rovenfall:runebound_fragment",
+    "rovenfall:frostbound_shard",
+    "rovenfall:tidebound_scale",
+    "rovenfall:deepstone_core",
+    "minecraft:netherite_ingot"
+  ],
+  "result": {
+    "id": "rovenfall:wardenbreaker"
+  }
+}

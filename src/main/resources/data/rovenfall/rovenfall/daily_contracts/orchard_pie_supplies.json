@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.orchard_pie_supplies",
+  "description_translation_key": "daily_contract_description.rovenfall.orchard_pie_supplies",
+  "kind": "cooking_result",
+  "target": "rovenfall:orchard_pie",
+  "required_experience": 48,
+  "currency_reward": 120
+}

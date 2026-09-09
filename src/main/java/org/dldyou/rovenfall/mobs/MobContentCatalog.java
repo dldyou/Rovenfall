@@ -57,7 +57,8 @@ public record MobContentCatalog(
             double movementSpeed,
             List<Identifier> behaviorModifiers,
             Identifier loot,
-            Optional<SpawnCondition> spawn) {
+            Optional<SpawnCondition> spawn,
+            Optional<RuneStrike> runeStrike) {
         public static final Codec<MobDefinition> CODEC = RecordCodecBuilder.create(instance -> instance.group(
                 Identifier.CODEC.fieldOf("id").forGetter(MobDefinition::id),
                 Codec.string(1, 160).fieldOf("translation_key").forGetter(MobDefinition::translationKey),
@@ -68,12 +69,46 @@ public record MobContentCatalog(
                 Identifier.CODEC.listOf(0, MAX_REFERENCES).optionalFieldOf("behavior_modifiers", List.of())
                         .forGetter(MobDefinition::behaviorModifiers),
                 Identifier.CODEC.fieldOf("loot").forGetter(MobDefinition::loot),
-                SpawnCondition.CODEC.optionalFieldOf("spawn").forGetter(MobDefinition::spawn)
+                SpawnCondition.CODEC.optionalFieldOf("spawn").forGetter(MobDefinition::spawn),
+                RuneStrike.CODEC.optionalFieldOf("rune_strike").forGetter(MobDefinition::runeStrike)
         ).apply(instance, MobDefinition::new));
 
         public MobDefinition {
             behaviorModifiers = List.copyOf(behaviorModifiers);
             spawn = spawn == null ? Optional.empty() : spawn;
+            runeStrike = runeStrike == null ? Optional.empty() : runeStrike;
+        }
+
+        public MobDefinition(Identifier id, String translationKey, Identifier entityType,
+                double maxHealth, double attackDamage, double movementSpeed,
+                List<Identifier> behaviorModifiers, Identifier loot, Optional<SpawnCondition> spawn) {
+            this(id, translationKey, entityType, maxHealth, attackDamage, movementSpeed,
+                    behaviorModifiers, loot, spawn, Optional.empty());
+        }
+    }
+
+    public record RuneStrike(int windupTicks, int recoveryTicks, int cooldownTicks,
+            double range, double radius, double damage) {
+        public static final Codec<RuneStrike> CODEC = RecordCodecBuilder.<RuneStrike>create(instance -> instance.group(
+                Codec.intRange(10, 200).fieldOf("windup_ticks").forGetter(RuneStrike::windupTicks),
+                Codec.intRange(10, 200).fieldOf("recovery_ticks").forGetter(RuneStrike::recoveryTicks),
+                Codec.intRange(20, 1200).fieldOf("cooldown_ticks").forGetter(RuneStrike::cooldownTicks),
+                Codec.DOUBLE.fieldOf("range").forGetter(RuneStrike::range),
+                Codec.DOUBLE.fieldOf("radius").forGetter(RuneStrike::radius),
+                Codec.DOUBLE.fieldOf("damage").forGetter(RuneStrike::damage)
+        ).apply(instance, RuneStrike::new)).validate(RuneStrike::validate);
+
+        public static DataResult<RuneStrike> validate(RuneStrike strike) {
+            if (strike.windupTicks < 10 || strike.windupTicks > 200
+                    || strike.recoveryTicks < 10 || strike.recoveryTicks > 200
+                    || strike.cooldownTicks < 20 || strike.cooldownTicks > 1200
+                    || !Double.isFinite(strike.range) || strike.range < 2 || strike.range > 16
+                    || !Double.isFinite(strike.radius) || strike.radius < 0.5 || strike.radius > 4
+                    || strike.radius > strike.range
+                    || !Double.isFinite(strike.damage) || strike.damage <= 0 || strike.damage > 40) {
+                return DataResult.error(() -> "rune strike timing, range, radius, or damage is invalid");
+            }
+            return DataResult.success(strike);
         }
     }
 

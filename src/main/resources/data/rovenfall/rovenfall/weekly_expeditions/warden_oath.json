@@ -1,0 +1,8 @@
+{
+  "translation_key": "weekly_expedition.rovenfall.warden_oath",
+  "description_translation_key": "weekly_expedition_description.rovenfall.warden_oath",
+  "daily_contracts": {
+    "rovenfall:warden_trial": 3
+  },
+  "currency_reward": 1000
+}

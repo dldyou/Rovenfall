@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "equipment",
+  "pattern": [
+    "DDD",
+    " C ",
+    " S "
+  ],
+  "key": {
+    "D": "minecraft:diamond",
+    "C": "rovenfall:deepstone_core",
+    "S": "minecraft:stick"
+  },
+  "result": {
+    "id": "rovenfall:deepstone_pickaxe",
+    "components": {
+      "minecraft:enchantments": {
+        "rovenfall:delvers_reach": 1
+      }
+    }
+  }
+}

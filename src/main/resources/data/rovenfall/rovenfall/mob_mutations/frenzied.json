@@ -1,0 +1,30 @@
+{
+  "eligible_entity_types": [
+    "minecraft:cave_spider",
+    "minecraft:drowned",
+    "minecraft:spider",
+    "minecraft:zombie"
+  ],
+  "spawn_chance": 0.025,
+  "translation_key": "mutation.rovenfall.frenzied",
+  "glowing": true,
+  "attributes": [
+    {
+      "attribute": "minecraft:max_health",
+      "amount": 0.2,
+      "operation": "add_multiplied_total"
+    },
+    {
+      "attribute": "minecraft:movement_speed",
+      "amount": 0.3,
+      "operation": "add_multiplied_total"
+    },
+    {
+      "attribute": "minecraft:attack_damage",
+      "amount": 0.25,
+      "operation": "add_multiplied_total"
+    }
+  ],
+  "ai_modifier": "leap",
+  "currency_reward": 20
+}

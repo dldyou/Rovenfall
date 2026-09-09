@@ -20,14 +20,14 @@ final class PlayerRecordServiceTest {
         assertFalse(PlayerRecordService.observeLogin(state, playerId, -1));
         assertTrue(state.playerRecord(playerId).isEmpty());
         assertFalse(state.isDirty());
-        assertTrue(PlayerRecordService.observeLogin(state, playerId, 2_000));
+        assertTrue(PlayerRecordService.observeLogin(state, playerId, "StoneFox", 2_000));
         assertFalse(PlayerRecordService.observeLogin(state, playerId, 1_000));
-        assertTrue(PlayerRecordService.observeLogin(state, playerId, 3_000));
+        assertTrue(PlayerRecordService.observeLogin(state, playerId, "StoneFox_2", 3_000));
 
         PlayerRecord record = state.playerRecord(playerId).orElseThrow();
         assertEquals(2_000, record.firstSeenEpochMillis());
         assertEquals(3_000, record.lastSeenEpochMillis());
-        assertEquals(Optional.empty(), record.displayName());
+        assertEquals("StoneFox_2", record.lastKnownName());
         assertEquals(record, roundTrip(PlayerRecord.CODEC, record));
 
         PlatformSavedData loaded = roundTrip(PlatformSavedData.CODEC, state);
@@ -66,6 +66,16 @@ final class PlayerRecordServiceTest {
         tag.putLong("last_seen", 1_000);
 
         assertTrue(PlayerRecord.CODEC.parse(NbtOps.INSTANCE, tag).error().isPresent());
+    }
+
+    @Test
+    void legacyRecordWithoutNameDecodesWithAnEmptyDisplayName() {
+        CompoundTag tag = new CompoundTag();
+        tag.putLong("first_seen", 1_000);
+        tag.putLong("last_seen", 2_000);
+
+        assertEquals(new PlayerRecord(1_000, 2_000, ""),
+                PlayerRecord.CODEC.parse(NbtOps.INSTANCE, tag).getOrThrow());
     }
 
     @Test

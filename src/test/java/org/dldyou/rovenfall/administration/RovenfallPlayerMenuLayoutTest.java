@@ -84,6 +84,23 @@ final class RovenfallPlayerMenuLayoutTest {
     }
 
     @Test
+    void searchableAtlasReservesAnAccessibleRowWithoutCoveringCards() {
+        for (int[] size : List.of(
+                new int[]{320, 240}, new int[]{426, 240}, new int[]{640, 360},
+                new int[]{854, 480}, new int[]{1_920, 1_080})) {
+            var layout = RovenfallPlayerMenuLayout.fit(size[0], size[1], true);
+            assertTrue(layout.search());
+            assertTrue(layout.searchField().width() >= 48);
+            assertTrue(layout.searchField().x() >= layout.panel().x());
+            assertTrue(layout.searchButton().right() <= layout.panel().right());
+            assertFalse(layout.searchField().overlaps(layout.searchButton()));
+            assertFalse(layout.searchField().overlaps(layout.cards()));
+            assertFalse(layout.searchButton().overlaps(layout.cards()));
+            assertFalse(layout.cards().overlaps(layout.toolbar()));
+        }
+    }
+
+    @Test
     void technicalIdentifiersAreHiddenUntilAdvancedDetailsAreEnabled() {
         List<Component> lines = List.of(
                 Component.literal("토지 정보"),

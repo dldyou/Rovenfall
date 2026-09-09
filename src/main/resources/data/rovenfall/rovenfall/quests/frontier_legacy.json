@@ -1,0 +1,68 @@
+{
+  "translation_key": "quest.rovenfall.frontier_legacy",
+  "description_translation_key": "quest.rovenfall.frontier_legacy.description",
+  "version": 1,
+  "prerequisites": ["rovenfall:rift_warden_oath"],
+  "objectives": [
+    {
+      "id": "rovenfall:frontier_legacy/mining",
+      "kind": "activity",
+      "target": "rovenfall:mining",
+      "required_count": 120
+    },
+    {
+      "id": "rovenfall:frontier_legacy/building",
+      "kind": "activity",
+      "target": "rovenfall:building",
+      "required_count": 120
+    },
+    {
+      "id": "rovenfall:frontier_legacy/farming",
+      "kind": "activity",
+      "target": "rovenfall:farming",
+      "required_count": 120
+    },
+    {
+      "id": "rovenfall:frontier_legacy/cooking",
+      "kind": "activity",
+      "target": "rovenfall:cooking",
+      "required_count": 100
+    },
+    {
+      "id": "rovenfall:frontier_legacy/exploration",
+      "kind": "activity",
+      "target": "rovenfall:exploration",
+      "required_count": 120
+    },
+    {
+      "id": "rovenfall:frontier_legacy/hunting",
+      "kind": "activity",
+      "target": "rovenfall:hunting",
+      "required_count": 120
+    },
+    {
+      "id": "rovenfall:frontier_legacy/combat",
+      "kind": "activity",
+      "target": "rovenfall:combat",
+      "required_count": 200
+    },
+    {
+      "id": "rovenfall:frontier_legacy/shop_trade",
+      "kind": "shop_trade",
+      "required_count": 5
+    },
+    {
+      "id": "rovenfall:frontier_legacy/boss",
+      "kind": "boss_defeat",
+      "target": "rovenfall:rift_warden",
+      "required_count": 1
+    }
+  ],
+  "rewards": {
+    "currency": 800,
+    "activity_xp": {
+      "activity": "rovenfall:combat",
+      "amount": 100
+    }
+  }
+}

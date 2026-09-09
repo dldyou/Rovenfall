@@ -1,0 +1,24 @@
+{
+  "translation_key": "quest.rovenfall.contract.weekly_mining_expedition",
+  "description_translation_key": "quest.rovenfall.contract.weekly_mining_expedition.description",
+  "version": 1,
+  "prerequisites": [],
+  "contract": {
+    "cadence": "weekly"
+  },
+  "objectives": [
+    {
+      "id": "rovenfall:contracts/weekly_mining_expedition/objective",
+      "kind": "activity",
+      "target": "rovenfall:mining",
+      "required_count": 96
+    }
+  ],
+  "rewards": {
+    "currency": 90,
+    "activity_xp": {
+      "activity": "rovenfall:mining",
+      "amount": 16
+    }
+  }
+}

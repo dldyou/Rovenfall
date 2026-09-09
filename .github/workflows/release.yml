@@ -72,7 +72,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build and run required tests
-        run: ./gradlew clean build recoveryRehearsal --warning-mode all -Pmod_version="${{ steps.version.outputs.version }}"
+        run: ./gradlew clean releaseCheck recoveryRehearsal --warning-mode all -Pmod_version="${{ steps.version.outputs.version }}"
 
       - name: Inspect distributable JAR
         run: ./gradlew inspectReleaseJar --warning-mode all -Pmod_version="${{ steps.version.outputs.version }}"

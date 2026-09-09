@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.frozen_front",
+  "description_translation_key": "daily_contract_description.rovenfall.frozen_front",
+  "kind": "hunting_contribution",
+  "target": "rovenfall:frostbound_reaver",
+  "required_experience": 180,
+  "currency_reward": 200
+}

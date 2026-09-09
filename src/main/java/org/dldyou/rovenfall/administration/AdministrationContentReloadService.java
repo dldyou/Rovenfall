@@ -11,8 +11,10 @@ import java.util.WeakHashMap;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
 import org.dldyou.rovenfall.Rovenfall;
+import org.dldyou.rovenfall.exploration.ExplorationDefinitionReloadListener;
 import org.dldyou.rovenfall.mobs.MobContentReloadListener;
 import org.dldyou.rovenfall.rpg.RpgDefinitionReloadListener;
+import org.dldyou.rovenfall.quest.QuestDefinitionReloadListener;
 
 /** Audited, role-gated entry point for the normal server datapack reload path. */
 final class AdministrationContentReloadService {
@@ -83,6 +85,8 @@ final class AdministrationContentReloadService {
             LAST.put(server, inProgress);
         }
         RpgDefinitionReloadListener.beginValidationAttempt(server);
+        QuestDefinitionReloadListener.beginValidationAttempt(server);
+        ExplorationDefinitionReloadListener.beginValidationAttempt(server);
         MobContentReloadListener.beginValidationAttempt(server);
         try {
             server.reloadResources(server.getPackRepository().getSelectedIds())
@@ -144,6 +148,19 @@ final class AdministrationContentReloadService {
             }
             result.add(new Problem(Source.RPG, problem.file(), problem.definitionId(), safeCause(problem.cause())));
         }
+        for (var problem : QuestDefinitionReloadListener.lastProblems(server)) {
+            if (result.size() == MAX_REPORTED_PROBLEMS) {
+                break;
+            }
+            result.add(new Problem(Source.QUEST, problem.file(), problem.definitionId(), safeCause(problem.cause())));
+        }
+        for (var problem : ExplorationDefinitionReloadListener.lastProblems(server)) {
+            if (result.size() == MAX_REPORTED_PROBLEMS) {
+                break;
+            }
+            result.add(new Problem(
+                    Source.EXPLORATION, problem.file(), problem.definitionId(), safeCause(problem.cause())));
+        }
         for (var problem : MobContentReloadListener.lastProblems(server)) {
             if (result.size() == MAX_REPORTED_PROBLEMS) {
                 break;
@@ -170,11 +187,17 @@ final class AdministrationContentReloadService {
 
     private static String summary(MinecraftServer server) {
         var rpg = RpgDefinitionReloadListener.snapshot(server);
+        var quests = QuestDefinitionReloadListener.snapshot(server);
+        var exploration = ExplorationDefinitionReloadListener.snapshot(server);
         var mobs = MobContentReloadListener.snapshot(server);
         return "rpg_revision=" + RpgDefinitionReloadListener.revision(server)
                 + ";activities=" + rpg.activities().size()
                 + ";careers=" + rpg.careers().size()
                 + ";skills=" + rpg.skills().size()
+                + ";quest_revision=" + QuestDefinitionReloadListener.revision(server)
+                + ";quests=" + quests.storyQuests().size()
+                + ";contracts=" + quests.contractCount()
+                + ";discoveries=" + exploration.size()
                 + ";mob_content=" + mobs.size();
     }
 
@@ -220,6 +243,8 @@ final class AdministrationContentReloadService {
 
     enum Source {
         RPG,
+        QUEST,
+        EXPLORATION,
         MOB,
         SERVER
     }

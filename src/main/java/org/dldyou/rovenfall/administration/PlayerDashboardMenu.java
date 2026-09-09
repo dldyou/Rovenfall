@@ -23,6 +23,11 @@ import net.minecraft.world.item.component.ItemLore;
 import org.dldyou.rovenfall.claims.Claim;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimRole;
+import org.dldyou.rovenfall.quest.ActiveJourneyService;
+import org.dldyou.rovenfall.quest.ActiveJourneyView;
+import org.dldyou.rovenfall.quest.QuestDefinitionReloadListener;
+import org.dldyou.rovenfall.quest.QuestJourneyView;
+import org.dldyou.rovenfall.quest.QuestPlayerSavedData;
 import org.dldyou.rovenfall.rpg.RpgDefinitionReloadListener;
 import org.dldyou.rovenfall.rpg.RpgDefinitionSnapshot;
 import org.dldyou.rovenfall.rpg.RpgPlayerSavedData;
@@ -45,6 +50,8 @@ public final class PlayerDashboardMenu extends ChestMenu {
         OPEN_SHOPS,
         OPEN_CLAIMS,
         OPEN_RPG,
+        OPEN_QUESTS,
+        OPEN_PORTALS,
         BACK,
         REFRESH
     }
@@ -112,6 +119,14 @@ public final class PlayerDashboardMenu extends ChestMenu {
                 PlayerRpgMenu.open(viewer);
                 return;
             }
+            case OPEN_QUESTS -> {
+                PlayerQuestMenu.open(viewer);
+                return;
+            }
+            case OPEN_PORTALS -> {
+                PlayerPortalMenu.open(viewer);
+                return;
+            }
             case BACK -> page = Page.HOME;
             case REFRESH, NONE -> {
             }
@@ -140,7 +155,9 @@ public final class PlayerDashboardMenu extends ChestMenu {
             case HOME -> switch (slot) {
                 case 10 -> Action.OPEN_ECONOMY;
                 case 13 -> Action.OPEN_CLAIMS;
+                case 14 -> Action.OPEN_PORTALS;
                 case 16 -> Action.OPEN_RPG;
+                case 17 -> Action.OPEN_QUESTS;
                 default -> Action.NONE;
             };
             case ECONOMY -> slot == 15 ? Action.OPEN_SHOPS : Action.NONE;
@@ -187,7 +204,7 @@ public final class PlayerDashboardMenu extends ChestMenu {
         DashboardSnapshot snapshot = snapshot();
         RpgDefinitionSnapshot definitions = RpgDefinitionReloadListener.snapshot(viewer.level().getServer());
         switch (page) {
-            case HOME -> renderHome(snapshot, definitions);
+            case HOME -> renderHome(snapshot, definitions, journey(), activeJourney(definitions));
             case ECONOMY -> renderEconomy(snapshot);
         }
         dashboard.setItem(REFRESH_SLOT, icon(
@@ -197,7 +214,11 @@ public final class PlayerDashboardMenu extends ChestMenu {
         broadcastChanges();
     }
 
-    private void renderHome(DashboardSnapshot snapshot, RpgDefinitionSnapshot definitions) {
+    private void renderHome(
+            DashboardSnapshot snapshot,
+            RpgDefinitionSnapshot definitions,
+            QuestJourneyView journey,
+            ActiveJourneyView activeJourney) {
         dashboard.setItem(4, icon(
                 Items.COMPASS,
                 Component.translatable("gui.rovenfall.player.home"),
@@ -213,6 +234,11 @@ public final class PlayerDashboardMenu extends ChestMenu {
                 Component.translatable("gui.rovenfall.player.owned_claims", snapshot.ownedClaims()),
                 claimStatus(snapshot),
                 Component.translatable("gui.rovenfall.player.click")));
+        dashboard.setItem(14, icon(
+                Items.ENDER_EYE,
+                Component.translatable("gui.rovenfall.portal.dashboard"),
+                Component.translatable("gui.rovenfall.portal.dashboard.summary"),
+                Component.translatable("gui.rovenfall.player.click")));
         dashboard.setItem(16, icon(
                 Items.EXPERIENCE_BOTTLE,
                 Component.translatable("gui.rovenfall.player.rpg"),
@@ -225,6 +251,67 @@ public final class PlayerDashboardMenu extends ChestMenu {
                         snapshot.activeSkills().stream().filter(Optional::isPresent).count(),
                         RpgPlayerState.MAX_ACTIVE_SKILL_SLOTS),
                 Component.translatable("gui.rovenfall.player.click")));
+        List<Component> journeyLore = new java.util.ArrayList<>();
+        activeJourney.journey().ifPresentOrElse(
+                entry -> {
+                    journeyLore.add(Component.translatable(entry.titleTranslationKey()));
+                    journeyLore.add(Component.translatable(
+                            "gui.rovenfall.quest.tracker.kind."
+                                    + entry.kind().name().toLowerCase(java.util.Locale.ROOT)));
+                    journeyLore.add(activeObjectiveLine(entry));
+                    journeyLore.add(Component.translatable("gui.rovenfall.quest.tracker.pinned"));
+                },
+                () -> journey.nextStep().ifPresentOrElse(
+                        step -> {
+                            journeyLore.add(Component.translatable(step.questTranslationKey()));
+                            journeyLore.add(Component.translatable(
+                                    "gui.rovenfall.quest.next_step",
+                                    PlayerQuestMenu.nextStepLine(step, definitions)));
+                        },
+                        () -> journeyLore.add(Component.translatable("gui.rovenfall.quest.next_step.none"))));
+        if (!journey.writable()) {
+            journeyLore.add(Component.translatable("gui.rovenfall.quest.read_only"));
+        }
+        journeyLore.add(Component.translatable("gui.rovenfall.player.click"));
+        dashboard.setItem(17, icon(
+                Items.COMPASS,
+                Component.translatable("gui.rovenfall.quest.dashboard"),
+                journeyLore.toArray(Component[]::new)));
+    }
+
+    private QuestJourneyView journey() {
+        var server = viewer.level().getServer();
+        var definitions = QuestDefinitionReloadListener.versioned(server);
+        var saved = QuestPlayerSavedData.get(server);
+        return QuestJourneyView.create(
+                definitions.snapshot(), saved.state(viewerId), definitions.revision(),
+                saved.isWritable(), 0, 1);
+    }
+
+    private ActiveJourneyView activeJourney(RpgDefinitionSnapshot rpgDefinitions) {
+        var server = viewer.level().getServer();
+        var definitions = QuestDefinitionReloadListener.versioned(server);
+        var saved = QuestPlayerSavedData.get(server);
+        return ActiveJourneyService.view(
+                saved, definitions.snapshot(), rpgDefinitions, viewerId,
+                definitions.revision(), System.currentTimeMillis());
+    }
+
+    static Component activeObjectiveLine(ActiveJourneyView.Entry entry) {
+        return switch (entry.objectiveKind()) {
+            case ACTIVITY -> Component.translatable(
+                    "gui.rovenfall.quest.objective.activity",
+                    entry.activityTargetTranslationKey()
+                            .<Component>map(Component::translatable)
+                            .orElseGet(() -> Component.translatable("gui.rovenfall.player.unknown_activity")),
+                    entry.progress(), entry.requiredCount());
+            case SHOP_TRADE -> Component.translatable(
+                    "gui.rovenfall.quest.objective.shop_trade", entry.progress(), entry.requiredCount());
+            case CLAIM_PURCHASE -> Component.translatable(
+                    "gui.rovenfall.quest.objective.claim_purchase", entry.progress(), entry.requiredCount());
+            case BOSS_DEFEAT -> Component.translatable(
+                    "gui.rovenfall.quest.objective.boss_defeat", entry.progress(), entry.requiredCount());
+        };
     }
 
     private void renderEconomy(DashboardSnapshot snapshot) {

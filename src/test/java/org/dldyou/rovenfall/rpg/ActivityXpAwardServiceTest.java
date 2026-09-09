@@ -1,6 +1,7 @@
 package org.dldyou.rovenfall.rpg;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -36,6 +37,272 @@ final class ActivityXpAwardServiceTest {
         var evidence = ActivityXpAwardService.evidence(state, PLAYER, Optional.of(ACTIVITY), 0, 10);
         assertEquals(1, evidence.totalEntries());
         assertEquals(uuid(1), evidence.entries().getFirst().transactionId());
+    }
+
+    @Test
+    void observedActivityOutboxSurvivesDisplayHistoryEvictionRestartAndCollision() {
+        RpgPlayerSavedData state = new RpgPlayerSavedData();
+        ActivityXpConfig.Limits recoveryLimits = new ActivityXpConfig.Limits(
+                1, RpgPlayerState.MAX_PROVENANCE, 0, 0, Integer.MAX_VALUE);
+
+        for (int index = 1; index <= RpgPlayerState.MAX_PROVENANCE + 1; index++) {
+            assertEquals(ActivityXpAwardService.Status.SUCCESS,
+                    ActivityXpAwardService.awardObservedActivity(
+                            state, definitions(), PLAYER, MINING, 1, index,
+                            uuid(10_000 + index), "mining:quest:" + index, recoveryLimits).status());
+        }
+
+        UUID firstTransaction = uuid(10_001);
+        assertEquals(RpgPlayerState.MAX_PROVENANCE, state.state(PLAYER).provenance().size());
+        assertTrue(state.state(PLAYER).provenance().stream()
+                .noneMatch(entry -> entry.transactionId().equals(firstTransaction)));
+        assertEquals(RpgPlayerState.MAX_PROVENANCE + 1, state.questActivityEvidenceCount());
+        RpgPlayerSavedData restarted = RpgPlayerSavedData.CODEC.parse(
+                NbtOps.INSTANCE, RpgPlayerSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow())
+                .getOrThrow();
+        assertTrue(restarted.questActivityEvidence(firstTransaction).isPresent());
+        assertEquals(ActivityXpAwardService.Status.DUPLICATE,
+                ActivityXpAwardService.awardObservedActivity(
+                        restarted, definitions(), PLAYER, MINING, 1, 1,
+                        firstTransaction, "mining:quest:1", recoveryLimits).status());
+        assertEquals(ActivityXpAwardService.Status.TRANSACTION_ID_CONFLICT,
+                ActivityXpAwardService.awardObservedActivity(
+                        restarted, definitions(), uuid(2), MINING, 1, 1,
+                        firstTransaction, "mining:quest:1", recoveryLimits).status());
+        assertEquals(RpgPlayerState.MAX_PROVENANCE + 1, restarted.questActivityEvidenceCount());
+    }
+
+    @Test
+    void questRewardReceiptSurvivesProvenanceEvictionRestartAndConflict() {
+        Identifier career = id("warrior");
+        RpgPlayerSavedData state = new RpgPlayerSavedData();
+        assertTrue(state.commit(PLAYER, new RpgPlayerState(
+                java.util.Map.of(),
+                java.util.Map.of(career, new RpgPlayerState.CareerProgress(0, 0, 0, java.util.Map.of())),
+                Optional.of(career), java.util.Map.of(), java.util.Map.of(), List.of())));
+        UUID transactionId = uuid(18_000);
+        String source = "quest_reward:rovenfall:first_steps";
+
+        assertEquals(ActivityXpAwardService.Status.SUCCESS,
+                ActivityXpAwardService.awardQuestReward(
+                        state, definitionsWithCareer(career), PLAYER, MINING, 2, 1_000,
+                        transactionId, source).status());
+        for (int index = 1; index <= RpgPlayerState.MAX_PROVENANCE + 1; index++) {
+            assertEquals(ActivityXpAwardService.Status.SUCCESS,
+                    ActivityXpAwardService.awardBossReward(
+                            state, definitionsWithCareer(career), PLAYER, MINING, 1, 2_000 + index,
+                            uuid(18_000 + index), "boss_reward:eviction:" + index).status());
+        }
+        assertFalse(state.state(PLAYER).provenance().stream()
+                .anyMatch(entry -> entry.transactionId().equals(transactionId)));
+        assertFalse(state.state(PLAYER).careerProvenance().stream()
+                .anyMatch(entry -> entry.source().equals(source)));
+
+        RpgPlayerSavedData restarted = RpgPlayerSavedData.CODEC.parse(
+                NbtOps.INSTANCE, RpgPlayerSavedData.CODEC.encodeStart(NbtOps.INSTANCE, state).getOrThrow())
+                .getOrThrow();
+        long activityXp = restarted.state(PLAYER).activityXp().get(MINING);
+        long careerXp = restarted.state(PLAYER).careers().get(career).experience();
+        assertEquals(1, restarted.questRewardReceiptCount());
+        assertEquals(ActivityXpAwardService.Status.DUPLICATE,
+                ActivityXpAwardService.awardQuestReward(
+                        restarted, definitionsWithCareer(career), PLAYER, MINING, 2, 1_000,
+                        transactionId, source).status());
+        assertEquals(ActivityXpAwardService.Status.TRANSACTION_ID_CONFLICT,
+                ActivityXpAwardService.awardQuestReward(
+                        restarted, definitionsWithCareer(career), PLAYER, MINING, 3, 1_000,
+                        transactionId, source).status());
+        assertEquals(ActivityXpAwardService.Status.DUPLICATE,
+                ActivityXpAwardService.awardQuestReward(
+                        restarted, RpgDefinitionSnapshot.empty(), PLAYER, MINING, 2, 1_000,
+                        transactionId, source).status());
+        CompoundTag future = (CompoundTag) RpgPlayerSavedData.CODEC
+                .encodeStart(NbtOps.INSTANCE, restarted).getOrThrow();
+        future.putInt("schema_version", RpgPlayerSavedData.CURRENT_SCHEMA_VERSION + 1);
+        RpgPlayerSavedData readOnly = RpgPlayerSavedData.CODEC.parse(NbtOps.INSTANCE, future).getOrThrow();
+        assertEquals(ActivityXpAwardService.Status.DUPLICATE,
+                ActivityXpAwardService.awardQuestReward(
+                        readOnly, RpgDefinitionSnapshot.empty(), PLAYER, MINING, 2, 1_000,
+                        transactionId, source).status());
+        assertEquals(activityXp, restarted.state(PLAYER).activityXp().get(MINING));
+        assertEquals(careerXp, restarted.state(PLAYER).careers().get(career).experience());
+        assertEquals(1, restarted.questRewardReceiptCount());
+    }
+
+    @Test
+    void questRewardCanGrantExplorationXpWithoutInventingAPlayerDiscovery() {
+        RpgPlayerSavedData state = new RpgPlayerSavedData();
+        UUID transactionId = uuid(18_500);
+
+        assertEquals(ActivityXpAwardService.Status.SUCCESS,
+                ActivityXpAwardService.awardQuestReward(
+                        state, definitions(), PLAYER, EXPLORATION, 5, 1_500,
+                        transactionId, "quest_reward:rovenfall:explorer").status());
+        assertEquals(5, state.state(PLAYER).activityXp().get(EXPLORATION));
+        assertTrue(state.state(PLAYER).explorationDiscoveries().isEmpty());
+        assertEquals(ActivityXpAwardService.Status.DUPLICATE,
+                ActivityXpAwardService.awardQuestReward(
+                        state, definitions(), PLAYER, EXPLORATION, 5, 1_500,
+                        transactionId, "quest_reward:rovenfall:explorer").status());
+    }
+
+    @Test
+    void codecRejectsActivityOutboxAboveThePerPlayerLimit() {
+        RpgPlayerSavedData state = new RpgPlayerSavedData();
+        assertEquals(ActivityXpAwardService.Status.SUCCESS,
+                ActivityXpAwardService.awardObservedActivity(
+                        state, definitions(), PLAYER, MINING, 1, 1_000,
+                        uuid(19_500), "mining:decoder_limit").status());
+        CompoundTag encoded = (CompoundTag) RpgPlayerSavedData.CODEC
+                .encodeStart(NbtOps.INSTANCE, state).getOrThrow();
+        var evidence = encoded.getListOrEmpty("quest_activity_evidence");
+        CompoundTag template = (CompoundTag) evidence.getFirst().copy();
+        for (int index = 1; index < RpgPlayerSavedData.MAX_QUEST_ACTIVITY_EVIDENCE_PER_PLAYER; index++) {
+            CompoundTag duplicate = template.copy();
+            UUID transactionId = uuid(20_000L + index);
+            duplicate.putString("id", transactionId.toString());
+            duplicate.getCompoundOrEmpty("value").getCompoundOrEmpty("provenance")
+                    .putString("transaction", transactionId.toString());
+            evidence.add(duplicate);
+        }
+        CompoundTag overflow = template.copy();
+        UUID overflowId = uuid(30_000);
+        overflow.putString("id", overflowId.toString());
+        overflow.getCompoundOrEmpty("value").getCompoundOrEmpty("provenance")
+                .putString("transaction", overflowId.toString());
+        evidence.add(overflow);
+
+        assertTrue(RpgPlayerSavedData.CODEC.parse(NbtOps.INSTANCE, encoded).error().isPresent());
+    }
+
+    @Test
+    void observedActivityFailsAtomicallyForFutureSchema() {
+        CompoundTag future = (CompoundTag) RpgPlayerSavedData.CODEC
+                .encodeStart(NbtOps.INSTANCE, new RpgPlayerSavedData()).getOrThrow();
+        future.putInt("schema_version", RpgPlayerSavedData.CURRENT_SCHEMA_VERSION + 1);
+        RpgPlayerSavedData readOnly = RpgPlayerSavedData.CODEC.parse(NbtOps.INSTANCE, future).getOrThrow();
+
+        assertEquals(ActivityXpAwardService.Status.READ_ONLY,
+                ActivityXpAwardService.awardObservedActivity(
+                        readOnly, definitions(), PLAYER, MINING, 1, 1_000,
+                        uuid(19_000), "mining:read_only").status());
+        assertTrue(readOnly.state(PLAYER).activityXp().isEmpty());
+        assertEquals(0, readOnly.questActivityEvidenceCount());
+    }
+
+    @Test
+    void schemaFiveAcknowledgementMigratesToAppliedDisposition() {
+        RpgPlayerSavedData state = new RpgPlayerSavedData();
+        UUID transactionId = uuid(19_001);
+        assertEquals(ActivityXpAwardService.Status.SUCCESS,
+                ActivityXpAwardService.awardObservedActivity(
+                        state, definitions(), PLAYER, MINING, 1, 1_000,
+                        transactionId, "mining:legacy_ack").status());
+        assertTrue(state.acknowledgeQuestActivityEvidence(
+                transactionId, PLAYER, 1_100, RpgPlayerSavedData.AckDisposition.APPLIED));
+        CompoundTag schemaFive = (CompoundTag) RpgPlayerSavedData.CODEC
+                .encodeStart(NbtOps.INSTANCE, state).getOrThrow();
+        schemaFive.putInt("schema_version", 5);
+        schemaFive.getListOrEmpty("quest_activity_evidence").getCompoundOrEmpty(0)
+                .getCompoundOrEmpty("value").remove("ack_disposition");
+
+        RpgPlayerSavedData migrated = RpgPlayerSavedData.CODEC.parse(NbtOps.INSTANCE, schemaFive).getOrThrow();
+
+        assertEquals(RpgPlayerSavedData.CURRENT_SCHEMA_VERSION, migrated.schemaVersion());
+        assertEquals(Optional.of(RpgPlayerSavedData.AckDisposition.APPLIED),
+                migrated.questActivityEvidence(transactionId).orElseThrow().ackDisposition());
+    }
+
+    @Test
+    void appliedActivityEvidenceExpiresOnlyAfterTheQuestMarkerIsConfirmed() {
+        RpgPlayerSavedData state = new RpgPlayerSavedData();
+        UUID transactionId = uuid(19_001);
+        assertEquals(ActivityXpAwardService.Status.SUCCESS,
+                ActivityXpAwardService.awardObservedActivity(
+                        state, definitions(), PLAYER, MINING, 1, 1_000,
+                        transactionId, "mining:retention").status());
+
+        assertEquals(0, state.trimAcknowledgedQuestActivityEvidence(PLAYER, 2_000, 10));
+        assertTrue(state.acknowledgeQuestActivityEvidence(
+                transactionId, PLAYER, 2_000, RpgPlayerSavedData.AckDisposition.APPLIED));
+        assertEquals(0, state.trimAcknowledgedQuestActivityEvidence(
+                PLAYER, 2_000 + java.time.Duration.ofDays(29).toMillis(), 10));
+        long afterRetention = 1_000 + java.time.Duration.ofDays(31).toMillis();
+        assertEquals(0, state.trimAcknowledgedQuestActivityEvidence(
+                PLAYER, afterRetention, 10));
+        assertEquals(1, state.trimAcknowledgedQuestActivityEvidence(
+                PLAYER,
+                java.util.Set.of(transactionId), afterRetention, 10));
+        assertEquals(0, state.questActivityEvidenceCount());
+    }
+
+    @Test
+    void ignoredActivityEvidenceExpiresWithoutAQuestMarker() {
+        RpgPlayerSavedData state = new RpgPlayerSavedData();
+        UUID transactionId = uuid(19_002);
+        assertEquals(ActivityXpAwardService.Status.SUCCESS,
+                ActivityXpAwardService.awardObservedActivity(
+                        state, definitions(), PLAYER, MINING, 1, 1_000,
+                        transactionId, "mining:ignored_retention").status());
+        assertTrue(state.acknowledgeQuestActivityEvidence(
+                transactionId, PLAYER, 2_000, RpgPlayerSavedData.AckDisposition.IGNORED));
+
+        assertEquals(1, state.trimAcknowledgedQuestActivityEvidence(
+                PLAYER, 1_000 + java.time.Duration.ofDays(31).toMillis(), 10));
+        assertEquals(0, state.questActivityEvidenceCount());
+    }
+
+    @Test
+    void globalReclaimUsesEachQuestOwnersProcessedMarker() {
+        RpgPlayerSavedData state = new RpgPlayerSavedData();
+        UUID secondPlayer = uuid(19_100);
+        UUID firstTransaction = uuid(19_101);
+        UUID secondTransaction = uuid(19_102);
+        long afterRetention = 1_000 + java.time.Duration.ofDays(31).toMillis();
+
+        assertEquals(ActivityXpAwardService.Status.SUCCESS,
+                ActivityXpAwardService.awardObservedActivity(
+                        state, definitions(), PLAYER, MINING, 1, 1_000,
+                        firstTransaction, "mining:global:first").status());
+        assertEquals(ActivityXpAwardService.Status.SUCCESS,
+                ActivityXpAwardService.awardObservedActivity(
+                        state, definitions(), secondPlayer, MINING, 1, 1_000,
+                        secondTransaction, "mining:global:second").status());
+        assertTrue(state.acknowledgeQuestActivityEvidence(
+                firstTransaction, PLAYER, 2_000, RpgPlayerSavedData.AckDisposition.APPLIED));
+        assertTrue(state.acknowledgeQuestActivityEvidence(
+                secondTransaction, secondPlayer, 2_000, RpgPlayerSavedData.AckDisposition.APPLIED));
+
+        assertEquals(1, state.trimAcknowledgedQuestActivityEvidence(
+                java.util.Map.of(PLAYER, java.util.Set.of(firstTransaction)), afterRetention, 10));
+        assertTrue(state.questActivityEvidence(firstTransaction).isEmpty());
+        assertTrue(state.questActivityEvidence(secondTransaction).isPresent());
+    }
+
+    @Test
+    void observedActivityReclaimsExpiredAcknowledgementsBeforePerPlayerCapacityCheck() {
+        RpgPlayerSavedData state = new RpgPlayerSavedData();
+        ActivityXpConfig.Limits recoveryLimits = new ActivityXpConfig.Limits(
+                1, RpgPlayerState.MAX_PROVENANCE, 0, 0, Integer.MAX_VALUE);
+        for (int index = 1; index <= RpgPlayerSavedData.MAX_QUEST_ACTIVITY_EVIDENCE_PER_PLAYER; index++) {
+            UUID transactionId = uuid(40_000L + index);
+            assertEquals(ActivityXpAwardService.Status.SUCCESS,
+                    ActivityXpAwardService.awardObservedActivity(
+                            state, definitions(), PLAYER, MINING, 1, index, transactionId,
+                            "mining:capacity:" + index, recoveryLimits).status());
+            assertTrue(state.acknowledgeQuestActivityEvidence(
+                    transactionId, PLAYER, index, RpgPlayerSavedData.AckDisposition.IGNORED));
+        }
+
+        long afterRetention = java.time.Duration.ofDays(31).toMillis();
+        assertEquals(ActivityXpAwardService.Status.SUCCESS,
+                ActivityXpAwardService.awardObservedActivity(
+                        state, definitions(), PLAYER, MINING, 1, afterRetention,
+                        uuid(50_000), "mining:capacity:new", recoveryLimits).status());
+        assertTrue(state.questActivityEvidenceCount()
+                < RpgPlayerSavedData.MAX_QUEST_ACTIVITY_EVIDENCE_PER_PLAYER);
+        assertEquals((long) RpgPlayerSavedData.MAX_QUEST_ACTIVITY_EVIDENCE_PER_PLAYER + 1,
+                state.state(PLAYER).activityXp().get(MINING));
     }
 
     @Test

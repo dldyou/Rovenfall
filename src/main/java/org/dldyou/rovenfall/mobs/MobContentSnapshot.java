@@ -188,6 +188,17 @@ public final class MobContentSnapshot {
                 BUILT_IN_BEHAVIOR_MODIFIERS, problems);
         reference(source, mob.id(), "loot", mob.loot(), loot, problems);
         mob.spawn().ifPresent(spawn -> validateSpawn(source, mob.id(), spawn, problems));
+        if (mob.entityType().equals(Identifier.fromNamespaceAndPath("rovenfall", "rune_sentinel"))
+                && (mob.runeStrike().isEmpty() || mob.spawn().isEmpty())) {
+            problems.add(problem(source, mob.id(), "rune sentinel requires a rune strike and Wilderness spawn"));
+        }
+        mob.runeStrike().ifPresent(strike -> {
+            MobContentCatalog.RuneStrike.validate(strike).error().ifPresent(error ->
+                    problems.add(problem(source, mob.id(), error.message())));
+            if (!mob.entityType().equals(Identifier.fromNamespaceAndPath("rovenfall", "rune_sentinel"))) {
+                problems.add(problem(source, mob.id(), "rune strike requires the rune sentinel entity type"));
+            }
+        });
     }
 
     private static void validateMutation(

@@ -1,0 +1,19 @@
+{
+  "translation_key": "quest.rovenfall.contract.daily_market_delivery",
+  "description_translation_key": "quest.rovenfall.contract.daily_market_delivery.description",
+  "version": 1,
+  "prerequisites": [],
+  "contract": {
+    "cadence": "daily"
+  },
+  "objectives": [
+    {
+      "id": "rovenfall:contracts/daily_market_delivery/objective",
+      "kind": "shop_trade",
+      "required_count": 3
+    }
+  ],
+  "rewards": {
+    "currency": 20
+  }
+}

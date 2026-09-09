@@ -8,8 +8,9 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Optional;
-import java.util.PriorityQueue;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.UnaryOperator;
 import net.minecraft.core.UUIDUtil;
@@ -45,7 +46,7 @@ public final class BossRewardSavedData extends SavedData {
 
     private final int schemaVersion;
     private final boolean writable;
-    private final Map<UUID, BossRewardOperation> operations;
+    private final NavigableMap<UUID, BossRewardOperation> operations;
 
     public BossRewardSavedData() {
         this(CURRENT_SCHEMA_VERSION, Map.of(), true);
@@ -54,7 +55,7 @@ public final class BossRewardSavedData extends SavedData {
     private BossRewardSavedData(
             int schemaVersion, Map<UUID, BossRewardOperation> operations, boolean writable) {
         this.schemaVersion = schemaVersion;
-        this.operations = new LinkedHashMap<>(operations);
+        this.operations = new TreeMap<>(operations);
         this.writable = writable;
     }
 
@@ -112,28 +113,15 @@ public final class BossRewardSavedData extends SavedData {
         if (limit < 1 || limit > MAX_OPERATION_BATCH_SIZE) {
             throw new IllegalArgumentException("Invalid boss reward operation batch size");
         }
-        PriorityQueue<Map.Entry<UUID, BossRewardOperation>> nearest =
-                new PriorityQueue<>(Map.Entry.<UUID, BossRewardOperation>comparingByKey().reversed());
-        int eligible = 0;
-        for (var entry : operations.entrySet()) {
-            if (afterExclusive != null && entry.getKey().compareTo(afterExclusive) <= 0) {
-                continue;
-            }
-            eligible++;
-            Map.Entry<UUID, BossRewardOperation> copy = Map.entry(entry.getKey(), entry.getValue());
-            if (nearest.size() < limit) {
-                nearest.add(copy);
-            } else if (entry.getKey().compareTo(nearest.peek().getKey()) < 0) {
-                nearest.poll();
-                nearest.add(copy);
-            }
-        }
-        List<Map.Entry<UUID, BossRewardOperation>> entries = nearest.stream()
-                .sorted(Map.Entry.comparingByKey())
+        NavigableMap<UUID, BossRewardOperation> tail = afterExclusive == null
+                ? operations : operations.tailMap(afterExclusive, false);
+        List<Map.Entry<UUID, BossRewardOperation>> entries = tail.entrySet().stream()
+                .limit(limit)
+                .map(entry -> Map.entry(entry.getKey(), entry.getValue()))
                 .toList();
         return new OperationBatch(entries,
                 entries.isEmpty() ? Optional.empty() : Optional.of(entries.getLast().getKey()),
-                eligible > entries.size());
+                !entries.isEmpty() && operations.higherKey(entries.getLast().getKey()) != null);
     }
 
     public List<Map.Entry<UUID, BossRewardOperation>> pendingOperations() {

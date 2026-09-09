@@ -1,0 +1,46 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_cinder_core": {
+      "conditions": {
+        "items": [
+          {
+            "items": "rovenfall:cinder_core"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_mirefang_gland": {
+      "conditions": {
+        "items": [
+          {
+            "items": "rovenfall:mirefang_gland"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "rovenfall:warden_challenge_sigil"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_cinder_core",
+      "has_the_recipe"
+    ],
+    [
+      "has_mirefang_gland",
+      "has_the_recipe"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "rovenfall:warden_challenge_sigil"
+    ]
+  }
+}

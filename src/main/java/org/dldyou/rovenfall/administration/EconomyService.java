@@ -141,6 +141,19 @@ public final class EconomyService {
                 timestampEpochMillis, transactionId, initialBalance, maximumBalance, Operation.BOSS_REWARD);
     }
 
+    public static TransactionResult awardQuestReward(
+            PlatformSavedData state,
+            UUID playerId,
+            long amount,
+            String reason,
+            long timestampEpochMillis,
+            UUID transactionId,
+            long initialBalance,
+            long maximumBalance) {
+        return mutate(state, AdministrationService.SYSTEM_ACTOR, true, playerId, amount, reason,
+                timestampEpochMillis, transactionId, initialBalance, maximumBalance, Operation.QUEST_REWARD);
+    }
+
     static TransactionStatus previewBossReward(
             PlatformSavedData state,
             UUID playerId,
@@ -256,7 +269,10 @@ public final class EconomyService {
             return denied(state, actorId, playerId, operation, TransactionStatus.INVALID_CONFIGURATION,
                     "invalid_configuration", timestampEpochMillis, transactionId, beforeBalance);
         }
-        if (!state.canCommitEconomyTransaction(transactionId, timestampEpochMillis)) {
+        boolean hasCapacity = operation == Operation.QUEST_REWARD
+                ? state.canCommitQuestRewardTransaction(transactionId, timestampEpochMillis)
+                : state.canCommitEconomyTransaction(transactionId, timestampEpochMillis);
+        if (!hasCapacity) {
             return denied(state, actorId, playerId, operation, TransactionStatus.TRANSACTION_LEDGER_FULL,
                     "transaction_ledger_full", timestampEpochMillis, transactionId, beforeBalance);
         }
@@ -428,6 +444,7 @@ public final class EconomyService {
         ADMIN_DEBIT(true, false, "economy_admin_debit", EconomyTransactionReceipt.Kind.ADMIN_DEBIT),
         AWARD(false, true, "economy_award", EconomyTransactionReceipt.Kind.AWARD),
         BOSS_REWARD(false, true, "boss_reward", EconomyTransactionReceipt.Kind.BOSS_REWARD),
+        QUEST_REWARD(false, true, "quest_reward", EconomyTransactionReceipt.Kind.QUEST_REWARD),
         DEBIT(false, false, "economy_debit", EconomyTransactionReceipt.Kind.DEBIT);
 
         private final boolean administratorOnly;

@@ -15,10 +15,14 @@ public final class ActivityXpAwardService {
     private static final Identifier EXPLORATION = Identifier.fromNamespaceAndPath("rovenfall", "exploration");
 
     public enum Status {
-        SUCCESS, INVALID_REQUEST, UNKNOWN_ACTIVITY, UNKNOWN_CAREER, READ_ONLY, DUPLICATE, COOLDOWN, RATE_LIMIT,
-        OVERFLOW, STATE_FULL
+        SUCCESS, INVALID_REQUEST, UNKNOWN_ACTIVITY, UNKNOWN_CAREER, READ_ONLY, DUPLICATE,
+        TRANSACTION_ID_CONFLICT, COOLDOWN, RATE_LIMIT, OVERFLOW, STATE_FULL
     }
     public record AwardResult(Status status, long totalXp, boolean committed) {}
+
+    private enum Persistence {
+        NONE, QUEST_ACTIVITY, QUEST_REWARD
+    }
 
     private ActivityXpAwardService() {}
 
@@ -27,6 +31,34 @@ public final class ActivityXpAwardService {
             Identifier activityId, long amount, long timestamp, UUID transactionId, String source) {
         return award(state, definitions, playerId, activityId, amount, timestamp, transactionId, source,
                 ActivityXpConfig.limits());
+    }
+
+    /** Applies a real server activity and atomically retains its quest recovery evidence. */
+    public static AwardResult awardObservedActivity(
+            RpgPlayerSavedData state,
+            RpgDefinitionSnapshot definitions,
+            UUID playerId,
+            Identifier activityId,
+            long amount,
+            long timestamp,
+            UUID transactionId,
+            String source) {
+        return award(state, definitions, playerId, activityId, amount, timestamp, transactionId, source,
+                ActivityXpConfig.limits(), Persistence.QUEST_ACTIVITY);
+    }
+
+    static AwardResult awardObservedActivity(
+            RpgPlayerSavedData state,
+            RpgDefinitionSnapshot definitions,
+            UUID playerId,
+            Identifier activityId,
+            long amount,
+            long timestamp,
+            UUID transactionId,
+            String source,
+            ActivityXpConfig.Limits limits) {
+        return award(state, definitions, playerId, activityId, amount, timestamp, transactionId, source,
+                limits, Persistence.QUEST_ACTIVITY);
     }
 
     public static AwardResult awardBossReward(
@@ -43,18 +75,53 @@ public final class ActivityXpAwardService {
                         Integer.MAX_VALUE, RpgPlayerState.MAX_PROVENANCE, 0L, 0L, Integer.MAX_VALUE));
     }
 
+    /** Applies captured quest reward XP without creating a new quest activity outcome. */
+    public static AwardResult awardQuestReward(
+            RpgPlayerSavedData state,
+            RpgDefinitionSnapshot definitions,
+            UUID playerId,
+            Identifier activityId,
+            long amount,
+            long timestamp,
+            UUID transactionId,
+            String source) {
+        return award(state, definitions, playerId, activityId, amount, timestamp, transactionId, source,
+                new ActivityXpConfig.Limits(
+                        Integer.MAX_VALUE, RpgPlayerState.MAX_PROVENANCE, 0L, 0L, Integer.MAX_VALUE),
+                Persistence.QUEST_REWARD);
+    }
+
     static AwardResult award(
             RpgPlayerSavedData state, RpgDefinitionSnapshot definitions, UUID playerId,
             Identifier activityId, long amount, long timestamp, UUID transactionId, String source,
             ActivityXpConfig.Limits limits) {
+        return award(state, definitions, playerId, activityId, amount, timestamp, transactionId, source,
+                limits, Persistence.NONE);
+    }
+
+    private static AwardResult award(
+            RpgPlayerSavedData state, RpgDefinitionSnapshot definitions, UUID playerId,
+            Identifier activityId, long amount, long timestamp, UUID transactionId, String source,
+            ActivityXpConfig.Limits limits, Persistence persistence) {
         if (state == null || definitions == null || playerId == null || playerId.equals(new UUID(0, 0))
                 || activityId == null || transactionId == null || transactionId.equals(new UUID(0, 0))
                 || source == null || source.isBlank() || source.length() > 160 || amount < 1 || timestamp < 0
-                || limits == null || limits.maxAward() < 1 || limits.maxWindowAwards() < 1
+                || limits == null || persistence == null || limits.maxAward() < 1 || limits.maxWindowAwards() < 1
                 || limits.maxWindowAwards() > RpgPlayerState.MAX_PROVENANCE
                 || limits.windowMillis() < 0 || limits.cooldownMillis() < 0
                 || limits.combatTargetXpCap() < 1) {
             return new AwardResult(Status.INVALID_REQUEST, 0, false);
+        }
+        RpgPlayerState current = state.state(playerId);
+        Optional<RpgPlayerSavedData.QuestRewardReceipt> retainedQuestReward =
+                persistence == Persistence.QUEST_REWARD
+                        ? state.questRewardReceipt(transactionId)
+                        : Optional.empty();
+        if (retainedQuestReward.isPresent()) {
+            boolean exact = retainedQuestReward.orElseThrow().matches(
+                    playerId, activityId, amount, timestamp, source);
+            return new AwardResult(exact ? Status.DUPLICATE : Status.TRANSACTION_ID_CONFLICT,
+                    current.activityXp().getOrDefault(activityId, 0L), false);
         }
         if (definitions.activity(activityId).isEmpty()) {
             return new AwardResult(Status.UNKNOWN_ACTIVITY, 0, false);
@@ -65,7 +132,21 @@ public final class ActivityXpAwardService {
         if (amount > limits.maxAward()) {
             return new AwardResult(Status.RATE_LIMIT, state.state(playerId).activityXp().getOrDefault(activityId, 0L), false);
         }
-        RpgPlayerState current = state.state(playerId);
+        Optional<RpgPlayerSavedData.QuestActivityEvidence> retainedQuestEvidence =
+                persistence == Persistence.QUEST_ACTIVITY
+                ? state.questActivityEvidence(transactionId)
+                : Optional.empty();
+        if (retainedQuestEvidence.isPresent()) {
+            RpgPlayerSavedData.QuestActivityEvidence retained = retainedQuestEvidence.orElseThrow();
+            RpgPlayerState.ProgressionProvenance provenance = retained.provenance();
+            boolean exact = retained.playerId().equals(playerId)
+                    && provenance.target().equals(activityId)
+                    && provenance.amount() == amount
+                    && provenance.timestamp() == timestamp
+                    && provenance.source().equals(source);
+            return new AwardResult(exact ? Status.DUPLICATE : Status.TRANSACTION_ID_CONFLICT,
+                    current.activityXp().getOrDefault(activityId, 0L), false);
+        }
         Optional<Identifier> activeCareer = current.activeCareer();
         Optional<CareerDefinition> activeCareerDefinition = activeCareer.flatMap(definitions::career);
         if (activeCareer.isPresent() && activeCareerDefinition.isEmpty()) {
@@ -77,13 +158,15 @@ public final class ActivityXpAwardService {
         if (current.careerProvenance().stream().anyMatch(entry ->
                 entry.transactionId().equals(transactionId)
                         || careerTransactionId.filter(entry.transactionId()::equals).isPresent())) {
-            return new AwardResult(Status.DUPLICATE,
+            return new AwardResult(persistence == Persistence.QUEST_REWARD
+                            ? Status.TRANSACTION_ID_CONFLICT : Status.DUPLICATE,
                     current.activityXp().getOrDefault(activityId, 0L), false);
         }
-        Optional<Identifier> discovery = activityId.equals(EXPLORATION)
+        boolean recordsDiscovery = persistence != Persistence.QUEST_REWARD;
+        Optional<Identifier> discovery = activityId.equals(EXPLORATION) && recordsDiscovery
                 ? explorationDiscovery(source)
                 : Optional.empty();
-        if (activityId.equals(EXPLORATION) && discovery.isEmpty()) {
+        if (activityId.equals(EXPLORATION) && recordsDiscovery && discovery.isEmpty()) {
             return new AwardResult(Status.INVALID_REQUEST, current.activityXp().getOrDefault(activityId, 0L), false);
         }
         if (discovery.filter(current.explorationDiscoveries()::contains).isPresent()) {
@@ -96,7 +179,8 @@ public final class ActivityXpAwardService {
         for (RpgPlayerState.ProgressionProvenance entry : current.provenance()) {
             if (entry.transactionId().equals(transactionId)
                     || careerTransactionId.filter(entry.transactionId()::equals).isPresent()) {
-                return new AwardResult(Status.DUPLICATE, total, false);
+                return new AwardResult(persistence == Persistence.QUEST_REWARD
+                        ? Status.TRANSACTION_ID_CONFLICT : Status.DUPLICATE, total, false);
             }
             if (entry.kind() != RpgPlayerState.ProgressionProvenance.Kind.ACTIVITY_XP) {
                 continue;
@@ -184,7 +268,15 @@ public final class ActivityXpAwardService {
         RpgPlayerState candidate = new RpgPlayerState(activityXp, careers, current.activeCareer(),
                 current.activeSkillSlots(), current.cooldowns(), discoveries, provenance, careerProvenance,
                 current.lastActiveSkillRequestId());
-        boolean committed = state.commit(playerId, candidate);
+        boolean committed = switch (persistence) {
+            case NONE -> state.commit(playerId, candidate);
+            case QUEST_ACTIVITY -> state.commitActivityOutcome(
+                    playerId, current, candidate,
+                    new RpgPlayerSavedData.QuestActivityEvidence(playerId, activityEvidence));
+            case QUEST_REWARD -> state.commitQuestRewardOutcome(
+                    playerId, current, candidate, new RpgPlayerSavedData.QuestRewardReceipt(
+                            transactionId, playerId, activityId, amount, timestamp, source));
+        };
         return new AwardResult(committed ? Status.SUCCESS : Status.STATE_FULL, committed ? updated : total, committed);
     }
 

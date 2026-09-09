@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.narration.NarratedElementType;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
@@ -17,13 +18,18 @@ import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.TooltipFlag;
+import net.neoforged.neoforge.client.network.ClientPacketDistributor;
 import org.lwjgl.glfw.GLFW;
 
 /** Card-based client view over the existing server-authoritative chest menu. */
 final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
     private final List<RovenfallMenuCardButton> cards = new ArrayList<>();
+    private final PlayerMenuNetwork.MenuKind kind;
     private RovenfallPlayerMenuLayout.Layout layout;
     private Button technicalButton;
+    private EditBox query;
+    private String queryValue = "";
+    private int searchHeaderSlot = -1;
     private boolean advanced;
     private int page;
     private int contentCount;
@@ -38,6 +44,7 @@ final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
         if (kind.isAdministration()) {
             throw new IllegalArgumentException("Administration menus use RovenfallAdministrationMenuScreen");
         }
+        this.kind = kind;
     }
 
     @Override
@@ -59,14 +66,25 @@ final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
     }
 
     private void rebuildCards(boolean resetPage) {
+        String previousQuery = query == null ? queryValue : query.getValue();
+        boolean previouslySearchable = searchHeaderSlot >= 0;
         setFocused(null);
         clearWidgets();
         cards.clear();
+        query = null;
 
         int menuSlots = menu.getRowCount() * 9;
         int toolbarStart = RovenfallPlayerMenuLayout.toolbarStart(menu.getRowCount());
         List<Integer> contentSlots = occupiedSlots(0, Math.min(toolbarStart, menuSlots));
         List<Integer> toolbarSlots = occupiedSlots(Math.min(toolbarStart, menuSlots), menuSlots);
+        searchHeaderSlot = contentSlots.stream()
+                .filter(slotId -> AdministrationFormMarker.hasSearch(menu.getSlot(slotId).getItem()))
+                .findFirst()
+                .orElse(-1);
+        if (!previouslySearchable || searchHeaderSlot < 0) {
+            previousQuery = "";
+        }
+        layout = RovenfallPlayerMenuLayout.fit(width, height, searchHeaderSlot >= 0);
         contentCount = contentSlots.size();
         if (resetPage) {
             page = 0;
@@ -81,6 +99,7 @@ final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
         for (int index = 0; index < toolbarSlots.size(); index++) {
             addCard(toolbarSlots.get(index), layout.toolbarButton(index, toolbarSlots.size()));
         }
+        addSearch(previousQuery);
         addTechnicalButton();
         if (pages > 1) {
             addPageButton(-1, layout.previousPageButton(), "gui.rovenfall.player.previous").active = page > 0;
@@ -90,6 +109,48 @@ final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
             setFocused(cards.getFirst());
             cards.getFirst().setFocused(true);
         }
+    }
+
+    private void addSearch(String previousQuery) {
+        if (searchHeaderSlot < 0) {
+            return;
+        }
+        queryValue = shorten(previousQuery);
+        var field = layout.searchField();
+        Component label = Component.translatable(kind == PlayerMenuNetwork.MenuKind.PORTAL
+                ? "gui.rovenfall.portal.search"
+                : "gui.rovenfall.claim.atlas.search");
+        query = addRenderableWidget(new EditBox(
+                font, field.x(), field.y(), field.width(), field.height(), label));
+        query.setBordered(false);
+        query.setTextColor(RovenfallUiTheme.TEXT_PRIMARY);
+        query.setTextColorUneditable(RovenfallUiTheme.TEXT_MUTED);
+        query.setMaxLength(ClaimAtlasView.MAX_QUERY_LENGTH);
+        query.setHint(label);
+        query.setValue(queryValue);
+        var submit = layout.searchButton();
+        addRenderableWidget(Button.builder(
+                        Component.translatable(kind == PlayerMenuNetwork.MenuKind.PORTAL
+                                ? "gui.rovenfall.portal.search.submit"
+                                : "gui.rovenfall.claim.atlas.search.submit"), ignored -> submitQuery())
+                .bounds(submit.x(), submit.y(), submit.width(), submit.height())
+                .build(RovenfallButton::new));
+    }
+
+    private void submitQuery() {
+        if (query == null) {
+            return;
+        }
+        queryValue = query.getValue();
+        ClientPacketDistributor.sendToServer(new PlayerMenuNetwork.AdminQuery(
+                menu.containerId, menu.getStateId(), queryValue));
+        afterKeyboardAction();
+    }
+
+    private static String shorten(String value) {
+        return value.length() <= ClaimAtlasView.MAX_QUERY_LENGTH
+                ? value
+                : value.substring(0, ClaimAtlasView.MAX_QUERY_LENGTH);
     }
 
     private List<Integer> occupiedSlots(int from, int to) {
@@ -168,6 +229,10 @@ final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
         if (layout.wide()) {
             RovenfallUiTheme.extractField(graphics,
                     layout.detail().x(), layout.detail().y(), layout.detail().width(), layout.detail().height(), false);
+        }
+        if (query != null) {
+            RovenfallUiTheme.extractField(
+                    graphics, query.getX(), query.getY(), query.getWidth(), query.getHeight(), query.isFocused());
         }
         graphics.text(font, title, layout.panel().x() + 9, layout.panel().y() + 8,
                 RovenfallUiTheme.TEXT_PRIMARY, false);
@@ -266,9 +331,38 @@ final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
+        int key = event.key();
+        if (key == GLFW.GLFW_KEY_ESCAPE) {
+            if (query != null && query.isFocused()) {
+                query.setFocused(false);
+                setFocused(cards.isEmpty() ? technicalButton : cards.getFirst());
+                return true;
+            }
+            if (activateIfPresent(backSlot())) {
+                return true;
+            }
+        }
+        if (query != null && !query.isFocused()
+                && (key == GLFW.GLFW_KEY_SLASH
+                || key == GLFW.GLFW_KEY_F && (event.modifiers() & GLFW.GLFW_MOD_CONTROL) != 0)) {
+            setFocused(query);
+            query.setFocused(true);
+            return true;
+        }
+        if (key == GLFW.GLFW_KEY_R && event.modifiers() == 0
+                && activateIfPresent(PlayerMenuKeyboardNavigation.refreshSlot(
+                kind == PlayerMenuNetwork.MenuKind.DASHBOARD))) {
+            return true;
+        }
         if (advanced && event.key() == GLFW.GLFW_KEY_C
-                && (event.modifiers() & GLFW.GLFW_MOD_CONTROL) != 0) {
+                && (event.modifiers() & GLFW.GLFW_MOD_CONTROL) != 0
+                && (query == null || !query.isFocused())) {
             copyAdvancedDetails();
+            return true;
+        }
+        if (query != null && query.isFocused()
+                && RovenfallAdministrationMenuScreen.isSubmitKey(event.key())) {
+            submitQuery();
             return true;
         }
         if (event.key() == GLFW.GLFW_KEY_PAGE_UP && changePage(-1)) {
@@ -278,6 +372,26 @@ final class RovenfallCustomPlayerMenuScreen extends ContainerScreen {
             return true;
         }
         return super.keyPressed(event);
+    }
+
+    private int backSlot() {
+        boolean dashboard = kind == PlayerMenuNetwork.MenuKind.DASHBOARD;
+        return PlayerMenuKeyboardNavigation.backSlot(
+                dashboard,
+                hasItem(PlayerMenuKeyboardNavigation.DASHBOARD_BACK_SLOT),
+                hasItem(PlayerMenuKeyboardNavigation.TOOLBAR_BACK_SLOT));
+    }
+
+    private boolean activateIfPresent(int slotId) {
+        if (!hasItem(slotId)) {
+            return false;
+        }
+        activate(slotId);
+        return true;
+    }
+
+    private boolean hasItem(int slotId) {
+        return slotId >= 0 && slotId < menu.getRowCount() * 9 && menu.getSlot(slotId).hasItem();
     }
 
     private void copyAdvancedDetails() {

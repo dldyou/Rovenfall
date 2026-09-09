@@ -1,0 +1,10 @@
+{
+  "translation_key": "activity_challenge.rovenfall.homestead",
+  "description_translation_key": "activity_challenge_description.rovenfall.homestead",
+  "activity_levels": {
+    "cooking": 1,
+    "building": 2,
+    "farming": 2
+  },
+  "currency_reward": 200
+}

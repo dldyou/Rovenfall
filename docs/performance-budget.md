@@ -29,6 +29,7 @@ reads. CI uploads the report and publishes it in the job summary.
 | Wilderness recovery | 8 snapshots / 64 evidence records | bounded stores |
 | Active-skill ingress | 20 requests per player per second | server rate limiter |
 | Active-skill packets | 128-byte activation / 64-byte state sync | codec tests |
+| Active-journey tracker sync | 384 bytes per snapshot; at most 16 players every 20 ticks | fixed-shape S2C codec, deduplication, rotating player batch |
 
 These exact bounds are merge gates. A changed bound requires a coordinated update to its production
 constant, deterministic assertion, generated report, and this document. Hot event and tick handlers

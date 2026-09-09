@@ -1,0 +1,32 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_material": {
+      "trigger": "minecraft:inventory_changed",
+      "conditions": {
+        "items": [
+          {
+            "items": "rovenfall:frostbound_shard"
+          }
+        ]
+      }
+    },
+    "has_recipe": {
+      "trigger": "minecraft:recipe_unlocked",
+      "conditions": {
+        "recipe": "rovenfall:rime_edge_book"
+      }
+    }
+  },
+  "requirements": [
+    [
+      "has_material",
+      "has_recipe"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "rovenfall:rime_edge_book"
+    ]
+  }
+}

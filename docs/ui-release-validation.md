@@ -1,5 +1,48 @@
 # Custom UI release validation
 
+## Issue #135 client observation (2026-09-09)
+
+Client code: `b2bfba2`, Minecraft 26.2 / NeoForge 26.2.0.66 / JDK 25,
+English, default GUI scale, vanilla resources, new local survival test world
+under the development run directory. This is a singleplayer observation, not
+multiplayer or full localization acceptance.
+
+- `J` opened the custom Journey board with the added expedition content.
+- Opening Camp Supplies and clicking **View prerequisite quest** opened
+  Provisions for the Road. The next prerequisite tooltip named First Steps.
+- `Esc` returned through the dashboard to gameplay.
+- [Native F2 capture](release-evidence/ui/issue-135/en_us-prerequisite-detail.png)
+  records the destination detail page and prerequisite tooltip at a maximized
+  window. The initial vanilla movement tutorial covers the upper-right header.
+- At the initial 854-pixel-wide framebuffer, the board showed three client
+  pages. Automated Page Down and wheel input did not visibly change the page.
+  This remains an observation to diagnose, not a proven game-code defect;
+  repeat after dismissing the tutorial and verify mouse, keyboard and wheel.
+- The toolbar shortens the prerequisite label to “View”; its tooltip provides
+  the full action and destination. Smaller-window label clarity, all locales,
+  narration and Rune Sentinel combat feel remain pending.
+
+Screenshot SHA-256:
+`7275305EE9E73EE3CA9748A5C1548E2A859043976B90719EC387DCA19203E48E`
+
+### Follow-up with tutorial disabled
+
+At framebuffer 854 × 480 and GUI scale 2, disabling the development client's
+initial tutorial exposed the header buttons. Mouse clicks navigated 1 → 2 → 3;
+Next was disabled on the final page. The [English final-page capture](release-evidence/ui/issue-135/en_us-journey-page-3.png)
+includes Relic Survey. No paging logic defect was established. Automated
+Page Down/Next key inputs remain unverified and should not be counted as a pass.
+
+The Korean client opened the new journeys through the same button navigation.
+The detail page exposed an incorrect activity unit: XP progress was labelled
+as a number of actions (`회`). The shared activity objective and HUD translations
+now explicitly name XP in English, Korean and Japanese. The
+[Korean corrected detail capture](release-evidence/ui/issue-135/ko_kr-expedition-xp.png)
+shows Exploration XP `0/100` alongside the unchanged shop-trade count `0/4회`.
+This correction was visually checked after F3+T resource reload. Japanese live
+rendering, narration, and Rune Sentinel combat feel remain pending. The test
+client was shut down normally after saving these captures.
+
 This is the release evidence contract for the code-drawn inventory, player menus, and operator
 console. Geometry and compatibility have automated checks; visual rendering, narration output,
 and interaction with third-party inventory mods still require a real client.
@@ -11,13 +54,13 @@ custom screen at these logical sizes:
 
 | Logical size | Expected layout |
 | --- | --- |
-| 320 × 240 | Minimum supported view; wrapped inventory tabs and one-column cards |
+| 320 × 240 | Minimum supported view; all seven inventory tabs and one-column cards |
 | 426 × 240 | Common 1280 × 720 high-GUI-scale view |
 | 640 × 360 | Medium view; two-column administration and player cards |
 | 854 × 480 | Common 16:9 GUI view |
 | 1920 × 1080 | Large unscaled/windowed view with bounded panel width |
 
-The tests require panels, cards, detail regions, paging, Technical information, toolbars, inventory
+The tests require panels, cards, detail regions, paging, Technical information, toolbars, all seven inventory
 tabs, and character summary to remain on screen without collisions. They also enforce at least
 3:1 adjacent contrast for the two-tone keyboard focus ring. The minimum supported logical size is
 320 × 240; smaller dimensions are outside Minecraft's normal GUI-scale floor and are not an RC
@@ -59,6 +102,131 @@ For a repeatable local multiplayer capture, start `runServer`, then launch the c
 `./gradlew runClient -PquickPlayMultiplayer=localhost`. The property is optional and leaves the
 normal client run unchanged.
 
+## Issue #110 journey-board release checks
+
+Issue #101 screenshots above are historical evidence and predate the Journey tab. Before an
+Issue #110 release, repeat the client matrix with the seventh tab visible and capture the Journey
+board in all three locales. Verify both the Journey tab and the Overview next-step card open the
+same board. The board must retain at most 28 logical quest entries per page; Previous and Next
+must remain reachable with mouse, `Tab`, arrow keys, `Page Up`, and `Page Down`.
+
+For the shipped first journey, verify the next step advances from Mining activity to a shop trade
+to a land purchase only after server-observed evidence. Refresh after a definition reload or a
+progress change and verify stale information is rejected rather than acted on. In normal details,
+verify quest and objective references are absent; enable **Technical information** and verify the
+focused reference is narrated. With Minecraft narration enabled, verify the Journey title, current
+page/card position, status, objective progress, next step, disabled/read-only state, and keyboard
+activation guidance are spoken without relying on color.
+
+## Issue #111 land-atlas release checks
+
+Before an Issue #111 release, repeat the standard client matrix for the Land Atlas in `ko_kr`,
+`en_us`, and `ja_jp`. Confirm that all labels use ordinary player language and that normal cards
+do not show raw identifiers or technical positions.
+
+| Case | Required state | Expected result |
+| --- | --- | --- |
+| Current and owned | Player stands on owned land and has at least two owned lands | Current Land and My Land open usable cards; owner management still follows the server permission check. |
+| Nearby privacy | Include owner, explicitly permitted, public, and restricted nearby land | Only land the viewer may see is listed; hidden land and owner names never appear in search results or narration. |
+| Available purchase | Include nearby protected and available land | Only eligible available land is listed; setting a waypoint works, but purchase is offered only after the player travels there. |
+| Search and paging | Seed more than one page of visible land | Search, Previous, Next, keyboard focus, and narration stay reachable; no result exceeds the bounded page size. |
+| Navigation | Set and clear a waypoint, then select another world | The locator-bar marker appears and clears in the current world; another-world navigation explains the limit without loading the remote area. |
+| Stale selection | Change land ownership, permission, or availability before activating a shown card | The server rejects the stale selection, refreshes the atlas, and performs no unintended mutation. |
+
+## Issue #117 portal-explorer release checks
+
+Before an Issue #117 release, repeat the standard client matrix for the Travel tab and Portal
+Explorer in `ko_kr`, `en_us`, and `ja_jp`. Normal portal cards must use player language and must
+not show raw IDs or coordinates; Technical information may show the focused diagnostic values.
+
+| Case | Required state | Expected result |
+| --- | --- | --- |
+| Search and paging | Seed more than one page of visible portals | An origin/destination world search, Previous/Next, keyboard focus, and narration remain usable; server results stay within the page and query bounds. |
+| Stale edit or delete | Change or delete a portal/protection after its card is shown | The activation refreshes the explorer and does not set navigation or travel. |
+| Wrong world | Select a portal whose entrance is in another world | The card explains the world limit; it creates no remote marker and loads no remote area. |
+| On-site range | Stand outside, then within 8 blocks of a portal entrance | Use is unavailable outside range and succeeds only after the server confirms the on-site position. |
+| Travel safeguards | Exercise cooldown, combat lock, and an unsafe destination | Each case remains in place with its localized reason; only a safe, permitted arrival teleports. |
+| Marker isolation | Set, replace, and clear portal navigation, then use the Land Atlas marker | The two menus update only their own marker and clearing either leaves no stale marker. |
+| Accessibility | Repeat at minimum, standard, and large GUI scales with narration enabled | Travel tab, search, cards, disabled states, confirmation, and keyboard guidance remain visible and narrated without color-only meaning. |
+| Locales | Repeat the standard Travel flow in all three shipped locales | `ko_kr`, `en_us`, and `ja_jp` show the same controls and placeholder values with no missing translation. |
+
+## Issue #118 daily and weekly request release checks
+
+Before an Issue #118 release, repeat the standard client matrix for **Journey → Requests** in
+`ko_kr`, `en_us`, and `ja_jp`. Korean labels must use `의뢰`, `일일 의뢰`, and `주간 의뢰`.
+Normal cards must not show template identifiers or UTC window numbers; Technical information may
+show the focused diagnostic values.
+
+| Case | Required state | Expected result |
+| --- | --- | --- |
+| Current roster | Open Requests with at least four daily and two weekly templates loaded | Exactly two daily cards and one weekly card are shown; reopening and Refresh do not reroll them. |
+| UTC boundary | Keep the screen open across daily 00:00 UTC and Monday 00:00 UTC | Refresh shows only the newly assigned current roster; old cards do not remain in the player view. |
+| Progress | Produce one matching server-observed outcome | The matching story journey and request update after Refresh without a completion button or client-authored count. |
+| Definition reload | Change or remove an assigned template before Refresh | The card shows a localized changed/unavailable state and does not invent a replacement for the persisted roster. |
+| Read-only state | Load the quest root in recovery read-only mode | Existing current progress stays visible, the read-only explanation is narrated, and no mutation is attempted. |
+| Empty roster | Load no eligible templates for one or both cadences | The screen remains usable, bounded, and narrated; it explains when new requests refresh. |
+| Technical information | Toggle ordinary and advanced details on the same focused card | Ordinary details contain no raw identifier/window value; advanced details reveal only the focused diagnostic reference. |
+| Accessibility | Repeat at minimum, standard, and large GUI scales with narration enabled | Requests toggle, three cards, status, objective, reward, refresh schedule, Back, and Refresh remain visible and understandable without color-only meaning. |
+| Locales | Repeat the flow in all three shipped locales | All controls and content names are translated with equal placeholders and natural player-facing terms. |
+
+## Issue #119 exploration-journal release checks
+
+Before an Issue #119 release, repeat the standard client matrix for **Journey → Exploration
+Journal** in `ko_kr`, `en_us`, and `ja_jp`. Korean labels must use natural terms such as `탐험 기록`,
+`발견`, and `길찾기`. A private undiscovered card must not expose a raw identifier, localization
+key, world, coordinate, radius, version, or reward in ordinary or advanced details.
+
+| Case | Required state | Expected result |
+| --- | --- | --- |
+| Server observation | Walk from outside to inside a configured area | The place is recorded once from the server position; reopening, re-entry, duplicate delivery, and restart do not grant the reward twice. |
+| Private placeholder | Load an undiscovered private place | Only an anonymous hidden-place card and bounded count appear; synchronized lore contains none of the private definition fields. |
+| Public destination | Load an undiscovered place with public guidance | Its localized public card is visible and may guide only while the player is in the same world. |
+| Region filter | Cycle All, Hub, and Wilderness | Counts, paging, focus, and narration update within the selected bounded region without revealing hidden fields. |
+| Definition reload | Change the position and increment the version while a card is open | The stale action refreshes. An old receipt cannot guide to the changed place until the server observes the player in its current area. |
+| Reward recovery | Interrupt between the discovery receipt and activity XP delivery | Bounded recovery applies the captured reward once and marks it delivered without using the changed definition. |
+| Wrong world | Select a public or discovered destination in another world | The card explains the world limit and sends no marker or remote-load request. |
+| Marker isolation | Set and clear exploration guidance, then use Land and Travel guidance | Each menu changes only its own marker UUID and leaves the other markers untouched. |
+| Accessibility | Repeat at minimum, standard, and large GUI scales with narration enabled | Filter, hidden status, discovery status, cards, detail, guidance, Clear, Back, and Refresh remain understandable without color-only meaning. |
+| Locales | Repeat the flow in all three shipped locales | All labels and landmark content have matching placeholders and natural player-facing translations. |
+
+## Issue #123 active-journey tracker release checks
+
+Before an Issue #123 release, repeat the standard client matrix with a story journey, a daily
+request, and a weekly request that each have an incomplete objective. Capture the upper-right
+tracker in `ko_kr`, `en_us`, and `ja_jp`; Korean labels must use natural player terms such as
+`여정`, `일일 의뢰`, and `주간 의뢰`.
+
+| Case | Required state | Expected result |
+| --- | --- | --- |
+| Pin, replace, clear | Open Journey with one eligible story and two eligible requests | A story detail can pin its journey; selecting either request replaces it; selecting the pinned item or **Stop showing** clears it without a command, UUID, or ID entry. |
+| Privacy boundary | Inspect normal tracker, narration, and client packet capture | The projection has no player UUID, quest/template/objective ID, request window, coordinate, reward, hidden activity data, or definition revision; its fixed snapshot is at most 384 bytes. |
+| Server authority | Change progress, complete the target, expire its request window, remove or version-change its definition, and try a stale menu click | Only the server validates the shown click and progress. The tracker refreshes or clears; stale input cannot retain changed guidance or create progress/rewards. |
+| Synchronization | Log in, pin/clear, make matching server-observed progress, reload definitions, and cross a daily/weekly rotation | The panel updates promptly. Repeated unchanged state does not visibly flicker or cause repeated narration; the periodic reconciliation remains a 20-tick, at-most-16-player batch. |
+| HUD visibility | Pin a journey at minimum, standard, and large GUI scales | The card is inside the upper-right screen edge at every scale. Opening any screen or pressing F1 hides it; returning to gameplay restores it when still active. |
+| HUD mode key | Rebind the Rovenfall HUD key, then cycle it during gameplay | Full → Quest only → Hidden wraps predictably; the action bar and narrator announce each mode, screens keep normal key behavior, and no quest state changes. |
+| Accessibility | Enable Minecraft narration and use mouse plus keyboard Journey controls | Pin/replace/clear controls and the displayed title, kind, state, objective progress, and refresh wording are intelligible without color-only meaning. Narration does not repeat every tick. |
+| Locales | Repeat story, daily, and weekly tracker flows in all three shipped locales | No key is missing, placeholders remain correct, and the same natural player-facing terms appear in each locale. |
+
+## Issue #129 challenge and admin-view release checks
+
+| Case | Required state | Expected result |
+| --- | --- | --- |
+| Challenge ordering | Open **Skills → Challenges** with claimable, in-progress, and completed goals | Claimable goals appear first; every card shows a localized state, reward, and all activity-level requirements without a raw definition ID. |
+| Challenge reward | Select a claimable goal, then repeat the click and try a stale open screen | The first server-validated click pays once and records the existing deterministic receipt and audit event; repeats cannot change the balance. |
+| Late-game catalog | Load the default data pack and inspect the four level 6–10 goals | All ten challenge definitions load, requirements are visible, and the final goal requires level 10 in all seven activities. |
+| Shareable admin view | Apply a query, page, and audit filters, copy **Current view link**, then reload it | Menu, applied query, page, and filters are restored; draft values and authentication tokens never appear in the URL. |
+
+## Issue #131 progression shortcut and operator-insight release checks
+
+| Case | Required state | Expected result |
+| --- | --- | --- |
+| Direct menu keys | Rebind and use Journey, Skills, and Land controls during gameplay | Each key opens the intended server-owned menu; another open screen keeps its own input, and rapid or invalid requests cannot bypass the existing server checks. |
+| Level-up tiers | Cross an ordinary level, a five-level boundary, and a final activity or career level | Gold level-up, cyan milestone, and purple mastery presentations are distinct; one award emits only the strongest applicable title, sound, and bounded particle burst. |
+| Player progression | Open a player detail with mixed activity XP at desktop and narrow widths | All seven localized tracks retain level, exact XP, and an accessible progress bar; the grid collapses to two and then one column without horizontal clipping. |
+| Challenge overview | Compare a player with in-progress, claimable, and claimed challenges | Total, claimable, and completed counts match server evaluation and retained reward receipts; opening the detail causes no mutation or audit entry. |
+| Missing definitions | Make the activity-level catalog unavailable in a recovery fixture | The console shows an explicit unavailable message and no guessed challenge counts. |
+| Locales and accessibility | Repeat the detail in Korean, English, and Japanese with keyboard and a screen reader | Track names and summary labels are localized; progress bars expose names and numeric values without relying on color. |
+
 ## Issue #101 release-candidate result
 
 The 2026-08-30 release-candidate run used the Gradle-managed Eclipse Temurin 25.0.4 daemon and
@@ -86,8 +254,8 @@ operator role, and commit SHA. Capture PNGs with descriptive names such as
 
 For every applicable row:
 
-1. Open the survival inventory and capture the six tabs, character summary, slots, and focused tab.
-2. Open Overview, Land, Skills, and Shops using keyboard only; page and activate one safe action.
+1. Open the survival inventory and capture all seven tabs, character summary, slots, and focused tab.
+2. Open Overview, Journey, Land, Skills, and Shops using keyboard only; page and activate one safe action.
 3. Confirm normal details contain no raw UUID, namespaced ID, or long hash. Focus Technical information,
    reveal them, then verify `Ctrl+C` copies the keyboard-focused card details.
 4. Open the operator console for each role. Verify role-visible domains, search, paging, selectors,

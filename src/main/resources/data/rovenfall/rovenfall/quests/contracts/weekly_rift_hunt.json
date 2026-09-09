@@ -1,0 +1,24 @@
+{
+  "translation_key": "quest.rovenfall.contract.weekly_rift_hunt",
+  "description_translation_key": "quest.rovenfall.contract.weekly_rift_hunt.description",
+  "version": 1,
+  "prerequisites": [],
+  "contract": {
+    "cadence": "weekly"
+  },
+  "objectives": [
+    {
+      "id": "rovenfall:contracts/weekly_rift_hunt/objective",
+      "kind": "boss_defeat",
+      "target": "rovenfall:rift_warden",
+      "required_count": 1
+    }
+  ],
+  "rewards": {
+    "currency": 120,
+    "activity_xp": {
+      "activity": "rovenfall:hunting",
+      "amount": 20
+    }
+  }
+}

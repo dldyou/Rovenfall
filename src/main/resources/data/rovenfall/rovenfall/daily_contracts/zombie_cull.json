@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.zombie_cull",
+  "description_translation_key": "daily_contract_description.rovenfall.zombie_cull",
+  "kind": "hunting_contribution",
+  "target": "minecraft:zombie",
+  "required_experience": 120,
+  "currency_reward": 120
+}

@@ -1,0 +1,13 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "minecraft:apple",
+    "minecraft:honey_bottle",
+    "minecraft:egg",
+    "minecraft:wheat"
+  ],
+  "result": {
+    "id": "rovenfall:orchard_pie",
+    "count": 2
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "translation_key": "quest.rovenfall.contract.daily_hunt_patrol",
+  "description_translation_key": "quest.rovenfall.contract.daily_hunt_patrol.description",
+  "version": 1,
+  "prerequisites": [],
+  "contract": {
+    "cadence": "daily"
+  },
+  "objectives": [
+    {
+      "id": "rovenfall:contracts/daily_hunt_patrol/objective",
+      "kind": "activity",
+      "target": "rovenfall:hunting",
+      "required_count": 10
+    }
+  ],
+  "rewards": {
+    "currency": 20,
+    "activity_xp": {
+      "activity": "rovenfall:hunting",
+      "amount": 4
+    }
+  }
+}

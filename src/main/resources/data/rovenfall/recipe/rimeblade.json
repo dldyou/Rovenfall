@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "equipment",
+  "pattern": [
+    " F ",
+    "FIF",
+    " S "
+  ],
+  "key": {
+    "F": "rovenfall:frostbound_shard",
+    "I": "#minecraft:iron_tool_materials",
+    "S": "minecraft:stick"
+  },
+  "result": {
+    "id": "rovenfall:rimeblade",
+    "components": {
+      "minecraft:enchantments": {
+        "rovenfall:rime_edge": 1
+      }
+    }
+  }
+}

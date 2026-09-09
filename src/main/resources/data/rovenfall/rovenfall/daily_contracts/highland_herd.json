@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.highland_herd",
+  "description_translation_key": "daily_contract_description.rovenfall.highland_herd",
+  "kind": "breeding_completion",
+  "target": "minecraft:goat",
+  "required_experience": 48,
+  "currency_reward": 140
+}

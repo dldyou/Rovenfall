@@ -315,11 +315,11 @@ public final class AdministrationService {
         return requestedRole;
     }
 
-    private static boolean isOwner(PlatformSavedData state, UUID actorId, boolean authorizationOverride) {
+    static boolean isOwner(PlatformSavedData state, UUID actorId, boolean authorizationOverride) {
         return authorizationOverride || state.roleOf(actorId).orElse(null) == AdminRole.OWNER;
     }
 
-    private static Optional<String> validReason(String reason) {
+    static Optional<String> validReason(String reason) {
         String normalized = reason == null ? "" : reason.strip();
         return normalized.isEmpty() || normalized.length() > MAX_REASON_LENGTH
                 ? Optional.empty()

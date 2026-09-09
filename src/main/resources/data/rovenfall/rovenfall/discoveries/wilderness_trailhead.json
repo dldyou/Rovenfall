@@ -1,0 +1,10 @@
+{
+  "title_translation_key": "discovery.rovenfall.wilderness_trailhead",
+  "description_translation_key": "discovery.rovenfall.wilderness_trailhead.description",
+  "version": 1,
+  "dimension": "rovenfall:wilderness",
+  "position": [0, 64, 0],
+  "radius": 48,
+  "public_guidance": true,
+  "activity_xp": 15
+}

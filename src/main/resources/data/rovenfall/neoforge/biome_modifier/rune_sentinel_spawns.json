@@ -1,0 +1,5 @@
+{
+  "type": "neoforge:add_spawns",
+  "biomes": "#rovenfall:deepstone_husk_spawns",
+  "spawners": [{ "type": "rovenfall:rune_sentinel", "weight": 4, "minCount": 1, "maxCount": 1 }]
+}

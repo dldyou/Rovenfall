@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "minecraft:milk_bucket",
+    "minecraft:wheat",
+    "minecraft:brown_mushroom"
+  ],
+  "result": {
+    "id": "rovenfall:highland_cheese",
+    "count": 2
+  }
+}

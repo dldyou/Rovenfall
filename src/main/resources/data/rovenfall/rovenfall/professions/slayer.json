@@ -1,0 +1,55 @@
+{
+  "translation_key": "career.rovenfall.slayer",
+  "tier": 3,
+  "parents": ["rovenfall:warrior"],
+  "activity_levels": {
+    "combat": 4,
+    "hunting": 5
+  },
+  "experience_tracks": ["combat", "hunting"],
+  "level_thresholds": [0, 1000, 3000, 6500, 12000, 20000],
+  "promotion_cost": 300,
+  "promotion_skill_points": 2,
+  "skill_reset_cost": 150,
+  "skills": {
+    "rovenfall:relentless_pursuit": {
+      "translation_key": "career_skill.rovenfall.relentless_pursuit",
+      "maximum_rank": 3,
+      "point_cost": 1,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:speed",
+        "duration_ticks": 240,
+        "amplifier": 1,
+        "cooldown_seconds": 45
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "hunting",
+          "magnitude_per_rank_bps": 1500
+        }
+      ]
+    },
+    "rovenfall:finishing_blow": {
+      "translation_key": "career_skill.rovenfall.finishing_blow",
+      "prerequisites": ["rovenfall:relentless_pursuit"],
+      "maximum_rank": 2,
+      "point_cost": 1,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:strength",
+        "duration_ticks": 160,
+        "amplifier": 1,
+        "cooldown_seconds": 60
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "combat",
+          "magnitude_per_rank_bps": 1500
+        }
+      ]
+    }
+  }
+}

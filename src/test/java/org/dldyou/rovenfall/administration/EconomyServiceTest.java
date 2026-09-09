@@ -3,15 +3,20 @@ package org.dldyou.rovenfall.administration;
 import static org.dldyou.rovenfall.PersistenceTestHarness.roundTrip;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.electronwill.nightconfig.core.CommentedConfig;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.IntStream;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
+import net.minecraft.resources.Identifier;
 import org.junit.jupiter.api.Test;
 
 final class EconomyServiceTest {
@@ -187,6 +192,200 @@ final class EconomyServiceTest {
                         state, playerId, 25, "boss reward rovenfall:test", 1_001,
                         transactionId, 10, 100));
         assertEquals(35, state.economyBalance(playerId).orElseThrow());
+    }
+
+    @Test
+    void questRewardReceiptSurvivesOrdinaryExpiryWithoutConsumingTheGeneralReserve() {
+        PlatformSavedData state = new PlatformSavedData();
+        UUID playerId = id(64);
+        UUID transactionId = id(504);
+
+        assertEquals(EconomyService.TransactionStatus.SUCCESS,
+                EconomyService.awardQuestReward(
+                        state, playerId, 25, "quest_reward:rovenfall:first_steps", 1_000,
+                        transactionId, 10, 100).status());
+        assertEquals(EconomyTransactionReceipt.Kind.QUEST_REWARD,
+                state.economyReceipt(transactionId).orElseThrow().kind());
+        assertTrue(PlatformSavedData.retainedReceiptIds(
+                Map.of(transactionId, state.economyReceipt(transactionId).orElseThrow()),
+                java.util.Set.of()).contains(transactionId));
+        PlatformSavedData restarted = roundTrip(PlatformSavedData.CODEC, state);
+        long afterRetention = 1_000 + PlatformSavedData.ECONOMY_TRANSACTION_RETENTION_MILLIS + 2;
+
+        assertThrows(IllegalStateException.class,
+                () -> restarted.trimReceiptCapacity(afterRetention, 0));
+        assertTrue(restarted.economyReceipt(transactionId).isPresent());
+        assertEquals(EconomyService.TransactionStatus.DUPLICATE_TRANSACTION,
+                EconomyService.awardQuestReward(
+                        restarted, playerId, 25, "quest_reward:rovenfall:first_steps", afterRetention,
+                        transactionId, 10, 100).status());
+        assertEquals(35, restarted.economyBalance(playerId).orElseThrow());
+        assertTrue(PlatformSavedData.MAX_QUEST_REWARD_RECEIPTS
+                < PlatformSavedData.MAX_ECONOMY_TRANSACTIONS);
+    }
+
+    @Test
+    void questCompletionMarkerPreventsAuditReinsertionAfterCapacityRotation() {
+        UUID playerId = id(65);
+        UUID transactionId = id(505);
+        Identifier action = Identifier.fromNamespaceAndPath("rovenfall", "quest_completed");
+        AuditEntry completion = new AuditEntry(
+                1_000, AdministrationService.SYSTEM_ACTOR, action,
+                playerId + "/rovenfall:first_steps", Optional.empty(), Optional.empty(),
+                "pending", "completed", "server_outcome", transactionId);
+        PlatformSavedData state = new PlatformSavedData();
+
+        assertTrue(state.recordQuestCompletionAudit(playerId, transactionId, 0, completion));
+        state = roundTrip(PlatformSavedData.CODEC, state);
+        assertEquals(EconomyTransactionReceipt.Kind.QUEST_COMPLETION,
+                state.economyReceipt(transactionId).orElseThrow().kind());
+        CompoundTag schemaFourteen = (CompoundTag) PlatformSavedData.CODEC
+                .encodeStart(NbtOps.INSTANCE, state).getOrThrow();
+        schemaFourteen.putInt("schema_version", 14);
+        state = PlatformSavedData.CODEC.parse(NbtOps.INSTANCE, schemaFourteen).getOrThrow();
+        assertEquals(PlatformSavedData.CURRENT_SCHEMA_VERSION, state.schemaVersion());
+        assertTrue(state.isWritable());
+        for (int index = 0; index < PlatformSavedData.MAX_AUDIT_ENTRIES; index++) {
+            state.commitAudit(new AuditEntry(
+                    2_000L + index, AdministrationService.SYSTEM_ACTOR, action,
+                    playerId + "/rovenfall:rotation_" + index, Optional.empty(), Optional.empty(),
+                    "pending", "completed", "server_outcome", new UUID(505, index + 1L)));
+        }
+        assertTrue(state.auditTransaction(transactionId).isEmpty());
+        assertEquals(PlatformSavedData.MAX_AUDIT_ENTRIES, state.auditCount());
+
+        assertTrue(state.recordQuestCompletionAudit(playerId, transactionId, 0, completion));
+        assertTrue(state.auditTransaction(transactionId).isEmpty());
+        assertEquals(PlatformSavedData.MAX_AUDIT_ENTRIES, state.auditCount());
+    }
+
+    @Test
+    void positiveQuestCompletionReusesThePermanentCurrencyReceipt() {
+        UUID playerId = id(66);
+        UUID completionTransaction = id(506);
+        UUID auditTransaction = id(507);
+        PlatformSavedData state = new PlatformSavedData();
+        assertEquals(EconomyService.TransactionStatus.SUCCESS,
+                EconomyService.awardQuestReward(
+                        state, playerId, 25, "quest_reward:rovenfall:first_steps",
+                        1_000, completionTransaction, 0, 100).status());
+        assertEquals(1, state.economyReceiptCount());
+        assertEquals(EconomyTransactionReceipt.Kind.QUEST_REWARD,
+                state.economyReceipt(completionTransaction).orElseThrow().kind());
+        AuditEntry completion = new AuditEntry(
+                1_000, AdministrationService.SYSTEM_ACTOR,
+                Identifier.fromNamespaceAndPath("rovenfall", "quest_completed"),
+                playerId + "/rovenfall:first_steps", Optional.empty(), Optional.empty(),
+                "pending", "completed", "server_outcome", auditTransaction);
+
+        assertTrue(state.recordQuestCompletionAudit(
+                playerId, completionTransaction, 25, completion));
+        assertEquals(1, state.economyReceiptCount());
+        assertEquals(25, state.economyBalance(playerId).orElseThrow());
+        assertEquals(EconomyTransactionReceipt.Kind.QUEST_COMPLETION,
+                state.economyReceipt(completionTransaction).orElseThrow().kind());
+        assertTrue(state.auditTransaction(auditTransaction).isPresent());
+    }
+
+    @Test
+    void restoreCarriesForwardPositiveQuestCompletionFinalization() {
+        UUID playerId = id(68);
+        UUID completionTransaction = id(512);
+        UUID auditTransaction = id(513);
+        PlatformSavedData snapshot = new PlatformSavedData();
+        assertEquals(EconomyService.TransactionStatus.SUCCESS,
+                EconomyService.awardQuestReward(
+                        snapshot, playerId, 25, "quest_reward:rovenfall:first_steps",
+                        1_000, completionTransaction, 0, 100).status());
+        PlatformSavedData current = roundTrip(PlatformSavedData.CODEC, snapshot);
+        AuditEntry completion = new AuditEntry(
+                1_000, AdministrationService.SYSTEM_ACTOR,
+                Identifier.fromNamespaceAndPath("rovenfall", "quest_completed"),
+                playerId + "/rovenfall:first_steps", Optional.empty(), Optional.empty(),
+                "pending", "completed", "server_outcome", auditTransaction);
+        assertTrue(current.recordQuestCompletionAudit(
+                playerId, completionTransaction, 25, completion));
+
+        PlatformSavedData.RestorePreparation preparation = current.prepareTransactionRestore(
+                snapshot, id(514), 2_000);
+
+        assertEquals(PlatformSavedData.RestorePreparationStatus.SUCCESS, preparation.status());
+        EconomyTransactionReceipt retained = preparation.evidence().orElseThrow()
+                .receipts().get(completionTransaction);
+        assertEquals(EconomyTransactionReceipt.Kind.QUEST_COMPLETION, retained.kind());
+        assertEquals(25, retained.amount());
+        assertTrue(retained.invalidatedByRestore().isEmpty());
+    }
+
+    @Test
+    void restoreRejectsCompletionFinalizationFromAnInvalidatedQuestReward() {
+        UUID playerId = id(69);
+        UUID completionTransaction = id(515);
+        PlatformSavedData cleanSnapshot = new PlatformSavedData();
+        assertEquals(EconomyService.TransactionStatus.SUCCESS,
+                EconomyService.awardQuestReward(
+                        cleanSnapshot, playerId, 25, "quest_reward:rovenfall:first_steps",
+                        1_000, completionTransaction, 0, 100).status());
+        PlatformSavedData current = roundTrip(PlatformSavedData.CODEC, cleanSnapshot);
+        CompoundTag encodedSnapshot = (CompoundTag) PlatformSavedData.CODEC
+                .encodeStart(NbtOps.INSTANCE, cleanSnapshot).getOrThrow();
+        ListTag receipts = encodedSnapshot.getListOrEmpty("economy_receipts");
+        CompoundTag reward = IntStream.range(0, receipts.size())
+                .mapToObj(receipts::getCompoundOrEmpty)
+                .filter(entry -> entry.getStringOr("id", "").equals(completionTransaction.toString()))
+                .findFirst().orElseThrow().getCompoundOrEmpty("receipt");
+        reward.putString("invalidated_by_restore", id(516).toString());
+        PlatformSavedData invalidatedSnapshot = PlatformSavedData.CODEC
+                .parse(NbtOps.INSTANCE, encodedSnapshot).getOrThrow();
+        AuditEntry completion = new AuditEntry(
+                1_000, AdministrationService.SYSTEM_ACTOR,
+                Identifier.fromNamespaceAndPath("rovenfall", "quest_completed"),
+                playerId + "/rovenfall:first_steps", Optional.empty(), Optional.empty(),
+                "pending", "completed", "server_outcome", id(517));
+        assertTrue(current.recordQuestCompletionAudit(
+                playerId, completionTransaction, 25, completion));
+
+        PlatformSavedData.RestorePreparation preparation = current.prepareTransactionRestore(
+                invalidatedSnapshot, id(518), 2_000);
+
+        assertEquals(PlatformSavedData.RestorePreparationStatus.EVIDENCE_CONFLICT, preparation.status());
+        assertTrue(preparation.evidence().isEmpty());
+    }
+
+    @Test
+    void restoreCarriesForwardAZeroAmountQuestCompletionMarker() {
+        PlatformSavedData snapshot = new PlatformSavedData();
+        PlatformSavedData current = roundTrip(PlatformSavedData.CODEC, snapshot);
+        UUID playerId = id(67);
+        UUID completionTransaction = id(508);
+        UUID auditTransaction = id(509);
+        AuditEntry completion = new AuditEntry(
+                1_000, AdministrationService.SYSTEM_ACTOR,
+                Identifier.fromNamespaceAndPath("rovenfall", "quest_completed"),
+                playerId + "/rovenfall:zero_reward", Optional.empty(), Optional.empty(),
+                "pending", "completed", "server_outcome", auditTransaction);
+        assertFalse(current.isDirty());
+        assertTrue(current.reserveQuestCompletionReceipt(
+                playerId, completionTransaction, 1_000));
+        assertTrue(current.isDirty());
+        PlatformSavedData.RestorePreparation reservedPreparation = current.prepareTransactionRestore(
+                snapshot, id(510), 2_000);
+        assertEquals(PlatformSavedData.RestorePreparationStatus.SUCCESS, reservedPreparation.status());
+        assertEquals(EconomyTransactionReceipt.Kind.QUEST_REWARD,
+                reservedPreparation.evidence().orElseThrow().receipts()
+                        .get(completionTransaction).kind());
+        assertTrue(current.recordQuestCompletionAudit(
+                playerId, completionTransaction, 0, completion));
+
+        PlatformSavedData.RestorePreparation preparation = current.prepareTransactionRestore(
+                snapshot, id(511), 2_001);
+
+        assertEquals(PlatformSavedData.RestorePreparationStatus.SUCCESS, preparation.status());
+        EconomyTransactionReceipt retained = preparation.evidence().orElseThrow()
+                .receipts().get(completionTransaction);
+        assertEquals(EconomyTransactionReceipt.Kind.QUEST_COMPLETION, retained.kind());
+        assertEquals(0, retained.amount());
+        assertTrue(retained.invalidatedByRestore().isEmpty());
     }
 
     @Test

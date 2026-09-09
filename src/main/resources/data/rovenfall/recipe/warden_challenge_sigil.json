@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "category": "misc",
+  "key": {
+    "C": "rovenfall:cinder_core",
+    "D": "minecraft:diamond",
+    "M": "rovenfall:mirefang_gland"
+  },
+  "pattern": [
+    " M ",
+    "CDC",
+    " M "
+  ],
+  "result": {
+    "id": "rovenfall:warden_challenge_sigil"
+  }
+}

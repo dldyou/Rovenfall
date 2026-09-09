@@ -18,4 +18,13 @@ final class PlayerMenuKeyboardNavigationTest {
         assertEquals(26, PlayerMenuKeyboardNavigation.nextOccupied(occupied, 4, -1));
         assertEquals(-1, PlayerMenuKeyboardNavigation.nextOccupied(new boolean[27], 0, 1));
     }
+
+    @Test
+    void escapeAndRefreshResolveTheVisibleMenuControls() {
+        assertEquals(18, PlayerMenuKeyboardNavigation.backSlot(true, true, false));
+        assertEquals(45, PlayerMenuKeyboardNavigation.backSlot(false, false, true));
+        assertEquals(-1, PlayerMenuKeyboardNavigation.backSlot(true, false, false));
+        assertEquals(26, PlayerMenuKeyboardNavigation.refreshSlot(true));
+        assertEquals(53, PlayerMenuKeyboardNavigation.refreshSlot(false));
+    }
 }
