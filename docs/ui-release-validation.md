@@ -1,5 +1,30 @@
 # Custom UI release validation
 
+## Issue #135 client observation (2026-09-09)
+
+Client code: `b2bfba2`, Minecraft 26.2 / NeoForge 26.2.0.66 / JDK 25,
+English, default GUI scale, vanilla resources, new local survival test world
+under the development run directory. This is a singleplayer observation, not
+multiplayer or full localization acceptance.
+
+- `J` opened the custom Journey board with the added expedition content.
+- Opening Camp Supplies and clicking **View prerequisite quest** opened
+  Provisions for the Road. The next prerequisite tooltip named First Steps.
+- `Esc` returned through the dashboard to gameplay.
+- [Native F2 capture](release-evidence/ui/issue-135/en_us-prerequisite-detail.png)
+  records the destination detail page and prerequisite tooltip at a maximized
+  window. The initial vanilla movement tutorial covers the upper-right header.
+- At the initial 854-pixel-wide framebuffer, the board showed three client
+  pages. Automated Page Down and wheel input did not visibly change the page.
+  This remains an observation to diagnose, not a proven game-code defect;
+  repeat after dismissing the tutorial and verify mouse, keyboard and wheel.
+- The toolbar shortens the prerequisite label to “View”; its tooltip provides
+  the full action and destination. Smaller-window label clarity, all locales,
+  narration and Rune Sentinel combat feel remain pending.
+
+Screenshot SHA-256:
+`7275305EE9E73EE3CA9748A5C1548E2A859043976B90719EC387DCA19203E48E`
+
 This is the release evidence contract for the code-drawn inventory, player menus, and operator
 console. Geometry and compatibility have automated checks; visual rendering, narration output,
 and interaction with third-party inventory mods still require a real client.
