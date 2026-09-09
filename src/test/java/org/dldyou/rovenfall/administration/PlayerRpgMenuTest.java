@@ -31,6 +31,16 @@ final class PlayerRpgMenuTest {
     }
 
     @Test
+    void claimableChallengesSortAheadOfProgressAndCompletedRows() {
+        assertTrue(PlayerRpgMenu.challengeStatusPriority(ActivityChallengeService.Status.CLAIMABLE)
+                < PlayerRpgMenu.challengeStatusPriority(ActivityChallengeService.Status.REQUIREMENTS_NOT_MET));
+        assertTrue(PlayerRpgMenu.challengeStatusPriority(ActivityChallengeService.Status.REQUIREMENTS_NOT_MET)
+                < PlayerRpgMenu.challengeStatusPriority(ActivityChallengeService.Status.ALREADY_CLAIMED));
+        assertTrue(PlayerRpgMenu.challengeStatusPriority(ActivityChallengeService.Status.ALREADY_CLAIMED)
+                < PlayerRpgMenu.challengeStatusPriority(ActivityChallengeService.Status.READ_ONLY_SCHEMA));
+    }
+
+    @Test
     void durablePartialOperationsAreShownAsRecoveryPending() {
         assertTrue(PlayerRpgMenu.resultKey(false, "RPG_FAILED").endsWith("pending"));
         assertTrue(PlayerRpgMenu.resultKey(false, "COMPLETION_FAILED").endsWith("pending"));

@@ -2,6 +2,7 @@ package org.dldyou.rovenfall.administration;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
+import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import java.time.Duration;
 import java.util.ArrayDeque;
@@ -21,19 +22,36 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.UUID;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.saveddata.SavedData;
 import net.minecraft.world.level.saveddata.SavedDataType;
 import org.dldyou.rovenfall.Rovenfall;
+import org.dldyou.rovenfall.activities.ActivityBlockKey;
+import org.dldyou.rovenfall.activities.ActivityEvidence;
+import org.dldyou.rovenfall.activities.ActivityKind;
+import org.dldyou.rovenfall.activities.ActivityProgress;
+import org.dldyou.rovenfall.activities.ActivityState;
+import org.dldyou.rovenfall.activities.ActivityTrack;
 import org.dldyou.rovenfall.claims.Claim;
 import org.dldyou.rovenfall.claims.ClaimKey;
 import org.dldyou.rovenfall.claims.ClaimMutationReceipt;
+import org.dldyou.rovenfall.careers.CareerPromotionReceipt;
+import org.dldyou.rovenfall.careers.CareerProgress;
+import org.dldyou.rovenfall.careers.CareerState;
+import org.dldyou.rovenfall.careers.PlayerCareerState;
+import org.dldyou.rovenfall.careers.SkillMutationReceipt;
 import org.dldyou.rovenfall.economy.ShopInstance;
+import org.dldyou.rovenfall.mobs.BossEncounter;
+import org.dldyou.rovenfall.mobs.BossState;
 import org.dldyou.rovenfall.world.ProtectedRegion;
 import org.dldyou.rovenfall.world.PortalDefinition;
 import org.dldyou.rovenfall.world.WorldTopology;
+import org.dldyou.rovenfall.worlds.Portal;
 
 public final class PlatformSavedData extends SavedData {
     private static final UUID ZERO_UUID = new UUID(0L, 0L);
@@ -50,6 +68,7 @@ public final class PlatformSavedData extends SavedData {
     static final int MAX_QUEST_REWARD_RECEIPTS = 50_000;
     static final int MAX_RATE_INDEX_PER_PLAYER = 10_000;
     static final long ECONOMY_TRANSACTION_RETENTION_MILLIS = Duration.ofDays(30).toMillis();
+    static final long ACTIVITY_EVIDENCE_RETENTION_MILLIS = Duration.ofDays(30).toMillis();
     private static final long NON_EXPIRING_RECEIPT = -1L;
     private static final Duration AUDIT_RETENTION = Duration.ofDays(30);
     private static final Comparator<AuditEntry> AUDIT_NEWEST_FIRST = Comparator
@@ -90,6 +109,26 @@ public final class PlatformSavedData extends SavedData {
             RpgAdminOperationEntry.CODEC.listOf(0, MAX_RPG_ADMIN_OPERATIONS)
                     .flatXmap(PlatformSavedData::rpgAdminOperationsFromEntries,
                             PlatformSavedData::rpgAdminOperationEntries);
+    private static final Codec<Map<Identifier, Portal>> PORTALS_CODEC = boundedPortalsCodec(Portal.MAX_PORTALS);
+    private static final MapCodec<ClaimPersistence> CLAIM_PERSISTENCE_CODEC = RecordCodecBuilder.mapCodec(
+            instance -> instance.group(
+                    CLAIMS_CODEC.optionalFieldOf("claims", Map.of()).forGetter(ClaimPersistence::claims),
+                    CLAIM_RECEIPTS_CODEC.optionalFieldOf("claim_receipts", Map.of())
+                            .forGetter(ClaimPersistence::claimReceipts)
+            ).apply(instance, ClaimPersistence::new));
+    private static final MapCodec<GameplayPersistence> GAMEPLAY_PERSISTENCE_CODEC = RecordCodecBuilder.mapCodec(
+            instance -> instance.group(
+                    PORTALS_CODEC.optionalFieldOf("portals", Map.of()).forGetter(GameplayPersistence::portals),
+                    ActivityState.CODEC.optionalFieldOf("activity_state", ActivityState.empty())
+                            .forGetter(GameplayPersistence::activityState),
+                    CareerState.CODEC.optionalFieldOf("career_state", CareerState.empty())
+                            .forGetter(GameplayPersistence::careerState),
+                    BossState.CODEC.optionalFieldOf("boss_state", BossState.empty())
+                            .forGetter(GameplayPersistence::bossState),
+                    TargetedReversalState.CODEC.optionalFieldOf(
+                                    "targeted_reversals", TargetedReversalState.empty())
+                            .forGetter(GameplayPersistence::targetedReversalState)
+            ).apply(instance, GameplayPersistence::new));
 
     public static final Codec<PlatformSavedData> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.optionalFieldOf("schema_version", 0).forGetter(data -> data.schemaVersion),
@@ -103,8 +142,7 @@ public final class PlatformSavedData extends SavedData {
             SHOP_INSTANCES_CODEC.optionalFieldOf("shop_instances", Map.of()).forGetter(data -> data.shopInstances),
             ECONOMY_RECEIPTS_CODEC.optionalFieldOf("economy_receipts", Map.of()).forGetter(data -> data.economyReceipts),
             ECONOMY_ALERTS_CODEC.optionalFieldOf("economy_alerts", List.of()).forGetter(data -> data.economyAlerts),
-            CLAIMS_CODEC.optionalFieldOf("claims", Map.of()).forGetter(data -> data.claims),
-            CLAIM_RECEIPTS_CODEC.optionalFieldOf("claim_receipts", Map.of()).forGetter(data -> data.claimReceipts),
+            CLAIM_PERSISTENCE_CODEC.forGetter(data -> new ClaimPersistence(data.claims, data.claimReceipts)),
             PROTECTED_REGIONS_CODEC.optionalFieldOf("protected_regions", Map.of())
                     .forGetter(data -> data.protectedRegions),
             PortalState.CODEC.optionalFieldOf("portal_state", PortalState.EMPTY).forGetter(PlatformSavedData::portalState),
@@ -113,7 +151,16 @@ public final class PlatformSavedData extends SavedData {
             RPG_SKILL_OPERATIONS_CODEC.optionalFieldOf("rpg_skill_operations", Map.of())
                     .forGetter(data -> data.rpgSkillOperations),
             RPG_ADMIN_OPERATIONS_CODEC.optionalFieldOf("rpg_admin_operations", Map.of())
-                    .forGetter(data -> data.rpgAdminOperations)
+                    .forGetter(data -> data.rpgAdminOperations),
+            GAMEPLAY_PERSISTENCE_CODEC.forGetter(data -> new GameplayPersistence(
+                    data.portals,
+                    new ActivityState(data.activityProgress, data.activityEvidence, data.placedActivityResources),
+                    new CareerState(data.playerCareers, data.careerPromotionReceipts, data.skillMutationReceipts),
+                    data.bossState,
+                    new TargetedReversalState(
+                            data.claimReversalEvidence,
+                            data.shopReversalEvidence,
+                            data.careerReversalEvidence)))
     ).apply(instance, PlatformSavedData::decode));
 
     public static final SavedDataType<PlatformSavedData> TYPE = new SavedDataType<>(
@@ -144,6 +191,17 @@ public final class PlatformSavedData extends SavedData {
     private final Map<UUID, RpgAdminOperation> rpgAdminOperations;
     private final Map<PortalDefinition.Endpoint, Identifier> portalOriginIndex = new HashMap<>();
     private final Map<ClaimKey, Set<Identifier>> protectedRegionIndex = new HashMap<>();
+    private final Map<Identifier, Portal> portals;
+    private final Map<UUID, ActivityProgress> activityProgress;
+    private final Map<UUID, ActivityEvidence> activityEvidence;
+    private final Set<ActivityBlockKey> placedActivityResources;
+    private final Map<UUID, PlayerCareerState> playerCareers;
+    private final Map<UUID, CareerPromotionReceipt> careerPromotionReceipts;
+    private final Map<UUID, SkillMutationReceipt> skillMutationReceipts;
+    private final Map<UUID, TargetedReversalState.ClaimEvidence> claimReversalEvidence;
+    private final Map<UUID, TargetedReversalState.ShopEvidence> shopReversalEvidence;
+    private final Map<UUID, TargetedReversalState.CareerEvidence> careerReversalEvidence;
+    private BossState bossState;
     private final Map<UUID, Integer> claimCountsByOwner = new HashMap<>();
     private final Map<UUID, NavigableSet<ClaimKey>> claimKeysByOwner = new HashMap<>();
     private final Map<UUID, ArrayDeque<Long>> recentTransactionsByPlayer = new HashMap<>();
@@ -163,10 +221,14 @@ public final class PlatformSavedData extends SavedData {
     private int questRewardReceiptCount;
     private final java.util.Set<Identifier> shopDependencyLocks = new HashSet<>();
     private final Map<UUID, Long> lastDeniedAuditByActor = new LinkedHashMap<>(16, 0.75F, true);
+    private final Map<ClaimKey, Set<Identifier>> portalIdsByProtectedChunk = new HashMap<>();
+    private final Map<UUID, List<ActivityEvidence>> activityEvidenceByPlayer = new HashMap<>();
 
     public PlatformSavedData() {
         this(CURRENT_SCHEMA_VERSION, Map.of(), List.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), List.of(),
-                Map.of(), Map.of(), Map.of(), PortalState.EMPTY, WildernessResetState.EMPTY, Map.of(), Map.of(), true);
+                Map.of(), Map.of(), Map.of(), PortalState.EMPTY, WildernessResetState.EMPTY, Map.of(), Map.of(),
+                Map.of(), ActivityState.empty(), CareerState.empty(), BossState.empty(),
+                TargetedReversalState.empty(), true);
     }
 
     private PlatformSavedData(
@@ -186,6 +248,11 @@ public final class PlatformSavedData extends SavedData {
             WildernessResetState wildernessResetState,
             Map<UUID, RpgSkillOperation> rpgSkillOperations,
             Map<UUID, RpgAdminOperation> rpgAdminOperations,
+            Map<Identifier, Portal> portals,
+            ActivityState activityState,
+            CareerState careerState,
+            BossState bossState,
+            TargetedReversalState targetedReversalState,
             boolean writable) {
         this.schemaVersion = schemaVersion;
         this.writable = writable;
@@ -216,9 +283,25 @@ public final class PlatformSavedData extends SavedData {
         this.rpgSkillOperations = new HashMap<>(rpgSkillOperations);
         this.rpgAdminOperations = new HashMap<>(rpgAdminOperations);
         trimCompletedRpgAdminOperations(0L);
+        this.portals = new HashMap<>(portals);
+        this.activityProgress = new HashMap<>(activityState.progressByPlayer());
+        this.activityEvidence = new HashMap<>(activityState.evidenceById());
+        this.placedActivityResources = new HashSet<>(activityState.placedResourceBlocks());
+        this.playerCareers = new HashMap<>(careerState.players());
+        this.careerPromotionReceipts = new HashMap<>(careerState.promotionReceipts());
+        this.skillMutationReceipts = new HashMap<>(careerState.skillReceipts());
+        TargetedReversalState reversalState = targetedReversalState == null
+                ? TargetedReversalState.empty()
+                : targetedReversalState;
+        this.claimReversalEvidence = new HashMap<>(reversalState.claims());
+        this.shopReversalEvidence = new HashMap<>(reversalState.shops());
+        this.careerReversalEvidence = new HashMap<>(reversalState.careers());
+        this.bossState = bossState == null ? BossState.empty() : bossState;
         rebuildRecentTransactionIndex();
         rebuildReceiptExpiryIndex();
         rebuildClaimOwnerIndex();
+        rebuildPortalProtectionIndex();
+        rebuildActivityEvidenceIndex();
         rebuildProtectedRegionIndex();
         rebuildPortalOriginIndex();
         rebuildPortalEvidenceIndexes();
@@ -234,13 +317,13 @@ public final class PlatformSavedData extends SavedData {
             Map<Identifier, ShopInstance> shopInstances,
             Map<UUID, EconomyTransactionReceipt> economyReceipts,
             List<EconomyAlert> economyAlerts,
-            Map<ClaimKey, Claim> claims,
-            Map<UUID, ClaimMutationReceipt> claimReceipts,
+            ClaimPersistence claimPersistence,
             Map<Identifier, ProtectedRegion> protectedRegions,
             PortalState portalState,
             WildernessResetState wildernessResetState,
             Map<UUID, RpgSkillOperation> rpgSkillOperations,
-            Map<UUID, RpgAdminOperation> rpgAdminOperations) {
+            Map<UUID, RpgAdminOperation> rpgAdminOperations,
+            GameplayPersistence gameplayPersistence) {
         var migration = PlatformDataMigrations.migrate(
                 schemaVersion,
                 adminRoles,
@@ -251,13 +334,18 @@ public final class PlatformSavedData extends SavedData {
                 shopInstances,
                 economyReceipts,
                 economyAlerts,
-                claims,
-                claimReceipts,
+                claimPersistence.claims(),
+                claimPersistence.claimReceipts(),
                 protectedRegions,
                 portalState,
                 wildernessResetState,
                 rpgSkillOperations,
                 rpgAdminOperations,
+                gameplayPersistence.portals(),
+                gameplayPersistence.activityState(),
+                gameplayPersistence.careerState(),
+                gameplayPersistence.bossState(),
+                gameplayPersistence.targetedReversalState(),
                 CURRENT_SCHEMA_VERSION
         );
         var state = migration.state();
@@ -284,6 +372,11 @@ public final class PlatformSavedData extends SavedData {
                 state.wildernessResetState(),
                 state.rpgSkillOperations(),
                 state.rpgAdminOperations(),
+                state.portals(),
+                state.activityState(),
+                state.careerState(),
+                state.bossState(),
+                state.targetedReversalState(),
                 migration.writable() && rpgSkillEvidenceValid && questRewardEvidenceValid
         );
     }
@@ -391,6 +484,90 @@ public final class PlatformSavedData extends SavedData {
 
     public int shopInstanceCount() {
         return shopInstances.size();
+    }
+
+    public Optional<Portal> portal(Identifier portalId) {
+        return Optional.ofNullable(portals.get(portalId));
+    }
+
+    public int portalCount() {
+        return portals.size();
+    }
+
+    public Set<Identifier> portalIds() {
+        return Set.copyOf(portals.keySet());
+    }
+
+    public boolean isPortalProtected(ResourceKey<Level> dimension, BlockPos position) {
+        if (dimension == null || position == null) {
+            return true;
+        }
+        Set<Identifier> candidates = portalIdsByProtectedChunk.get(ClaimKey.at(dimension, position));
+        if (candidates == null) {
+            return false;
+        }
+        return candidates.stream()
+                .map(portals::get)
+                .anyMatch(portal -> portal != null && portal.protects(dimension, position));
+    }
+
+    public boolean isPortalProtected(ClaimKey key) {
+        if (key == null) {
+            return true;
+        }
+        Set<Identifier> candidates = portalIdsByProtectedChunk.get(key);
+        if (candidates == null) {
+            return false;
+        }
+        return candidates.stream()
+                .map(portals::get)
+                .anyMatch(portal -> portal != null && portalProtectsChunk(portal, key));
+    }
+
+    public BossState bossState() {
+        return bossState;
+    }
+
+    public Optional<BossEncounter> bossEncounter() {
+        return bossState.encounter();
+    }
+
+    public boolean isBossArenaProtected(ResourceKey<Level> dimension, BlockPos position) {
+        return dimension == null || position == null
+                || bossState.encounter().map(encounter -> encounter.protects(dimension, position)).orElse(false);
+    }
+
+    public boolean isBossArenaProtected(ClaimKey key) {
+        if (key == null) {
+            return true;
+        }
+        return bossState.encounter()
+                .filter(encounter -> encounter.dimension().equals(key.dimension()))
+                .map(encounter -> circleProtectsChunk(encounter.origin(), encounter.radius(), key))
+                .orElse(false);
+    }
+
+    public boolean isAdministratorProtected(ResourceKey<Level> dimension, BlockPos position) {
+        return isPortalProtected(dimension, position) || isBossArenaProtected(dimension, position);
+    }
+
+    public boolean isAdministratorProtected(ClaimKey key) {
+        return isPortalProtected(key) || isBossArenaProtected(key);
+    }
+
+    private static boolean portalProtectsChunk(Portal portal, ClaimKey key) {
+        return circleProtectsChunk(portal.origin(), portal.protectionRadius(), key);
+    }
+
+    private static boolean circleProtectsChunk(BlockPos origin, int protectionRadius, ClaimKey key) {
+        long minimumX = (long) key.chunkX() << 4;
+        long minimumZ = (long) key.chunkZ() << 4;
+        long nearestX = Math.clamp((long) origin.getX(), minimumX, minimumX + 15L);
+        long nearestZ = Math.clamp((long) origin.getZ(), minimumZ, minimumZ + 15L);
+        long distanceX = nearestX - origin.getX();
+        long distanceZ = nearestZ - origin.getZ();
+        long radius = protectionRadius;
+        return distanceX * distanceX + distanceZ * distanceZ <= radius * radius;
     }
 
     public Optional<Claim> claim(ClaimKey key) {
@@ -620,6 +797,30 @@ public final class PlatformSavedData extends SavedData {
         return Map.copyOf(economyBalances);
     }
 
+    Map<UUID, AdminRole> adminRolesView() {
+        return Map.copyOf(adminRoles);
+    }
+
+    Map<UUID, PlayerRecord> playerRecordsView() {
+        return Map.copyOf(playerRecords);
+    }
+
+    Map<ClaimKey, Claim> claimsView() {
+        return Map.copyOf(claims);
+    }
+
+    Map<UUID, ActivityProgress> activityProgressView() {
+        return Map.copyOf(activityProgress);
+    }
+
+    Map<UUID, PlayerCareerState> playerCareersView() {
+        return Map.copyOf(playerCareers);
+    }
+
+    List<AuditEntry> auditEntriesView() {
+        return List.copyOf(auditEntries);
+    }
+
     Map<Identifier, ShopInstance> shopInstancesView() {
         return Map.copyOf(shopInstances);
     }
@@ -676,10 +877,6 @@ public final class PlatformSavedData extends SavedData {
         return List.copyOf(result);
     }
 
-    List<AuditEntry> auditEntriesView() {
-        return List.copyOf(auditEntries);
-    }
-
     int pendingRecoveryOperationCount() {
         int pending = wildernessResetState.activeOperation().isPresent() ? 1 : 0;
         pending += (int) rpgSkillOperations.values().stream()
@@ -689,6 +886,18 @@ public final class PlatformSavedData extends SavedData {
                 .filter(operation -> operation.phase() == RpgAdminOperation.Phase.PENDING)
                 .count();
         return pending;
+    }
+
+    Optional<TargetedReversalState.ClaimEvidence> claimReversalEvidence(UUID transactionId) {
+        return Optional.ofNullable(claimReversalEvidence.get(transactionId));
+    }
+
+    Optional<TargetedReversalState.ShopEvidence> shopReversalEvidence(UUID transactionId) {
+        return Optional.ofNullable(shopReversalEvidence.get(transactionId));
+    }
+
+    Optional<TargetedReversalState.CareerEvidence> careerReversalEvidence(UUID transactionId) {
+        return Optional.ofNullable(careerReversalEvidence.get(transactionId));
     }
 
     int recentTransactionCount(UUID playerId, long timestampEpochMillis, long windowMillis) {
@@ -704,6 +913,583 @@ public final class PlatformSavedData extends SavedData {
             }
         }
         return count;
+    }
+
+    public ActivityProgress activityProgress(UUID playerId) {
+        return activityProgress.getOrDefault(playerId, ActivityProgress.empty());
+    }
+
+    public long activityExperience(UUID playerId, ActivityTrack track) {
+        return activityProgress(playerId).experience(track);
+    }
+
+    public Optional<ActivityEvidence> activityEvidence(UUID evidenceId) {
+        return Optional.ofNullable(activityEvidence.get(evidenceId));
+    }
+
+    Optional<ActivityEvidence> retainedActivityEvidence(UUID evidenceId, long timestampEpochMillis) {
+        ActivityEvidence evidence = activityEvidence.get(evidenceId);
+        return evidence != null
+                && evidence.observedAtEpochMillis() >= cutoff(
+                        timestampEpochMillis, ACTIVITY_EVIDENCE_RETENTION_MILLIS)
+                ? Optional.of(evidence)
+                : Optional.empty();
+    }
+
+    public boolean hasActivityDiscovery(UUID playerId, String discoveryKey) {
+        return activityProgress(playerId).hasDiscovery(discoveryKey);
+    }
+
+    public int activityEvidenceCount() {
+        return activityEvidence.size();
+    }
+
+    public boolean isActivityResourcePlayerPlaced(ResourceKey<Level> dimension, BlockPos position) {
+        return dimension != null && position != null
+                && placedActivityResources.contains(new ActivityBlockKey(dimension, position));
+    }
+
+    public int placedActivityResourceCount() {
+        return placedActivityResources.size();
+    }
+
+    public PlayerCareerState playerCareerState(UUID playerId) {
+        return playerCareers.getOrDefault(playerId, PlayerCareerState.empty());
+    }
+
+    public Optional<Identifier> activeCareer(UUID playerId) {
+        return playerCareerState(playerId).activeCareer();
+    }
+
+    public Optional<CareerPromotionReceipt> careerPromotionReceipt(UUID transactionId) {
+        return Optional.ofNullable(careerPromotionReceipts.get(transactionId));
+    }
+
+    public Optional<SkillMutationReceipt> skillMutationReceipt(UUID transactionId) {
+        return Optional.ofNullable(skillMutationReceipts.get(transactionId));
+    }
+
+    boolean canCommitCareerPromotionTransaction(
+            UUID playerId, UUID transactionId, long timestampEpochMillis) {
+        if (playerId == null || transactionId == null
+                || careerPromotionReceipts.containsKey(transactionId)
+                || !canCommitReceiptTransaction(transactionId, timestampEpochMillis)
+                || !playerCareers.containsKey(playerId) && playerCareers.size() >= CareerState.MAX_PLAYERS) {
+            return false;
+        }
+        return careerPromotionReceipts.size() < CareerState.MAX_RECEIPTS
+                || careerPromotionReceipts.keySet().stream()
+                        .anyMatch(id -> !hasTransaction(id, timestampEpochMillis));
+    }
+
+    void commitCareerPromotion(
+            UUID playerId,
+            long balance,
+            boolean updateBalance,
+            PlayerCareerState updatedCareerState,
+            UUID transactionId,
+            long timestampEpochMillis,
+            EconomyTransactionReceipt economyReceipt,
+            CareerPromotionReceipt careerReceipt,
+            List<EconomyAlert> alerts,
+            AuditEntry auditEntry) {
+        validateEvidence(playerId, transactionId, timestampEpochMillis, economyReceipt, alerts);
+        if (updatedCareerState == null || careerReceipt == null || auditEntry == null
+                || economyReceipt.kind() != EconomyTransactionReceipt.Kind.CAREER_PROMOTION
+                || !careerReceipt.transactionId().equals(transactionId)
+                || careerReceipt.timestampEpochMillis() != timestampEpochMillis
+                || !careerReceipt.playerId().equals(playerId)
+                || careerReceipt.promotionCost() != economyReceipt.amount()
+                || !updatedCareerState.activeCareer().equals(Optional.of(careerReceipt.careerId()))
+                || !canCommitCareerPromotionTransaction(playerId, transactionId, timestampEpochMillis)) {
+            throw new IllegalStateException("Career promotion cannot be committed");
+        }
+        Optional<PlayerCareerState> beforeCareerState = Optional.ofNullable(playerCareers.get(playerId));
+        PlayerCareerState currentCareerState = playerCareerState(playerId);
+        PlayerCareerState expectedCareerState = currentCareerState.promote(
+                careerReceipt.careerId(),
+                careerReceipt.resetCareers(),
+                careerReceipt.promotionSkillPoints());
+        if (!expectedCareerState.equals(updatedCareerState)) {
+            throw new IllegalStateException("Career promotion state does not match its receipt");
+        }
+        Optional<Long> balanceBefore = updateBalance
+                ? Optional.ofNullable(economyBalances.get(playerId))
+                : Optional.empty();
+        if (updateBalance && balanceBefore.isEmpty()) {
+            throw new IllegalStateException("Career promotion balance evidence is missing");
+        }
+        prepareLedgerForCommit(timestampEpochMillis);
+        retainTargetedReversalEvidence();
+        careerPromotionReceipts.keySet().retainAll(economyTransactions.keySet());
+        skillMutationReceipts.keySet().retainAll(economyTransactions.keySet());
+        if (updateBalance) {
+            economyBalances.put(playerId, balance);
+        }
+        playerCareers.put(playerId, updatedCareerState);
+        economyTransactions.put(transactionId, timestampEpochMillis);
+        commitReceiptEvidence(transactionId, economyReceipt, alerts);
+        careerPromotionReceipts.put(transactionId, careerReceipt);
+        careerReversalEvidence.put(transactionId, new TargetedReversalState.CareerEvidence(
+                timestampEpochMillis,
+                transactionId,
+                playerId,
+                TargetedReversalState.Domain.CAREER,
+                playerId,
+                beforeCareerState,
+                Optional.of(updatedCareerState),
+                balanceBefore,
+                updateBalance ? Optional.of(balance) : Optional.empty(),
+                Optional.empty()));
+        commitAudit(auditEntry);
+    }
+
+    boolean canCommitSkillMutationTransaction(UUID transactionId, long timestampEpochMillis) {
+        if (transactionId == null || skillMutationReceipts.containsKey(transactionId)
+                || !canCommitReceiptTransaction(transactionId, timestampEpochMillis)) {
+            return false;
+        }
+        return skillMutationReceipts.size() < CareerState.MAX_RECEIPTS
+                || skillMutationReceipts.keySet().stream()
+                        .anyMatch(id -> !hasTransaction(id, timestampEpochMillis));
+    }
+
+    void commitSkillMutation(
+            UUID playerId,
+            long balance,
+            boolean updateBalance,
+            PlayerCareerState updatedCareerState,
+            UUID transactionId,
+            long timestampEpochMillis,
+            EconomyTransactionReceipt economyReceipt,
+            SkillMutationReceipt skillReceipt,
+            List<EconomyAlert> alerts,
+            AuditEntry auditEntry) {
+        validateEvidence(playerId, transactionId, timestampEpochMillis, economyReceipt, alerts);
+        EconomyTransactionReceipt.Kind expectedKind = skillReceipt != null
+                && skillReceipt.operation() == SkillMutationReceipt.Operation.UNLOCK
+                ? EconomyTransactionReceipt.Kind.SKILL_UNLOCK
+                : EconomyTransactionReceipt.Kind.SKILL_RESET;
+        if (updatedCareerState == null || skillReceipt == null || auditEntry == null
+                || economyReceipt.kind() != expectedKind
+                || !skillReceipt.transactionId().equals(transactionId)
+                || skillReceipt.timestampEpochMillis() != timestampEpochMillis
+                || !skillReceipt.playerId().equals(playerId)
+                || skillReceipt.currencyCost() != economyReceipt.amount()
+                || updateBalance != (skillReceipt.currencyCost() > 0)
+                || !canCommitSkillMutationTransaction(transactionId, timestampEpochMillis)) {
+            throw new IllegalStateException("Career skill mutation cannot be committed");
+        }
+        long currentBalance = economyBalance(playerId).orElse(0L);
+        if (skillReceipt.currencyCost() > currentBalance
+                || balance != currentBalance - skillReceipt.currencyCost()) {
+            throw new IllegalStateException("Career skill mutation balance does not match its receipt");
+        }
+        Optional<PlayerCareerState> beforeCareerState = Optional.ofNullable(playerCareers.get(playerId));
+        PlayerCareerState current = playerCareerState(playerId);
+        if (!current.learnedCareers().contains(skillReceipt.careerId())) {
+            throw new IllegalStateException("Career skill mutation references an unlearned career");
+        }
+        CareerProgress before = current.progress(skillReceipt.careerId());
+        if (before.spentSkillPoints() != skillReceipt.spentPointsBefore()) {
+            throw new IllegalStateException("Career skill mutation point evidence is stale");
+        }
+        PlayerCareerState expected;
+        if (skillReceipt.operation() == SkillMutationReceipt.Operation.UNLOCK) {
+            Identifier skillId = skillReceipt.skillId().orElseThrow();
+            int pointCost = skillReceipt.spentPointsAfter() - skillReceipt.spentPointsBefore();
+            if (skillReceipt.currencyCost() != 0
+                    || skillReceipt.rankAfter() != skillReceipt.rankBefore() + 1
+                    || before.skillRank(skillId) != skillReceipt.rankBefore() || pointCost < 1) {
+                throw new IllegalStateException("Career skill unlock evidence is stale");
+            }
+            expected = current.unlockSkill(skillReceipt.careerId(), skillId, pointCost);
+            CareerProgress expectedProgress = expected.progress(skillReceipt.careerId());
+            if (expectedProgress.skillRank(skillId) != skillReceipt.rankAfter()
+                    || expectedProgress.spentSkillPoints() != skillReceipt.spentPointsAfter()) {
+                throw new IllegalStateException("Career skill unlock evidence does not match its state");
+            }
+        } else {
+            if (skillReceipt.skillId().isPresent() || skillReceipt.rankBefore() != 0
+                    || skillReceipt.rankAfter() != 0 || skillReceipt.spentPointsAfter() != 0) {
+                throw new IllegalStateException("Career skill reset evidence is invalid");
+            }
+            expected = current.resetSkills(skillReceipt.careerId());
+            if (expected.progress(skillReceipt.careerId()).spentSkillPoints()
+                    != skillReceipt.spentPointsAfter()) {
+                throw new IllegalStateException("Career skill reset evidence does not match its state");
+            }
+        }
+        if (!expected.equals(updatedCareerState)) {
+            throw new IllegalStateException("Career skill mutation state does not match its receipt");
+        }
+        Optional<Long> balanceBefore = updateBalance
+                ? Optional.ofNullable(economyBalances.get(playerId))
+                : Optional.empty();
+        if (updateBalance && balanceBefore.isEmpty()) {
+            throw new IllegalStateException("Career skill balance evidence is missing");
+        }
+        prepareLedgerForCommit(timestampEpochMillis);
+        retainTargetedReversalEvidence();
+        careerPromotionReceipts.keySet().retainAll(economyTransactions.keySet());
+        skillMutationReceipts.keySet().retainAll(economyTransactions.keySet());
+        if (updateBalance) {
+            economyBalances.put(playerId, balance);
+        }
+        playerCareers.put(playerId, updatedCareerState);
+        economyTransactions.put(transactionId, timestampEpochMillis);
+        commitReceiptEvidence(transactionId, economyReceipt, alerts);
+        skillMutationReceipts.put(transactionId, skillReceipt);
+        careerReversalEvidence.put(transactionId, new TargetedReversalState.CareerEvidence(
+                timestampEpochMillis,
+                transactionId,
+                playerId,
+                TargetedReversalState.Domain.SKILL,
+                playerId,
+                beforeCareerState,
+                Optional.of(updatedCareerState),
+                balanceBefore,
+                updateBalance ? Optional.of(balance) : Optional.empty(),
+                Optional.empty()));
+        commitAudit(auditEntry);
+    }
+
+    void commitActiveSkillSlot(
+            UUID playerId,
+            int slot,
+            Optional<Identifier> skillId,
+            PlayerCareerState updatedCareerState,
+            AuditEntry auditEntry) {
+        if (!writable || playerId == null || skillId == null || updatedCareerState == null || auditEntry == null
+                || slot < 1 || slot > org.dldyou.rovenfall.careers.ActiveSkillState.SLOT_COUNT
+                || auditEntry.timestampEpochMillis() < 0
+                || !auditEntry.actorId().equals(playerId)
+                || !playerCareers.containsKey(playerId)) {
+            throw new IllegalStateException("Active skill slot mutation cannot be committed");
+        }
+        PlayerCareerState current = playerCareerState(playerId);
+        PlayerCareerState expected = skillId.isPresent()
+                ? current.equipActiveSkill(slot, skillId.orElseThrow())
+                : current.clearActiveSkillSlot(slot);
+        if (!expected.equals(updatedCareerState)) {
+            throw new IllegalStateException("Active skill slot state does not match its mutation");
+        }
+        playerCareers.put(playerId, updatedCareerState);
+        commitAudit(auditEntry);
+    }
+
+    void commitActiveSkillUse(
+            UUID playerId,
+            Identifier skillId,
+            long usedAtEpochMillis,
+            long readyAtEpochMillis,
+            PlayerCareerState updatedCareerState,
+            AuditEntry auditEntry) {
+        if (!writable || playerId == null || skillId == null || updatedCareerState == null || auditEntry == null
+                || usedAtEpochMillis < 0 || readyAtEpochMillis <= usedAtEpochMillis
+                || auditEntry.timestampEpochMillis() != usedAtEpochMillis
+                || !auditEntry.actorId().equals(playerId)
+                || !playerCareers.containsKey(playerId)) {
+            throw new IllegalStateException("Active skill use cannot be committed");
+        }
+        PlayerCareerState expected = playerCareerState(playerId)
+                .recordActiveSkillUse(skillId, usedAtEpochMillis, readyAtEpochMillis);
+        if (!expected.equals(updatedCareerState)) {
+            throw new IllegalStateException("Active skill cooldown state does not match its use");
+        }
+        playerCareers.put(playerId, updatedCareerState);
+        commitAudit(auditEntry);
+    }
+
+    boolean canCommitBossStart(UUID transactionId, long timestampEpochMillis) {
+        return transactionId != null && canCommitTransaction(transactionId, timestampEpochMillis);
+    }
+
+    void commitBossStart(
+            BossState updatedBossState,
+            UUID transactionId,
+            long timestampEpochMillis,
+            AuditEntry auditEntry) {
+        BossEncounter encounter = updatedBossState == null
+                ? null
+                : updatedBossState.encounter().orElse(null);
+        if (!writable || encounter == null || auditEntry == null
+                || encounter.status() != BossEncounter.Status.INTRO
+                || !encounter.encounterId().equals(transactionId)
+                || !auditEntry.transactionId().equals(transactionId)
+                || auditEntry.timestampEpochMillis() != timestampEpochMillis
+                || bossState.encounter().map(BossEncounter::active).orElse(false)
+                || !canCommitBossStart(transactionId, timestampEpochMillis)
+                || !validBossState(updatedBossState)) {
+            throw new IllegalStateException("Boss encounter start cannot be committed");
+        }
+        prepareLedgerForCommit(timestampEpochMillis);
+        economyTransactions.put(transactionId, timestampEpochMillis);
+        bossState = updatedBossState;
+        commitAudit(auditEntry);
+    }
+
+    void updateBossEncounter(BossState updatedBossState) {
+        if (!writable || !sameBossEncounter(updatedBossState)
+                || !bossState.rewardReadyAtByPlayer().equals(updatedBossState.rewardReadyAtByPlayer())
+                || !validBossState(updatedBossState)) {
+            throw new IllegalStateException("Boss encounter update cannot be committed");
+        }
+        bossState = updatedBossState;
+        setDirty();
+    }
+
+    void commitBossTransition(BossState updatedBossState, AuditEntry auditEntry) {
+        if (!writable || auditEntry == null || !sameBossEncounter(updatedBossState)
+                || !bossState.rewardReadyAtByPlayer().equals(updatedBossState.rewardReadyAtByPlayer())
+                || !validBossState(updatedBossState)) {
+            throw new IllegalStateException("Boss encounter transition cannot be committed");
+        }
+        bossState = updatedBossState;
+        commitAudit(auditEntry);
+    }
+
+    void commitBossReward(
+            UUID playerId,
+            long balance,
+            BossState updatedBossState,
+            UUID transactionId,
+            long timestampEpochMillis,
+            EconomyTransactionReceipt receipt,
+            List<EconomyAlert> alerts,
+            AuditEntry auditEntry) {
+        validateEvidence(playerId, transactionId, timestampEpochMillis, receipt, alerts);
+        BossEncounter before = bossState.encounter().orElse(null);
+        BossEncounter after = updatedBossState == null ? null : updatedBossState.encounter().orElse(null);
+        if (!writable || before == null || after == null || auditEntry == null
+                || before.status() != BossEncounter.Status.REWARDING
+                || !before.encounterId().equals(after.encounterId())
+                || !after.settledPlayers().contains(playerId)
+                || before.settledPlayers().contains(playerId)
+                || updatedBossState.rewardReadyAt(playerId) <= timestampEpochMillis
+                || receipt.kind() != EconomyTransactionReceipt.Kind.AWARD
+                || balance < 0
+                || economyReceipts.containsKey(transactionId)
+                || !canCommitReceiptTransaction(transactionId, timestampEpochMillis)
+                || !validBossState(updatedBossState)) {
+            throw new IllegalStateException("Boss reward cannot be committed");
+        }
+        prepareLedgerForCommit(timestampEpochMillis);
+        economyBalances.put(playerId, balance);
+        economyTransactions.put(transactionId, timestampEpochMillis);
+        bossState = updatedBossState;
+        commitReceiptEvidence(transactionId, receipt, alerts);
+        commitAudit(auditEntry);
+    }
+
+    private boolean sameBossEncounter(BossState updatedBossState) {
+        if (updatedBossState == null) {
+            return false;
+        }
+        BossEncounter current = bossState.encounter().orElse(null);
+        BossEncounter updated = updatedBossState.encounter().orElse(null);
+        return current != null && updated != null
+                && current.encounterId().equals(updated.encounterId())
+                && current.bossId().equals(updated.bossId());
+    }
+
+    private static boolean validBossState(BossState state) {
+        if (state == null || state.rewardReadyAtByPlayer().size() > BossState.MAX_COOLDOWNS
+                || state.rewardReadyAtByPlayer().values().stream().anyMatch(value -> value == null || value < 0)) {
+            return false;
+        }
+        return state.encounter().map(encounter -> BossEncounter.validate(encounter).error().isEmpty()).orElse(true);
+    }
+
+    public boolean observeActivityResourcePlacement(
+            ResourceKey<Level> dimension, BlockPos position, boolean trackedResource) {
+        if (!writable || dimension == null || position == null) {
+            return false;
+        }
+        ActivityBlockKey key = new ActivityBlockKey(dimension, position);
+        boolean changed;
+        if (trackedResource) {
+            if (placedActivityResources.size() >= ActivityState.MAX_PLACED_RESOURCE_BLOCKS
+                    && !placedActivityResources.contains(key)) {
+                return false;
+            }
+            changed = placedActivityResources.add(key);
+        } else {
+            changed = placedActivityResources.remove(key);
+        }
+        if (changed) {
+            setDirty();
+        }
+        return true;
+    }
+
+    public void clearActivityResourcePlacement(ResourceKey<Level> dimension, BlockPos position) {
+        if (dimension != null && position != null
+                && placedActivityResources.remove(new ActivityBlockKey(dimension, position))) {
+            setDirty();
+        }
+    }
+
+    public void moveActivityResourcePlacements(
+            ResourceKey<Level> dimension,
+            Map<BlockPos, BlockPos> movements,
+            java.util.Collection<BlockPos> destroyed) {
+        if (!writable || dimension == null || movements == null || destroyed == null) {
+            return;
+        }
+        Set<ActivityBlockKey> movedSources = new HashSet<>();
+        movements.forEach((source, target) -> {
+            ActivityBlockKey sourceKey = new ActivityBlockKey(dimension, source);
+            if (placedActivityResources.contains(sourceKey)) {
+                movedSources.add(new ActivityBlockKey(dimension, target));
+            }
+        });
+        boolean changed = movements.keySet().stream()
+                .map(position -> new ActivityBlockKey(dimension, position))
+                .map(placedActivityResources::remove)
+                .reduce(false, Boolean::logicalOr);
+        changed |= movements.values().stream()
+                .map(position -> new ActivityBlockKey(dimension, position))
+                .map(placedActivityResources::remove)
+                .reduce(false, Boolean::logicalOr);
+        changed |= destroyed.stream()
+                .map(position -> new ActivityBlockKey(dimension, position))
+                .map(placedActivityResources::remove)
+                .reduce(false, Boolean::logicalOr);
+        if (placedActivityResources.size() + movedSources.size() <= ActivityState.MAX_PLACED_RESOURCE_BLOCKS) {
+            changed |= placedActivityResources.addAll(movedSources);
+        }
+        if (changed) {
+            setDirty();
+        }
+    }
+
+    public void clearActivityResourcePlacements(ResourceKey<Level> dimension) {
+        if (dimension != null && placedActivityResources.removeIf(key -> key.dimension().equals(dimension))) {
+            setDirty();
+        }
+    }
+
+    long activityAwardedExperience(
+            UUID playerId,
+            ActivityTrack track,
+            ActivityKind kind,
+            Identifier targetId,
+            long timestampEpochMillis,
+            long windowMillis) {
+        return activityAwardedExperience(
+                playerId, null, track, kind, targetId, timestampEpochMillis, windowMillis);
+    }
+
+    long activityAwardedExperienceInDimension(
+            UUID playerId,
+            ResourceKey<Level> dimension,
+            ActivityTrack track,
+            ActivityKind kind,
+            Identifier targetId,
+            long timestampEpochMillis,
+            long windowMillis) {
+        if (dimension == null) {
+            throw new IllegalArgumentException("Activity evidence dimension is missing");
+        }
+        return activityAwardedExperience(
+                playerId, dimension, track, kind, targetId, timestampEpochMillis, windowMillis);
+    }
+
+    private long activityAwardedExperience(
+            UUID playerId,
+            ResourceKey<Level> dimension,
+            ActivityTrack track,
+            ActivityKind kind,
+            Identifier targetId,
+            long timestampEpochMillis,
+            long windowMillis) {
+        if (playerId == null || track == null || timestampEpochMillis < 0 || windowMillis < 0
+                || (kind == null) != (targetId == null)) {
+            throw new IllegalArgumentException("Invalid activity evidence window query");
+        }
+        List<ActivityEvidence> evidence = activityEvidenceByPlayer.get(playerId);
+        if (evidence == null) {
+            return 0;
+        }
+        long minimumTimestamp = cutoff(timestampEpochMillis, windowMillis);
+        long total = 0;
+        for (ActivityEvidence entry : evidence) {
+            if (entry.track() != track
+                    || (dimension != null && !entry.dimension().equals(dimension))
+                    || entry.observedAtEpochMillis() < minimumTimestamp
+                    || entry.observedAtEpochMillis() > timestampEpochMillis
+                    || kind != null && (entry.kind() != kind || !entry.targetId().equals(targetId))) {
+                continue;
+            }
+            try {
+                total = Math.addExact(total, entry.awardedExperience());
+            } catch (ArithmeticException exception) {
+                return ActivityProgress.MAX_EXPERIENCE;
+            }
+        }
+        return total;
+    }
+
+    boolean canCommitActivityProgress(UUID playerId) {
+        return activityProgress.containsKey(playerId) || activityProgress.size() < ActivityState.MAX_PLAYERS;
+    }
+
+    boolean canCommitActivityEvidence(UUID evidenceId, long timestampEpochMillis) {
+        if (evidenceId == null || timestampEpochMillis < 0
+                || retainedActivityEvidence(evidenceId, timestampEpochMillis).isPresent()) {
+            return false;
+        }
+        return activityEvidence.containsKey(evidenceId)
+                || activityEvidence.size() < ActivityState.MAX_EVIDENCE
+                || activityEvidence.values().stream().anyMatch(entry -> entry.observedAtEpochMillis()
+                        < cutoff(timestampEpochMillis, ACTIVITY_EVIDENCE_RETENTION_MILLIS));
+    }
+
+    void commitActivityAward(
+            ActivityEvidence evidence,
+            ActivityProgress updatedProgress,
+            Optional<PlayerCareerState> updatedCareerState) {
+        if (!writable || evidence == null || updatedProgress == null || updatedCareerState == null
+                || !canCommitActivityProgress(evidence.playerId())
+                || !canCommitActivityEvidence(evidence.evidenceId(), evidence.observedAtEpochMillis())) {
+            throw new IllegalStateException("Activity evidence cannot be committed");
+        }
+        ActivityProgress current = activityProgress(evidence.playerId());
+        String discoveryKey = evidence.kind() == ActivityKind.EXPLORATION_DISCOVERY
+                ? evidence.kind().getSerializedName() + ":" + evidence.subjectKey()
+                : null;
+        ActivityProgress expected = current.award(evidence.track(), evidence.awardedExperience(), discoveryKey);
+        if (!expected.equals(updatedProgress)) {
+            throw new IllegalArgumentException("Activity progress does not match the evidence award");
+        }
+        if (evidence.careerAward().isPresent()) {
+            ActivityEvidence.CareerAward careerAward = evidence.careerAward().orElseThrow();
+            if (careerAward.awardedExperience() < 1
+                    || careerAward.awardedExperience() > evidence.awardedExperience()
+                    || updatedCareerState.isEmpty()) {
+                throw new IllegalArgumentException("Career progress does not match the activity evidence");
+            }
+            PlayerCareerState expectedCareer = playerCareerState(evidence.playerId()).awardActive(
+                    careerAward.careerId(), careerAward.awardedExperience());
+            if (!expectedCareer.equals(updatedCareerState.orElseThrow())) {
+                throw new IllegalArgumentException("Career progress does not match the activity evidence");
+            }
+        } else if (updatedCareerState.isPresent()) {
+            throw new IllegalArgumentException("Career progress is missing its activity evidence");
+        }
+        if (activityEvidence.size() >= ActivityState.MAX_EVIDENCE
+                || activityEvidence.containsKey(evidence.evidenceId())) {
+            trimExpiredActivityEvidence(evidence.observedAtEpochMillis());
+        }
+        if (activityEvidence.size() >= ActivityState.MAX_EVIDENCE) {
+            throw new IllegalStateException("Activity evidence ledger is full");
+        }
+        activityProgress.put(evidence.playerId(), updatedProgress);
+        updatedCareerState.ifPresent(career -> playerCareers.put(evidence.playerId(), career));
+        activityEvidence.put(evidence.evidenceId(), evidence);
+        activityEvidenceByPlayer.computeIfAbsent(evidence.playerId(), ignored -> new ArrayList<>()).add(evidence);
+        setDirty();
     }
 
     public int auditCount() {
@@ -1060,9 +1846,31 @@ public final class PlatformSavedData extends SavedData {
         portalCombatTimestamps.putAll(snapshot.portalCombatTimestamps);
         rpgSkillOperations.clear();
         rpgSkillOperations.putAll(snapshot.rpgSkillOperations);
+        portals.clear();
+        portals.putAll(snapshot.portals);
+        activityProgress.clear();
+        activityProgress.putAll(snapshot.activityProgress);
+        activityEvidence.clear();
+        activityEvidence.putAll(snapshot.activityEvidence);
+        placedActivityResources.clear();
+        placedActivityResources.addAll(snapshot.placedActivityResources);
+        playerCareers.clear();
+        playerCareers.putAll(snapshot.playerCareers);
+        careerPromotionReceipts.clear();
+        careerPromotionReceipts.putAll(snapshot.careerPromotionReceipts);
+        skillMutationReceipts.clear();
+        skillMutationReceipts.putAll(snapshot.skillMutationReceipts);
+        claimReversalEvidence.clear();
+        claimReversalEvidence.putAll(snapshot.claimReversalEvidence);
+        shopReversalEvidence.clear();
+        shopReversalEvidence.putAll(snapshot.shopReversalEvidence);
+        careerReversalEvidence.clear();
+        careerReversalEvidence.putAll(snapshot.careerReversalEvidence);
         rebuildRecentTransactionIndex();
         rebuildReceiptExpiryIndex();
         rebuildClaimOwnerIndex();
+        rebuildPortalProtectionIndex();
+        rebuildActivityEvidenceIndex();
         rebuildProtectedRegionIndex();
         rebuildPortalOriginIndex();
         rebuildPortalEvidenceIndexes();
@@ -1260,11 +2068,20 @@ public final class PlatformSavedData extends SavedData {
                 || !claim.ownerId().equals(playerId)) {
             throw new IllegalStateException("Claim purchase cannot be committed");
         }
+        Long balanceBefore = economyBalances.get(playerId);
+        if (balanceBefore == null) {
+            throw new IllegalStateException("Claim purchase balance evidence is missing");
+        }
         prepareLedgerForCommit(timestampEpochMillis);
+        retainTargetedReversalEvidence();
         economyBalances.put(playerId, balance);
         replaceClaim(claimKey, claim);
         economyTransactions.put(transactionId, timestampEpochMillis);
         commitReceiptEvidence(transactionId, receipt, alerts);
+        claimReversalEvidence.put(transactionId, new TargetedReversalState.ClaimEvidence(
+                timestampEpochMillis, transactionId, receipt.actorId(), TargetedReversalState.Domain.CLAIM,
+                claimKey, Optional.empty(), Optional.of(claim), Optional.of(playerId),
+                Optional.of(balanceBefore), Optional.of(balance), Optional.empty()));
         commitAudit(auditEntry);
     }
 
@@ -1281,11 +2098,24 @@ public final class PlatformSavedData extends SavedData {
                 || claims.get(claimKey) == null) {
             throw new IllegalStateException("Claim mutation cannot be committed");
         }
+        Claim before = claims.get(claimKey);
         prepareLedgerForCommit(timestampEpochMillis);
+        retainTargetedReversalEvidence();
         claimReceipts.keySet().retainAll(economyTransactions.keySet());
         replaceClaim(claimKey, claim);
         economyTransactions.put(transactionId, timestampEpochMillis);
         claimReceipts.put(transactionId, receipt);
+        if (!before.equals(claim)) {
+            TargetedReversalState.Domain domain = switch (receipt.kind()) {
+                case ROLE_SET, ROLE_REMOVE, SETTINGS_SET -> TargetedReversalState.Domain.CLAIM_PERMISSION;
+                case RECLAIM, TRANSFER_OFFER, TRANSFER_CANCEL, TRANSFER_ACCEPT ->
+                        TargetedReversalState.Domain.CLAIM;
+            };
+            claimReversalEvidence.put(transactionId, new TargetedReversalState.ClaimEvidence(
+                    timestampEpochMillis, transactionId, receipt.actorId(), domain, claimKey,
+                    Optional.of(before), Optional.of(claim), Optional.empty(), Optional.empty(),
+                    Optional.empty(), Optional.empty()));
+        }
         commitAudit(auditEntry);
     }
 
@@ -1467,11 +2297,20 @@ public final class PlatformSavedData extends SavedData {
                 || !receipt.claim().equals(Optional.of(claimKey))) {
             throw new IllegalStateException("Claim sale cannot be committed");
         }
+        Long balanceBefore = economyBalances.get(playerId);
+        if (balanceBefore == null) {
+            throw new IllegalStateException("Claim sale balance evidence is missing");
+        }
         prepareLedgerForCommit(timestampEpochMillis);
+        retainTargetedReversalEvidence();
         economyBalances.put(playerId, balance);
         replaceClaim(claimKey, null);
         economyTransactions.put(transactionId, timestampEpochMillis);
         commitReceiptEvidence(transactionId, receipt, alerts);
+        claimReversalEvidence.put(transactionId, new TargetedReversalState.ClaimEvidence(
+                timestampEpochMillis, transactionId, receipt.actorId(), TargetedReversalState.Domain.CLAIM,
+                claimKey, Optional.of(claim), Optional.empty(), Optional.of(playerId),
+                Optional.of(balanceBefore), Optional.of(balance), Optional.empty()));
         commitAudit(auditEntry);
     }
 
@@ -1485,12 +2324,139 @@ public final class PlatformSavedData extends SavedData {
             trimExpiredEconomyTransactions(
                     economyTransactions, timestampEpochMillis, ECONOMY_TRANSACTION_RETENTION_MILLIS);
         }
+        Optional<ShopInstance> before = Optional.ofNullable(shopInstances.get(shopId));
+        retainTargetedReversalEvidence();
         if (shop.isPresent()) {
             shopInstances.put(shopId, shop.orElseThrow());
         } else {
             shopInstances.remove(shopId);
         }
         economyTransactions.put(transactionId, timestampEpochMillis);
+        if (!before.equals(shop) && persistableShopEvidence(before) && persistableShopEvidence(shop)) {
+            shopReversalEvidence.put(transactionId, new TargetedReversalState.ShopEvidence(
+                    timestampEpochMillis, transactionId, auditEntry.actorId(), shopId,
+                    before, shop, Optional.empty()));
+        }
+        commitAudit(auditEntry);
+    }
+
+    void commitPortalMutation(
+            Identifier portalId,
+            Optional<Portal> portal,
+            UUID transactionId,
+            long timestampEpochMillis,
+            AuditEntry auditEntry) {
+        if (portalId == null || portal == null || transactionId == null || auditEntry == null
+                || !canCommitTransaction(transactionId, timestampEpochMillis)
+                || portal.filter(value -> Portal.validate(value).error().isPresent()).isPresent()) {
+            throw new IllegalStateException("Portal mutation cannot be committed");
+        }
+        prepareLedgerForCommit(timestampEpochMillis);
+        if (portal.isPresent()) {
+            portals.put(portalId, portal.orElseThrow());
+        } else {
+            portals.remove(portalId);
+        }
+        economyTransactions.put(transactionId, timestampEpochMillis);
+        rebuildPortalProtectionIndex();
+        commitAudit(auditEntry);
+    }
+
+    void commitAdministrativeTransaction(
+            UUID transactionId,
+            long timestampEpochMillis,
+            AuditEntry auditEntry) {
+        if (transactionId == null || auditEntry == null
+                || !transactionId.equals(auditEntry.transactionId())
+                || !canCommitTransaction(transactionId, timestampEpochMillis)) {
+            throw new IllegalStateException("Administrative transaction cannot be committed");
+        }
+        prepareLedgerForCommit(timestampEpochMillis);
+        economyTransactions.put(transactionId, timestampEpochMillis);
+        commitAudit(auditEntry);
+    }
+
+    void commitTargetedClaimReversal(
+            UUID originalTransactionId,
+            UUID reversalTransactionId,
+            long timestampEpochMillis,
+            TargetedReversalState.ClaimEvidence evidence,
+            AuditEntry auditEntry) {
+        TargetedReversalState.ClaimEvidence currentEvidence = claimReversalEvidence.get(originalTransactionId);
+        Optional<Claim> currentClaim = Optional.ofNullable(claims.get(evidence.claimKey()));
+        Optional<Long> currentBalance = evidence.balancePlayerId().flatMap(
+                playerId -> Optional.ofNullable(economyBalances.get(playerId)));
+        if (currentEvidence == null || !currentEvidence.equals(evidence) || evidence.reversedBy().isPresent()
+                || !currentClaim.equals(evidence.after()) || !currentBalance.equals(evidence.balanceAfter())
+                || !hasTransaction(originalTransactionId, timestampEpochMillis)
+                || !canCommitTransaction(reversalTransactionId, timestampEpochMillis)
+                || auditEntry == null || !reversalTransactionId.equals(auditEntry.transactionId())) {
+            throw new IllegalStateException("Targeted claim reversal cannot be committed");
+        }
+        prepareLedgerForCommit(timestampEpochMillis);
+        retainTargetedReversalEvidence();
+        replaceClaim(evidence.claimKey(), evidence.before().orElse(null));
+        evidence.balancePlayerId().ifPresent(playerId ->
+                economyBalances.put(playerId, evidence.balanceBefore().orElseThrow()));
+        economyTransactions.put(reversalTransactionId, timestampEpochMillis);
+        claimReversalEvidence.put(originalTransactionId, evidence.withReversedBy(reversalTransactionId));
+        commitAudit(auditEntry);
+    }
+
+    void commitTargetedShopReversal(
+            UUID originalTransactionId,
+            UUID reversalTransactionId,
+            long timestampEpochMillis,
+            TargetedReversalState.ShopEvidence evidence,
+            AuditEntry auditEntry) {
+        TargetedReversalState.ShopEvidence currentEvidence = shopReversalEvidence.get(originalTransactionId);
+        Optional<ShopInstance> currentShop = Optional.ofNullable(shopInstances.get(evidence.shopId()));
+        if (currentEvidence == null || !currentEvidence.equals(evidence) || evidence.reversedBy().isPresent()
+                || !currentShop.equals(evidence.after())
+                || !hasTransaction(originalTransactionId, timestampEpochMillis)
+                || !canCommitTransaction(reversalTransactionId, timestampEpochMillis)
+                || auditEntry == null || !reversalTransactionId.equals(auditEntry.transactionId())) {
+            throw new IllegalStateException("Targeted shop reversal cannot be committed");
+        }
+        prepareLedgerForCommit(timestampEpochMillis);
+        retainTargetedReversalEvidence();
+        if (evidence.before().isPresent()) {
+            shopInstances.put(evidence.shopId(), evidence.before().orElseThrow());
+        } else {
+            shopInstances.remove(evidence.shopId());
+        }
+        economyTransactions.put(reversalTransactionId, timestampEpochMillis);
+        shopReversalEvidence.put(originalTransactionId, evidence.withReversedBy(reversalTransactionId));
+        commitAudit(auditEntry);
+    }
+
+    void commitTargetedCareerReversal(
+            UUID originalTransactionId,
+            UUID reversalTransactionId,
+            long timestampEpochMillis,
+            TargetedReversalState.CareerEvidence evidence,
+            AuditEntry auditEntry) {
+        TargetedReversalState.CareerEvidence currentEvidence = careerReversalEvidence.get(originalTransactionId);
+        Optional<PlayerCareerState> currentCareer = Optional.ofNullable(playerCareers.get(evidence.playerId()));
+        Optional<Long> currentBalance = Optional.ofNullable(economyBalances.get(evidence.playerId()));
+        if (currentEvidence == null || !currentEvidence.equals(evidence) || evidence.reversedBy().isPresent()
+                || !currentCareer.equals(evidence.after())
+                || evidence.balanceAfter().isPresent() && !currentBalance.equals(evidence.balanceAfter())
+                || !hasTransaction(originalTransactionId, timestampEpochMillis)
+                || !canCommitTransaction(reversalTransactionId, timestampEpochMillis)
+                || auditEntry == null || !reversalTransactionId.equals(auditEntry.transactionId())) {
+            throw new IllegalStateException("Targeted career reversal cannot be committed");
+        }
+        prepareLedgerForCommit(timestampEpochMillis);
+        retainTargetedReversalEvidence();
+        if (evidence.before().isPresent()) {
+            playerCareers.put(evidence.playerId(), evidence.before().orElseThrow());
+        } else {
+            playerCareers.remove(evidence.playerId());
+        }
+        evidence.balanceBefore().ifPresent(balance -> economyBalances.put(evidence.playerId(), balance));
+        economyTransactions.put(reversalTransactionId, timestampEpochMillis);
+        careerReversalEvidence.put(originalTransactionId, evidence.withReversedBy(reversalTransactionId));
         commitAudit(auditEntry);
     }
 
@@ -1700,6 +2666,19 @@ public final class PlatformSavedData extends SavedData {
                 .map(Map.Entry::getKey)
                 .toList()
                 .forEach(rpgAdminOperations::remove);
+    }
+
+    private void retainTargetedReversalEvidence() {
+        Set<UUID> retainedTransactions = economyTransactions.keySet();
+        claimReversalEvidence.keySet().retainAll(retainedTransactions);
+        shopReversalEvidence.keySet().retainAll(retainedTransactions);
+        careerReversalEvidence.keySet().retainAll(retainedTransactions);
+    }
+
+    private static boolean persistableShopEvidence(Optional<ShopInstance> shop) {
+        return shop.stream()
+                .flatMap(value -> value.offers().values().stream())
+                .allMatch(offer -> offer.item().typeHolder().unwrapKey().isPresent());
     }
 
     boolean hasReceiptCapacity(long timestampEpochMillis, int maximumEntries) {
@@ -1953,6 +2932,11 @@ public final class PlatformSavedData extends SavedData {
     static Codec<Map<Identifier, ShopInstance>> boundedShopInstancesCodec(int maximumEntries) {
         return ShopInstanceEntry.CODEC.listOf(0, maximumEntries)
                 .flatXmap(PlatformSavedData::shopsFromEntries, PlatformSavedData::shopEntries);
+    }
+
+    static Codec<Map<Identifier, Portal>> boundedPortalsCodec(int maximumEntries) {
+        return PortalEntry.CODEC.listOf(0, maximumEntries)
+                .flatXmap(PlatformSavedData::portalsFromEntries, PlatformSavedData::portalEntries);
     }
 
     static Codec<Map<UUID, EconomyTransactionReceipt>> boundedReceiptsCodec(int maximumEntries) {
@@ -2345,6 +3329,42 @@ public final class PlatformSavedData extends SavedData {
         return receiptExpiry(timestampEpochMillis);
     }
 
+    private void rebuildPortalProtectionIndex() {
+        portalIdsByProtectedChunk.clear();
+        portals.forEach((portalId, portal) -> {
+            int radius = portal.protectionRadius();
+            int minimumChunkX = (portal.origin().getX() - radius) >> 4;
+            int maximumChunkX = (portal.origin().getX() + radius) >> 4;
+            int minimumChunkZ = (portal.origin().getZ() - radius) >> 4;
+            int maximumChunkZ = (portal.origin().getZ() + radius) >> 4;
+            for (int chunkX = minimumChunkX; chunkX <= maximumChunkX; chunkX++) {
+                for (int chunkZ = minimumChunkZ; chunkZ <= maximumChunkZ; chunkZ++) {
+                    ClaimKey key = new ClaimKey(portal.originDimension(), chunkX, chunkZ);
+                    portalIdsByProtectedChunk.computeIfAbsent(key, ignored -> new HashSet<>()).add(portalId);
+                }
+            }
+        });
+    }
+
+    private void rebuildActivityEvidenceIndex() {
+        activityEvidenceByPlayer.clear();
+        activityEvidence.values().stream()
+                .sorted(Comparator.comparingLong(ActivityEvidence::observedAtEpochMillis)
+                        .thenComparing(ActivityEvidence::evidenceId))
+                .forEach(evidence -> activityEvidenceByPlayer
+                        .computeIfAbsent(evidence.playerId(), ignored -> new ArrayList<>())
+                        .add(evidence));
+    }
+
+    private void trimExpiredActivityEvidence(long timestampEpochMillis) {
+        long minimumTimestamp = cutoff(timestampEpochMillis, ACTIVITY_EVIDENCE_RETENTION_MILLIS);
+        int previousSize = activityEvidence.size();
+        activityEvidence.entrySet().removeIf(entry -> entry.getValue().observedAtEpochMillis() < minimumTimestamp);
+        if (activityEvidence.size() != previousSize) {
+            rebuildActivityEvidenceIndex();
+        }
+    }
+
     boolean commitPlayerLogin(UUID playerId, long timestampEpochMillis) {
         return commitPlayerLogin(playerId, null, timestampEpochMillis);
     }
@@ -2387,6 +3407,43 @@ public final class PlatformSavedData extends SavedData {
             auditEntries.removeFirst();
         }
         setDirty();
+    }
+
+    private static DataResult<Map<Identifier, Portal>> portalsFromEntries(List<PortalEntry> entries) {
+        Map<Identifier, Portal> portals = new LinkedHashMap<>();
+        for (PortalEntry entry : entries) {
+            if (portals.putIfAbsent(entry.id(), entry.portal()) != null) {
+                return DataResult.error(() -> "Duplicate portal ID " + entry.id());
+            }
+        }
+        return DataResult.success(Map.copyOf(portals));
+    }
+
+    private static DataResult<List<PortalEntry>> portalEntries(Map<Identifier, Portal> portals) {
+        return DataResult.success(portals.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> new PortalEntry(entry.getKey(), entry.getValue()))
+                .toList());
+    }
+
+    private record ClaimPersistence(
+            Map<ClaimKey, Claim> claims,
+            Map<UUID, ClaimMutationReceipt> claimReceipts) {
+    }
+
+    private record GameplayPersistence(
+            Map<Identifier, Portal> portals,
+            ActivityState activityState,
+            CareerState careerState,
+            BossState bossState,
+            TargetedReversalState targetedReversalState) {
+    }
+
+    private record PortalEntry(Identifier id, Portal portal) {
+        private static final Codec<PortalEntry> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                Identifier.CODEC.fieldOf("id").forGetter(PortalEntry::id),
+                Portal.CODEC.fieldOf("portal").forGetter(PortalEntry::portal)
+        ).apply(instance, PortalEntry::new));
     }
 
     public record AuditPage(int page, int totalPages, int totalEntries, List<AuditEntry> entries) {

@@ -149,6 +149,52 @@ final class ClaimManagementServiceTest {
     }
 
     @Test
+    void roleEvaluationIsReadOnlyAndMatchesTheMutationPolicy() {
+        UUID owner = id(38);
+        UUID target = id(39);
+        UUID visitor = id(390);
+        PlatformSavedData state = claimed(owner, KEY, 5_000, 380);
+        int auditCount = state.auditCount();
+
+        var allowed = ClaimManagementService.evaluateSetRole(
+                state, owner, false, KEY, target, ClaimRole.BUILDER);
+
+        assertTrue(allowed.allowed());
+        assertTrue(allowed.wouldChange());
+        assertEquals(ClaimManagementService.Status.SUCCESS, allowed.status());
+        assertEquals(ClaimRole.OWNER, allowed.actorRole());
+        assertEquals(ClaimRole.VISITOR, allowed.currentTargetRole());
+        assertEquals(Optional.of(ClaimRole.BUILDER), allowed.requestedRole());
+        assertEquals(0, allowed.trustedPlayers());
+        assertEquals(org.dldyou.rovenfall.claims.Claim.MAX_TRUSTED_PLAYERS, allowed.trustLimit());
+        assertEquals(auditCount, state.auditCount());
+        assertEquals(ClaimRole.VISITOR, state.claim(KEY).orElseThrow().roleOf(target));
+
+        assertEquals(ClaimManagementService.Status.SUCCESS,
+                setRole(state, owner, KEY, target, ClaimRole.BUILDER, 381, id(391)).status());
+        int afterMutationAuditCount = state.auditCount();
+        var noChange = ClaimManagementService.evaluateSetRole(
+                state, owner, false, KEY, target, ClaimRole.BUILDER);
+        var denied = ClaimManagementService.evaluateSetRole(
+                state, visitor, false, KEY, id(392), ClaimRole.USER);
+
+        assertTrue(noChange.allowed());
+        assertFalse(noChange.wouldChange());
+        assertEquals(ClaimManagementService.Status.NO_CHANGE, noChange.status());
+        assertFalse(denied.allowed());
+        assertEquals(ClaimManagementService.Status.UNAUTHORIZED, denied.status());
+        assertEquals(afterMutationAuditCount, state.auditCount());
+        assertEquals(ClaimRole.BUILDER, state.claim(KEY).orElseThrow().roleOf(target));
+
+        CompoundTag future = encoded(state);
+        future.putInt("schema_version", PlatformSavedData.CURRENT_SCHEMA_VERSION + 1);
+        PlatformSavedData readOnly = PlatformSavedData.CODEC.parse(NbtOps.INSTANCE, future).getOrThrow();
+        assertEquals(ClaimManagementService.Status.READ_ONLY_SCHEMA,
+                ClaimManagementService.evaluateSetRole(
+                        readOnly, owner, false, KEY, target, ClaimRole.USER).status());
+    }
+
+    @Test
     void transferRequiresOfferRecipientCapacityAndUnprotectedChunk() {
         UUID owner = id(40);
         UUID recipient = id(41);

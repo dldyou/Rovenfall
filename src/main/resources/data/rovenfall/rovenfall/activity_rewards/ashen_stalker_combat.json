@@ -1,0 +1,9 @@
+{
+  "track": "combat",
+  "kind": "combat_damage",
+  "target": "rovenfall:ashen_stalker",
+  "experience": 2,
+  "window_millis": 60000,
+  "target_window_cap": 60,
+  "player_window_cap": 60
+}

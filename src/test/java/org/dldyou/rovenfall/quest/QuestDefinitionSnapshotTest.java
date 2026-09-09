@@ -18,19 +18,94 @@ import org.junit.jupiter.api.Test;
 
 class QuestDefinitionSnapshotTest {
     @Test
-    void shippedFirstStepsDefinitionDecodesAndCompiles() {
-        var stream = QuestDefinitionSnapshotTest.class.getResourceAsStream(
-                "/data/rovenfall/rovenfall/quests/first_steps.json");
-        try (var reader = new InputStreamReader(java.util.Objects.requireNonNull(stream), StandardCharsets.UTF_8)) {
-            QuestDefinition definition = QuestDefinition.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseReader(reader))
-                    .getOrThrow();
-            var snapshot = QuestDefinitionSnapshot.compile(List.of(new QuestDefinitionSnapshot.Source(
-                    file("first_steps"), "builtin", id("first_steps"), definition)));
+    void shippedFrontierChapterDecodesAndCompilesAsOneStoryGraph() {
+        var snapshot = QuestDefinitionSnapshot.compile(List.of(
+                shipped("first_steps"),
+                shipped("frontier_homestead"),
+                shipped("expedition_provisions"),
+                shipped("wilderness_patrol"),
+                shipped("rift_warden_oath"),
+                shipped("frontier_legacy"),
+                shipped("camp_supplies"),
+                shipped("relic_survey"),
+                shipped("expedition_return")));
 
-            assertEquals(3, snapshot.quest(id("first_steps")).orElseThrow().objectives().size());
-        } catch (java.io.IOException exception) {
-            throw new AssertionError(exception);
+        assertEquals(9, snapshot.storyQuests().size());
+        assertEquals(3, snapshot.quest(id("first_steps")).orElseThrow().objectives().size());
+        var finale = snapshot.quest(id("rift_warden_oath")).orElseThrow();
+        assertEquals(List.of(
+                id("expedition_provisions"),
+                id("frontier_homestead"),
+                id("wilderness_patrol")), finale.prerequisites());
+        assertEquals(400, finale.rewards().currency());
+        assertTrue(finale.objectives().stream().anyMatch(objective ->
+                objective.kind() == QuestDefinition.Kind.BOSS_DEFEAT
+                        && objective.target().filter(id("rift_warden")::equals).isPresent()));
+        var capstone = snapshot.quest(id("frontier_legacy")).orElseThrow();
+        assertEquals(List.of(id("rift_warden_oath")), capstone.prerequisites());
+        assertEquals(9, capstone.objectives().size());
+        assertEquals(800, capstone.rewards().currency());
+    }
+
+    @Test
+    void shippedExpeditionBranchUnlocksAndRewardsOnceAcrossRestart() {
+        var paths = List.of("first_steps", "expedition_provisions", "wilderness_patrol",
+                "camp_supplies", "relic_survey", "expedition_return");
+        var definitions = QuestDefinitionSnapshot.compile(paths.stream()
+                .map(QuestDefinitionSnapshotTest::shipped).toList());
+        var rpgDefinitions = org.dldyou.rovenfall.rpg.RpgDefinitionSnapshot.compile(
+                List.of("mining", "cooking", "farming", "hunting", "exploration").stream()
+                        .map(activity -> new org.dldyou.rovenfall.rpg.RpgDefinitionSnapshot.ActivitySource(
+                                id("activities/" + activity), "test", id(activity),
+                                new org.dldyou.rovenfall.rpg.ActivityDefinition(
+                                        "activity.rovenfall." + activity, List.of(1_000L))))
+                        .toList(), List.of(), List.of());
+        var quests = new QuestPlayerSavedData();
+        var platform = new org.dldyou.rovenfall.administration.PlatformSavedData();
+        var rpg = new org.dldyou.rovenfall.rpg.RpgPlayerSavedData();
+        var player = new java.util.UUID(0, 1);
+        long sequence = 10;
+        long expectedCurrency = 0;
+        assertEquals(QuestProgressService.ProgressStatus.IGNORED,
+                QuestProgressService.applyEvidence(quests, definitions, player,
+                        new QuestProgressService.Evidence(QuestDefinition.Kind.ACTIVITY,
+                                Optional.of(id("hunting")), 140, 1_000,
+                                new java.util.UUID(0, sequence++))).status());
+        for (String path : paths) {
+            var definition = definitions.quest(id(path)).orElseThrow();
+            assertEquals(QuestJourneyView.Status.AVAILABLE,
+                    QuestJourneyView.row(id(path), definitions, quests.state(player)).status());
+            for (var objective : definition.objectives()) {
+                var evidence = new QuestProgressService.Evidence(objective.kind(), objective.target(),
+                        objective.requiredCount(), 2_000 + sequence, new java.util.UUID(0, sequence++));
+                QuestProgressService.applyEvidence(quests, definitions, player, evidence);
+                assertEquals(QuestProgressService.ProgressStatus.DUPLICATE,
+                        QuestProgressService.applyEvidence(quests, definitions, player, evidence).status());
+            }
+            quests = org.dldyou.rovenfall.PersistenceTestHarness.roundTrip(QuestPlayerSavedData.CODEC, quests);
+            assertEquals(QuestProgressService.RewardStatus.COMPLETED,
+                    QuestProgressService.recoverRewards(quests, definitions, platform, rpg,
+                            rpgDefinitions, player, 3_000 + sequence, 0, 1_000_000).status());
+            expectedCurrency += definition.rewards().currency();
+            assertEquals(expectedCurrency, platform.economyBalance(player).orElseThrow());
+            assertEquals(QuestJourneyView.Status.COMPLETED,
+                    QuestJourneyView.row(id(path), definitions, quests.state(player)).status());
+            platform = org.dldyou.rovenfall.PersistenceTestHarness.roundTrip(
+                    org.dldyou.rovenfall.administration.PlatformSavedData.CODEC, platform);
+            rpg = org.dldyou.rovenfall.PersistenceTestHarness.roundTrip(
+                    org.dldyou.rovenfall.rpg.RpgPlayerSavedData.CODEC, rpg);
+            quests = org.dldyou.rovenfall.PersistenceTestHarness.roundTrip(QuestPlayerSavedData.CODEC, quests);
+            assertEquals(QuestProgressService.RewardStatus.NOTHING_PENDING,
+                    QuestProgressService.recoverRewards(quests, definitions, platform, rpg,
+                            rpgDefinitions, player, 4_000 + sequence, 0, 1_000_000).status());
+            assertEquals(expectedCurrency, platform.economyBalance(player).orElseThrow());
         }
+        assertEquals(1_100, expectedCurrency);
+        assertEquals(45, rpg.state(player).activityXp().get(id("cooking")));
+        assertEquals(40, rpg.state(player).activityXp().get(id("mining")));
+        assertEquals(65, rpg.state(player).activityXp().get(id("exploration")));
+        assertEquals(6, platform.recentAuditEntries(100).stream()
+                .filter(entry -> entry.actionType().equals(id("quest_completed"))).count());
     }
 
     @Test
@@ -205,6 +280,18 @@ class QuestDefinitionSnapshotTest {
             List<Identifier> prerequisites,
             List<QuestDefinition.Objective> objectives) {
         return source(path, path, prerequisites, objectives);
+    }
+
+    private static QuestDefinitionSnapshot.Source shipped(String path) {
+        var stream = QuestDefinitionSnapshotTest.class.getResourceAsStream(
+                "/data/rovenfall/rovenfall/quests/" + path + ".json");
+        try (var reader = new InputStreamReader(java.util.Objects.requireNonNull(stream), StandardCharsets.UTF_8)) {
+            QuestDefinition definition = QuestDefinition.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseReader(reader))
+                    .getOrThrow();
+            return new QuestDefinitionSnapshot.Source(file(path), "builtin", id(path), definition);
+        } catch (java.io.IOException exception) {
+            throw new AssertionError(exception);
+        }
     }
 
     private static QuestDefinitionSnapshot.Source source(

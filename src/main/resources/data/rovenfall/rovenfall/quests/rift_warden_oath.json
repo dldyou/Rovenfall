@@ -1,0 +1,31 @@
+{
+  "translation_key": "quest.rovenfall.rift_warden_oath",
+  "description_translation_key": "quest.rovenfall.rift_warden_oath.description",
+  "version": 1,
+  "prerequisites": [
+    "rovenfall:expedition_provisions",
+    "rovenfall:frontier_homestead",
+    "rovenfall:wilderness_patrol"
+  ],
+  "objectives": [
+    {
+      "id": "rovenfall:rift_warden_oath/combat",
+      "kind": "activity",
+      "target": "rovenfall:combat",
+      "required_count": 200
+    },
+    {
+      "id": "rovenfall:rift_warden_oath/boss",
+      "kind": "boss_defeat",
+      "target": "rovenfall:rift_warden",
+      "required_count": 1
+    }
+  ],
+  "rewards": {
+    "currency": 400,
+    "activity_xp": {
+      "activity": "rovenfall:hunting",
+      "amount": 50
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "rovenfall:deepstone_core",
+    "minecraft:honey_bottle"
+  ],
+  "result": {
+    "id": "rovenfall:deepsight_tonic"
+  }
+}

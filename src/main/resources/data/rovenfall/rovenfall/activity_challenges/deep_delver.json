@@ -1,0 +1,9 @@
+{
+  "translation_key": "activity_challenge.rovenfall.deep_delver",
+  "description_translation_key": "activity_challenge_description.rovenfall.deep_delver",
+  "activity_levels": {
+    "mining": 2,
+    "exploration": 1
+  },
+  "currency_reward": 150
+}

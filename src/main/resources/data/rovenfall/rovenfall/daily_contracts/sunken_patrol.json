@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.sunken_patrol",
+  "description_translation_key": "daily_contract_description.rovenfall.sunken_patrol",
+  "kind": "hunting_contribution",
+  "target": "rovenfall:tidebound_raider",
+  "required_experience": 210,
+  "currency_reward": 210
+}

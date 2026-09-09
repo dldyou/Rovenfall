@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.iron_rush",
+  "description_translation_key": "daily_contract_description.rovenfall.iron_rush",
+  "kind": "natural_resource_break",
+  "target": "minecraft:iron_ore",
+  "required_experience": 48,
+  "currency_reward": 80
+}

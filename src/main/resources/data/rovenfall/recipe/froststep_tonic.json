@@ -1,0 +1,10 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "rovenfall:frostbound_shard",
+    "minecraft:honey_bottle"
+  ],
+  "result": {
+    "id": "rovenfall:froststep_tonic"
+  }
+}

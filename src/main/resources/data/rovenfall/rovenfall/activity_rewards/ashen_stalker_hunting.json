@@ -1,0 +1,9 @@
+{
+  "track": "hunting",
+  "kind": "hunting_contribution",
+  "target": "rovenfall:ashen_stalker",
+  "experience": 2,
+  "window_millis": 60000,
+  "target_window_cap": 80,
+  "player_window_cap": 80
+}

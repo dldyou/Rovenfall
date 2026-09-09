@@ -23,7 +23,7 @@ final class ReleaseWorkflowTest {
 
         assertTrue(workflow.contains("workflow_dispatch:"));
         assertTrue(step(steps, "Build and run required tests").run()
-                .startsWith("./gradlew clean build recoveryRehearsal"));
+                .startsWith("./gradlew clean releaseCheck recoveryRehearsal"));
         assertTrue(step(steps, "Inspect distributable JAR").run()
                 .startsWith("./gradlew inspectReleaseJar --warning-mode all"));
         assertTrue(workflow.indexOf("- name: Inspect distributable JAR")

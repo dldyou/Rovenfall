@@ -1,0 +1,30 @@
+{
+  "eligible_entity_types": [
+    "minecraft:creeper",
+    "minecraft:drowned",
+    "minecraft:husk",
+    "minecraft:zombie"
+  ],
+  "spawn_chance": 0.02,
+  "translation_key": "mutation.rovenfall.bulwark",
+  "glowing": true,
+  "attributes": [
+    {
+      "attribute": "minecraft:max_health",
+      "amount": 0.75,
+      "operation": "add_multiplied_total"
+    },
+    {
+      "attribute": "minecraft:movement_speed",
+      "amount": -0.1,
+      "operation": "add_multiplied_total"
+    },
+    {
+      "attribute": "minecraft:knockback_resistance",
+      "amount": 0.5,
+      "operation": "add_value"
+    }
+  ],
+  "ai_modifier": "relentless",
+  "currency_reward": 24
+}

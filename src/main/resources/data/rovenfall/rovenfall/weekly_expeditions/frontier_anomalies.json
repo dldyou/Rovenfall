@@ -1,0 +1,12 @@
+{
+  "translation_key": "weekly_expedition.rovenfall.frontier_anomalies",
+  "description_translation_key": "weekly_expedition_description.rovenfall.frontier_anomalies",
+  "daily_contracts": {
+    "rovenfall:mirefang_hunt": 2,
+    "rovenfall:cinder_containment": 2,
+    "rovenfall:frozen_front": 2,
+    "rovenfall:sunken_patrol": 2,
+    "rovenfall:depths_watch": 2
+  },
+  "currency_reward": 1450
+}

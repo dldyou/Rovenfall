@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "ingredients": [
+    "minecraft:cooked_rabbit",
+    "minecraft:wheat",
+    "minecraft:dried_kelp"
+  ],
+  "result": {
+    "id": "rovenfall:trail_ration",
+    "count": 2
+  }
+}

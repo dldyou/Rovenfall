@@ -1,0 +1,26 @@
+{
+  "translation_key": "quest.rovenfall.expedition_provisions",
+  "description_translation_key": "quest.rovenfall.expedition_provisions.description",
+  "version": 1,
+  "prerequisites": ["rovenfall:first_steps"],
+  "objectives": [
+    {
+      "id": "rovenfall:expedition_provisions/cooking",
+      "kind": "activity",
+      "target": "rovenfall:cooking",
+      "required_count": 60
+    },
+    {
+      "id": "rovenfall:expedition_provisions/shop_trade",
+      "kind": "shop_trade",
+      "required_count": 3
+    }
+  ],
+  "rewards": {
+    "currency": 120,
+    "activity_xp": {
+      "activity": "rovenfall:cooking",
+      "amount": 20
+    }
+  }
+}

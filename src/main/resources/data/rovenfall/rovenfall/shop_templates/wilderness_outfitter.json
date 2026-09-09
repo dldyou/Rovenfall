@@ -1,0 +1,288 @@
+{
+  "translation_key": "shop_template.rovenfall.wilderness_outfitter",
+  "offers": [
+    {
+      "id": "rovenfall:outfitter_rations",
+      "item": {
+        "id": "minecraft:cooked_beef",
+        "count": 4
+      },
+      "buy_price": 16,
+      "stock": {
+        "initial": 16,
+        "maximum": 32,
+        "restock_amount": 4,
+        "restock_interval_ticks": 1200
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_frontier_stew",
+      "item": {
+        "id": "rovenfall:frontier_stew",
+        "count": 1
+      },
+      "buy_price": 24,
+      "sell_price": 12,
+      "stock": {
+        "initial": 8,
+        "maximum": 16,
+        "restock_amount": 2,
+        "restock_interval_ticks": 2400
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_frontier_feed",
+      "item": {
+        "id": "rovenfall:frontier_feed",
+        "count": 4
+      },
+      "buy_price": 12,
+      "sell_price": 6,
+      "stock": {
+        "initial": 16,
+        "maximum": 32,
+        "restock_amount": 4,
+        "restock_interval_ticks": 1200
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_highland_cheese",
+      "item": {
+        "id": "rovenfall:highland_cheese",
+        "count": 2
+      },
+      "buy_price": 20,
+      "sell_price": 10,
+      "stock": {
+        "initial": 8,
+        "maximum": 16,
+        "restock_amount": 2,
+        "restock_interval_ticks": 2400
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_torches",
+      "item": {
+        "id": "minecraft:torch",
+        "count": 32
+      },
+      "buy_price": 12,
+      "stock": {
+        "initial": 16,
+        "maximum": 32,
+        "restock_amount": 4,
+        "restock_interval_ticks": 1200
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_arrows",
+      "item": {
+        "id": "minecraft:arrow",
+        "count": 16
+      },
+      "buy_price": 12,
+      "stock": {
+        "initial": 16,
+        "maximum": 32,
+        "restock_amount": 4,
+        "restock_interval_ticks": 1200
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_honey_bottle",
+      "item": {
+        "id": "minecraft:honey_bottle",
+        "count": 1
+      },
+      "buy_price": 8,
+      "stock": {
+        "initial": 12,
+        "maximum": 24,
+        "restock_amount": 2,
+        "restock_interval_ticks": 2400
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_mireguard_tonic",
+      "item": {
+        "id": "rovenfall:mireguard_tonic",
+        "count": 1
+      },
+      "buy_price": 28,
+      "sell_price": 14,
+      "stock": {
+        "initial": 4,
+        "maximum": 12,
+        "restock_amount": 2,
+        "restock_interval_ticks": 2400
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_cinderward_tonic",
+      "item": {
+        "id": "rovenfall:cinderward_tonic",
+        "count": 1
+      },
+      "buy_price": 36,
+      "sell_price": 18,
+      "stock": {
+        "initial": 4,
+        "maximum": 12,
+        "restock_amount": 2,
+        "restock_interval_ticks": 2400
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_ashveil_tonic",
+      "item": {
+        "id": "rovenfall:ashveil_tonic",
+        "count": 1
+      },
+      "buy_price": 32,
+      "sell_price": 16,
+      "stock": {
+        "initial": 4,
+        "maximum": 12,
+        "restock_amount": 2,
+        "restock_interval_ticks": 2400
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_runeward_tonic",
+      "item": {
+        "id": "rovenfall:runeward_tonic",
+        "count": 1
+      },
+      "buy_price": 40,
+      "sell_price": 20,
+      "stock": {
+        "initial": 4,
+        "maximum": 12,
+        "restock_amount": 2,
+        "restock_interval_ticks": 2400
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_froststep_tonic",
+      "item": {
+        "id": "rovenfall:froststep_tonic",
+        "count": 1
+      },
+      "buy_price": 38,
+      "sell_price": 19,
+      "stock": {
+        "initial": 4,
+        "maximum": 12,
+        "restock_amount": 2,
+        "restock_interval_ticks": 2400
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_tidebreath_tonic",
+      "item": {
+        "id": "rovenfall:tidebreath_tonic",
+        "count": 1
+      },
+      "buy_price": 42,
+      "sell_price": 21,
+      "stock": {
+        "initial": 4,
+        "maximum": 12,
+        "restock_amount": 2,
+        "restock_interval_ticks": 2400
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_deepsight_tonic",
+      "item": {
+        "id": "rovenfall:deepsight_tonic",
+        "count": 1
+      },
+      "buy_price": 44,
+      "sell_price": 22,
+      "stock": {
+        "initial": 4,
+        "maximum": 12,
+        "restock_amount": 2,
+        "restock_interval_ticks": 2400
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_mirefang_gland",
+      "item": {
+        "id": "rovenfall:mirefang_gland",
+        "count": 1
+      },
+      "sell_price": 10,
+      "stock": {
+        "unlimited": true
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_cinder_core",
+      "item": {
+        "id": "rovenfall:cinder_core",
+        "count": 1
+      },
+      "sell_price": 14,
+      "stock": {
+        "unlimited": true
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_ashen_residue",
+      "item": {
+        "id": "rovenfall:ashen_residue",
+        "count": 1
+      },
+      "sell_price": 8,
+      "stock": {
+        "unlimited": true
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_runebound_fragment",
+      "item": {
+        "id": "rovenfall:runebound_fragment",
+        "count": 1
+      },
+      "sell_price": 12,
+      "stock": {
+        "unlimited": true
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_frostbound_shard",
+      "item": {
+        "id": "rovenfall:frostbound_shard",
+        "count": 1
+      },
+      "sell_price": 11,
+      "stock": {
+        "unlimited": true
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_tidebound_scale",
+      "item": {
+        "id": "rovenfall:tidebound_scale",
+        "count": 1
+      },
+      "sell_price": 13,
+      "stock": {
+        "unlimited": true
+      }
+    },
+    {
+      "id": "rovenfall:outfitter_deepstone_core",
+      "item": {
+        "id": "rovenfall:deepstone_core",
+        "count": 1
+      },
+      "sell_price": 15,
+      "stock": {
+        "unlimited": true
+      }
+    }
+  ]
+}

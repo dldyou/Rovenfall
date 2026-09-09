@@ -1,0 +1,56 @@
+{
+  "translation_key": "career.rovenfall.adventurer",
+  "tier": 1,
+  "parents": [],
+  "activity_levels": {},
+  "experience_tracks": [
+    "combat",
+    "cooking",
+    "mining",
+    "exploration",
+    "hunting",
+    "building",
+    "farming"
+  ],
+  "level_thresholds": [0, 500, 1500, 3500, 7000, 12000],
+  "promotion_cost": 0,
+  "promotion_skill_points": 0,
+  "skill_reset_cost": 100,
+  "skills": {
+    "rovenfall:well_traveled": {
+      "translation_key": "career_skill.rovenfall.well_traveled",
+      "maximum_rank": 2,
+      "point_cost": 1,
+      "scope": "global",
+      "active": {
+        "effect": "minecraft:speed",
+        "duration_ticks": 200,
+        "amplifier": 0,
+        "cooldown_seconds": 30
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "exploration",
+          "magnitude_per_rank_bps": 500
+        }
+      ]
+    },
+    "rovenfall:versatile": {
+      "translation_key": "career_skill.rovenfall.versatile",
+      "prerequisites": ["rovenfall:well_traveled"],
+      "maximum_rank": 1,
+      "point_cost": 1,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:night_vision",
+        "duration_ticks": 600,
+        "amplifier": 0,
+        "cooldown_seconds": 60
+      },
+      "effects": [
+        { "type": "activity_experience_bonus", "magnitude_per_rank_bps": 300 }
+      ]
+    }
+  }
+}

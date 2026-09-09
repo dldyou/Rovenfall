@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "equipment",
+  "ingredients": [
+    "minecraft:book",
+    "rovenfall:runebound_fragment",
+    "rovenfall:frostbound_shard"
+  ],
+  "result": {
+    "id": "minecraft:enchanted_book",
+    "components": {
+      "minecraft:stored_enchantments": {
+        "rovenfall:rime_edge": 1
+      }
+    }
+  }
+}

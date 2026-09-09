@@ -1,0 +1,26 @@
+{
+  "parent": "rovenfall:wilderness/root",
+  "criteria": {
+    "defeated": {
+      "trigger": "minecraft:impossible"
+    }
+  },
+  "display": {
+    "description": {
+      "translate": "advancements.rovenfall.wilderness.warden_defeated.description"
+    },
+    "frame": "challenge",
+    "icon": {
+      "id": "minecraft:nether_star"
+    },
+    "title": {
+      "translate": "advancements.rovenfall.wilderness.warden_defeated.title"
+    }
+  },
+  "requirements": [
+    [
+      "defeated"
+    ]
+  ],
+  "sends_telemetry_event": false
+}
