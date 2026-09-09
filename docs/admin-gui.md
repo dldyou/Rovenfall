@@ -24,9 +24,16 @@ container identity, and session state.
 All cards, paging controls, filters, selectors, position helpers, confirmation actions, and
 the Advanced details control participate in native focus traversal. Use `Tab` or the arrow keys
 to move focus, `Enter` or `Space` to activate a button, either Enter key to submit a focused
-search or typed form, and `Page Up`/`Page Down` to page. The focused widget has a two-tone
+search or typed form, `Ctrl+F` or `/` to focus an available search field, `R` to refresh, and
+`Page Up`/`Page Down` to page. `Escape` first leaves a focused text field, then activates the
+visible Back action one level at a time; at a root screen it keeps Minecraft's normal close
+behavior. The focused widget has a two-tone
 high-contrast ring that is visually distinct from hover. Narration includes card position,
 public detail, usage hints, and form validation errors.
+
+The bundled browser console follows the same search-first and preview-before-confirming model.
+Its operator quick start, keyboard map, user filters, safe-change flow, and troubleshooting guide
+are documented in [Local administration console](operations/admin-console.md).
 
 Normal cards and details omit UUIDs, namespaced identifiers, and long evidence hashes. Advanced
 details is the explicit technical view and supports `Ctrl+C` while a card is keyboard-focused.

@@ -1,0 +1,9 @@
+{
+  "track": "exploration",
+  "kind": "exploration_discovery",
+  "target": "minecraft:desert",
+  "experience": 30,
+  "window_millis": 60000,
+  "target_window_cap": 30,
+  "player_window_cap": 120
+}

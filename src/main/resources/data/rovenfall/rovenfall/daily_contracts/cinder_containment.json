@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.cinder_containment",
+  "description_translation_key": "daily_contract_description.rovenfall.cinder_containment",
+  "kind": "hunting_contribution",
+  "target": "rovenfall:cinder_wisp",
+  "required_experience": 240,
+  "currency_reward": 220
+}

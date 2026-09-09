@@ -1,0 +1,55 @@
+{
+  "translation_key": "career.rovenfall.scout",
+  "tier": 2,
+  "parents": ["rovenfall:adventurer"],
+  "activity_levels": {
+    "exploration": 2,
+    "hunting": 2
+  },
+  "experience_tracks": ["exploration", "hunting"],
+  "level_thresholds": [0, 750, 2250, 5000, 9500, 16000],
+  "promotion_cost": 100,
+  "promotion_skill_points": 1,
+  "skill_reset_cost": 100,
+  "skills": {
+    "rovenfall:trailblazer": {
+      "translation_key": "career_skill.rovenfall.trailblazer",
+      "maximum_rank": 3,
+      "point_cost": 1,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:speed",
+        "duration_ticks": 200,
+        "amplifier": 1,
+        "cooldown_seconds": 45
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "exploration",
+          "magnitude_per_rank_bps": 1000
+        }
+      ]
+    },
+    "rovenfall:keen_senses": {
+      "translation_key": "career_skill.rovenfall.keen_senses",
+      "prerequisites": ["rovenfall:trailblazer"],
+      "maximum_rank": 2,
+      "point_cost": 1,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:night_vision",
+        "duration_ticks": 600,
+        "amplifier": 0,
+        "cooldown_seconds": 60
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "hunting",
+          "magnitude_per_rank_bps": 1000
+        }
+      ]
+    }
+  }
+}

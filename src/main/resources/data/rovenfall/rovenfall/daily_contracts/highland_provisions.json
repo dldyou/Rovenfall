@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.highland_provisions",
+  "description_translation_key": "daily_contract_description.rovenfall.highland_provisions",
+  "kind": "cooking_result",
+  "target": "rovenfall:highland_cheese",
+  "required_experience": 48,
+  "currency_reward": 150
+}

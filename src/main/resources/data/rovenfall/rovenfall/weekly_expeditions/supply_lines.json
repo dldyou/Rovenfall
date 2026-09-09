@@ -1,0 +1,13 @@
+{
+  "translation_key": "weekly_expedition.rovenfall.supply_lines",
+  "description_translation_key": "weekly_expedition_description.rovenfall.supply_lines",
+  "daily_contracts": {
+    "rovenfall:iron_rush": 2,
+    "rovenfall:harvest_rations": 2,
+    "rovenfall:camp_provisions": 2,
+    "rovenfall:frontier_feast": 2,
+    "rovenfall:highland_herd": 2,
+    "rovenfall:highland_provisions": 2
+  },
+  "currency_reward": 1000
+}

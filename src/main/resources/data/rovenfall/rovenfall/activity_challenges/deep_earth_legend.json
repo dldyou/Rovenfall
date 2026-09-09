@@ -1,0 +1,9 @@
+{
+  "translation_key": "activity_challenge.rovenfall.deep_earth_legend",
+  "description_translation_key": "activity_challenge_description.rovenfall.deep_earth_legend",
+  "activity_levels": {
+    "mining": 8,
+    "exploration": 6
+  },
+  "currency_reward": 700
+}

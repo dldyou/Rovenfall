@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.harvest_rations",
+  "description_translation_key": "daily_contract_description.rovenfall.harvest_rations",
+  "kind": "mature_crop_harvest",
+  "target": "minecraft:wheat",
+  "required_experience": 64,
+  "currency_reward": 90
+}

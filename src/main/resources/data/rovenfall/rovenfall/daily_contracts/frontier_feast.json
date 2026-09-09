@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.frontier_feast",
+  "description_translation_key": "daily_contract_description.rovenfall.frontier_feast",
+  "kind": "cooking_result",
+  "target": "rovenfall:frontier_stew",
+  "required_experience": 40,
+  "currency_reward": 130
+}

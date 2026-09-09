@@ -1,0 +1,11 @@
+{
+  "translation_key": "activity_challenge.rovenfall.wilderness_veteran",
+  "description_translation_key": "activity_challenge_description.rovenfall.wilderness_veteran",
+  "activity_levels": {
+    "combat": 5,
+    "mining": 5,
+    "exploration": 5,
+    "hunting": 5
+  },
+  "currency_reward": 500
+}

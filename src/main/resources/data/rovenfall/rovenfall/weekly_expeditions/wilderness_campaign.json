@@ -1,0 +1,23 @@
+{
+  "translation_key": "weekly_expedition.rovenfall.wilderness_campaign",
+  "description_translation_key": "weekly_expedition_description.rovenfall.wilderness_campaign",
+  "daily_contracts": {
+    "rovenfall:iron_rush": 2,
+    "rovenfall:harvest_rations": 2,
+    "rovenfall:camp_provisions": 2,
+    "rovenfall:frontier_feast": 2,
+    "rovenfall:highland_herd": 2,
+    "rovenfall:highland_provisions": 2,
+    "rovenfall:zombie_cull": 2,
+    "rovenfall:bone_patrol": 2,
+    "rovenfall:ashen_pursuit": 2,
+    "rovenfall:rune_breaker": 2,
+    "rovenfall:mirefang_hunt": 2,
+    "rovenfall:cinder_containment": 2,
+    "rovenfall:frozen_front": 2,
+    "rovenfall:sunken_patrol": 2,
+    "rovenfall:depths_watch": 2,
+    "rovenfall:warden_trial": 2
+  },
+  "currency_reward": 3900
+}

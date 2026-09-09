@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.trail_ration_supplies",
+  "description_translation_key": "daily_contract_description.rovenfall.trail_ration_supplies",
+  "kind": "cooking_result",
+  "target": "rovenfall:trail_ration",
+  "required_experience": 48,
+  "currency_reward": 100
+}

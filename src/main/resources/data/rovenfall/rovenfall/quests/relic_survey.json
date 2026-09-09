@@ -1,0 +1,29 @@
+{
+  "translation_key": "quest.rovenfall.relic_survey",
+  "description_translation_key": "quest.rovenfall.relic_survey.description",
+  "version": 1,
+  "prerequisites": [
+    "rovenfall:wilderness_patrol"
+  ],
+  "objectives": [
+    {
+      "id": "rovenfall:relic_survey/hunting",
+      "kind": "activity",
+      "target": "rovenfall:hunting",
+      "required_count": 140
+    },
+    {
+      "id": "rovenfall:relic_survey/mining",
+      "kind": "activity",
+      "target": "rovenfall:mining",
+      "required_count": 120
+    }
+  ],
+  "rewards": {
+    "currency": 220,
+    "activity_xp": {
+      "amount": 30,
+      "activity": "rovenfall:mining"
+    }
+  }
+}

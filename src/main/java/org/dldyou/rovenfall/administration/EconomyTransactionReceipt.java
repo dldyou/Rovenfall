@@ -139,6 +139,9 @@ public record EconomyTransactionReceipt(
         BOSS_REWARD("boss_reward"),
         QUEST_REWARD("quest_reward"),
         QUEST_COMPLETION("quest_completion"),
+        CAREER_PROMOTION("career_promotion"),
+        SKILL_UNLOCK("skill_unlock"),
+        SKILL_RESET("skill_reset"),
         REVERSAL("reversal");
 
         static final Codec<Kind> CODEC = StringRepresentable.fromEnum(Kind::values);

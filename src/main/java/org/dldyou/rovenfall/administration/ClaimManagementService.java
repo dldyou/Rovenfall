@@ -1,6 +1,7 @@
 package org.dldyou.rovenfall.administration;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Predicate;
@@ -38,33 +39,71 @@ public final class ClaimManagementService {
         if (rejected != null) {
             return rejected;
         }
-        Claim claim = state.claim(key).orElse(null);
-        if (claim == null) {
-            return denied(state, actorId, key, Status.CLAIM_NOT_FOUND, "claim_not_found",
+        RoleEvaluation evaluation = evaluateSetRole(
+                state, actorId, authorizationOverride, key, targetId, role);
+        if (!evaluation.allowed()) {
+            return denied(state, actorId, key, evaluation.status(), evaluation.status().id(),
                     payload, timestampEpochMillis, transactionId);
         }
-        if (!canManage(state, claim, actorId, authorizationOverride)) {
-            return denied(state, actorId, key, Status.UNAUTHORIZED, "unauthorized",
-                    payload, timestampEpochMillis, transactionId);
-        }
-        if (targetId == null || role == null || role == ClaimRole.OWNER || targetId.equals(claim.ownerId())) {
-            return denied(state, actorId, key, Status.INVALID_TARGET, "invalid_target",
-                    payload, timestampEpochMillis, transactionId);
-        }
-        ClaimRole existing = claim.trustedRoles().get(targetId);
-        if (existing == role) {
+        Claim claim = evaluation.claim().orElseThrow();
+        if (!evaluation.wouldChange()) {
             return commitNoChange(
                     state, actorId, key, claim, reason, timestampEpochMillis, transactionId,
                     ClaimMutationReceipt.Kind.ROLE_SET, payload, "claim_role_no_change");
-        }
-        if (existing == null && claim.trustedRoles().size() >= Claim.MAX_TRUSTED_PLAYERS) {
-            return denied(state, actorId, key, Status.TRUST_LIMIT_REACHED, "trust_limit_reached",
-                    payload, timestampEpochMillis, transactionId);
         }
         Claim updated = claim.withRole(targetId, role);
         return commitMutation(
                 state, actorId, key, claim, updated, reason, timestampEpochMillis, transactionId,
                 ClaimMutationReceipt.Kind.ROLE_SET, payload, "claim_role_set");
+    }
+
+    public static RoleEvaluation evaluateSetRole(
+            PlatformSavedData state,
+            UUID actorId,
+            boolean authorizationOverride,
+            ClaimKey key,
+            UUID targetId,
+            ClaimRole requestedRole) {
+        if (state == null || actorId == null || key == null) {
+            return roleEvaluation(Status.INVALID_REQUEST, Optional.empty(), ClaimRole.VISITOR,
+                    ClaimRole.VISITOR, requestedRole, 0);
+        }
+        Optional<Claim> retained = state.claim(key);
+        ClaimRole retainedActorRole = retained.map(claim -> claim.roleOf(actorId)).orElse(ClaimRole.VISITOR);
+        ClaimRole retainedTargetRole = targetId == null
+                ? ClaimRole.VISITOR
+                : retained.map(claim -> claim.roleOf(targetId)).orElse(ClaimRole.VISITOR);
+        if (!state.isWritable()) {
+            return roleEvaluation(Status.READ_ONLY_SCHEMA, retained, retainedActorRole,
+                    retainedTargetRole, requestedRole, retained.map(claim -> claim.trustedRoles().size()).orElse(0));
+        }
+        if (retained.isEmpty()) {
+            return roleEvaluation(Status.CLAIM_NOT_FOUND, Optional.empty(), ClaimRole.VISITOR,
+                    ClaimRole.VISITOR, requestedRole, 0);
+        }
+        Claim claim = retained.orElseThrow();
+        ClaimRole actorRole = retainedActorRole;
+        ClaimRole targetRole = retainedTargetRole;
+        if (!canManage(state, claim, actorId, authorizationOverride)) {
+            return roleEvaluation(Status.UNAUTHORIZED, retained, actorRole, targetRole,
+                    requestedRole, claim.trustedRoles().size());
+        }
+        if (targetId == null || requestedRole == null || requestedRole == ClaimRole.OWNER
+                || targetId.equals(claim.ownerId())) {
+            return roleEvaluation(Status.INVALID_TARGET, retained, actorRole, targetRole,
+                    requestedRole, claim.trustedRoles().size());
+        }
+        ClaimRole existing = claim.trustedRoles().get(targetId);
+        if (existing == requestedRole) {
+            return roleEvaluation(Status.NO_CHANGE, retained, actorRole, targetRole,
+                    requestedRole, claim.trustedRoles().size());
+        }
+        if (existing == null && claim.trustedRoles().size() >= Claim.MAX_TRUSTED_PLAYERS) {
+            return roleEvaluation(Status.TRUST_LIMIT_REACHED, retained, actorRole, targetRole,
+                    requestedRole, claim.trustedRoles().size());
+        }
+        return roleEvaluation(Status.SUCCESS, retained, actorRole, targetRole,
+                requestedRole, claim.trustedRoles().size());
     }
 
     public static Result removeRole(
@@ -588,6 +627,18 @@ public final class ClaimManagementService {
         return new Result(status, transactionId, amount, balance, auditRecorded);
     }
 
+    private static RoleEvaluation roleEvaluation(
+            Status status,
+            Optional<Claim> claim,
+            ClaimRole actorRole,
+            ClaimRole currentTargetRole,
+            ClaimRole requestedRole,
+            int trustedPlayers) {
+        return new RoleEvaluation(
+                status, claim, actorRole, currentTargetRole,
+                Optional.ofNullable(requestedRole), trustedPlayers, Claim.MAX_TRUSTED_PLAYERS);
+    }
+
     public enum Status {
         SUCCESS,
         DUPLICATE_TRANSACTION,
@@ -609,7 +660,37 @@ public final class ClaimManagementService {
         ACCOUNT_NOT_FOUND,
         OVERFLOW,
         MAXIMUM_BALANCE_EXCEEDED,
-        TRANSACTION_LEDGER_FULL
+        TRANSACTION_LEDGER_FULL;
+
+        public String id() {
+            return name().toLowerCase(Locale.ROOT);
+        }
+
+        public String evaluationTranslationKey() {
+            return "claim_role_evaluation.rovenfall." + id();
+        }
+    }
+
+    public record RoleEvaluation(
+            Status status,
+            Optional<Claim> claim,
+            ClaimRole actorRole,
+            ClaimRole currentTargetRole,
+            Optional<ClaimRole> requestedRole,
+            int trustedPlayers,
+            int trustLimit) {
+        public RoleEvaluation {
+            claim = claim == null ? Optional.empty() : claim;
+            requestedRole = requestedRole == null ? Optional.empty() : requestedRole;
+        }
+
+        public boolean allowed() {
+            return status == Status.SUCCESS || status == Status.NO_CHANGE;
+        }
+
+        public boolean wouldChange() {
+            return status == Status.SUCCESS;
+        }
     }
 
     public record Result(

@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.warden_trial",
+  "description_translation_key": "daily_contract_description.rovenfall.warden_trial",
+  "kind": "hunting_contribution",
+  "target": "rovenfall:arena_warden",
+  "required_experience": 80,
+  "currency_reward": 300
+}

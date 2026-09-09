@@ -1,5 +1,48 @@
 # Custom UI release validation
 
+## Issue #135 client observation (2026-09-09)
+
+Client code: `b2bfba2`, Minecraft 26.2 / NeoForge 26.2.0.66 / JDK 25,
+English, default GUI scale, vanilla resources, new local survival test world
+under the development run directory. This is a singleplayer observation, not
+multiplayer or full localization acceptance.
+
+- `J` opened the custom Journey board with the added expedition content.
+- Opening Camp Supplies and clicking **View prerequisite quest** opened
+  Provisions for the Road. The next prerequisite tooltip named First Steps.
+- `Esc` returned through the dashboard to gameplay.
+- [Native F2 capture](release-evidence/ui/issue-135/en_us-prerequisite-detail.png)
+  records the destination detail page and prerequisite tooltip at a maximized
+  window. The initial vanilla movement tutorial covers the upper-right header.
+- At the initial 854-pixel-wide framebuffer, the board showed three client
+  pages. Automated Page Down and wheel input did not visibly change the page.
+  This remains an observation to diagnose, not a proven game-code defect;
+  repeat after dismissing the tutorial and verify mouse, keyboard and wheel.
+- The toolbar shortens the prerequisite label to “View”; its tooltip provides
+  the full action and destination. Smaller-window label clarity, all locales,
+  narration and Rune Sentinel combat feel remain pending.
+
+Screenshot SHA-256:
+`7275305EE9E73EE3CA9748A5C1548E2A859043976B90719EC387DCA19203E48E`
+
+### Follow-up with tutorial disabled
+
+At framebuffer 854 × 480 and GUI scale 2, disabling the development client's
+initial tutorial exposed the header buttons. Mouse clicks navigated 1 → 2 → 3;
+Next was disabled on the final page. The [English final-page capture](release-evidence/ui/issue-135/en_us-journey-page-3.png)
+includes Relic Survey. No paging logic defect was established. Automated
+Page Down/Next key inputs remain unverified and should not be counted as a pass.
+
+The Korean client opened the new journeys through the same button navigation.
+The detail page exposed an incorrect activity unit: XP progress was labelled
+as a number of actions (`회`). The shared activity objective and HUD translations
+now explicitly name XP in English, Korean and Japanese. The
+[Korean corrected detail capture](release-evidence/ui/issue-135/ko_kr-expedition-xp.png)
+shows Exploration XP `0/100` alongside the unchanged shop-trade count `0/4회`.
+This correction was visually checked after F3+T resource reload. Japanese live
+rendering, narration, and Rune Sentinel combat feel remain pending. The test
+client was shut down normally after saving these captures.
+
 This is the release evidence contract for the code-drawn inventory, player menus, and operator
 console. Geometry and compatibility have automated checks; visual rendering, narration output,
 and interaction with third-party inventory mods still require a real client.
@@ -160,8 +203,29 @@ tracker in `ko_kr`, `en_us`, and `ja_jp`; Korean labels must use natural player 
 | Server authority | Change progress, complete the target, expire its request window, remove or version-change its definition, and try a stale menu click | Only the server validates the shown click and progress. The tracker refreshes or clears; stale input cannot retain changed guidance or create progress/rewards. |
 | Synchronization | Log in, pin/clear, make matching server-observed progress, reload definitions, and cross a daily/weekly rotation | The panel updates promptly. Repeated unchanged state does not visibly flicker or cause repeated narration; the periodic reconciliation remains a 20-tick, at-most-16-player batch. |
 | HUD visibility | Pin a journey at minimum, standard, and large GUI scales | The card is inside the upper-right screen edge at every scale. Opening any screen or pressing F1 hides it; returning to gameplay restores it when still active. |
+| HUD mode key | Rebind the Rovenfall HUD key, then cycle it during gameplay | Full → Quest only → Hidden wraps predictably; the action bar and narrator announce each mode, screens keep normal key behavior, and no quest state changes. |
 | Accessibility | Enable Minecraft narration and use mouse plus keyboard Journey controls | Pin/replace/clear controls and the displayed title, kind, state, objective progress, and refresh wording are intelligible without color-only meaning. Narration does not repeat every tick. |
 | Locales | Repeat story, daily, and weekly tracker flows in all three shipped locales | No key is missing, placeholders remain correct, and the same natural player-facing terms appear in each locale. |
+
+## Issue #129 challenge and admin-view release checks
+
+| Case | Required state | Expected result |
+| --- | --- | --- |
+| Challenge ordering | Open **Skills → Challenges** with claimable, in-progress, and completed goals | Claimable goals appear first; every card shows a localized state, reward, and all activity-level requirements without a raw definition ID. |
+| Challenge reward | Select a claimable goal, then repeat the click and try a stale open screen | The first server-validated click pays once and records the existing deterministic receipt and audit event; repeats cannot change the balance. |
+| Late-game catalog | Load the default data pack and inspect the four level 6–10 goals | All ten challenge definitions load, requirements are visible, and the final goal requires level 10 in all seven activities. |
+| Shareable admin view | Apply a query, page, and audit filters, copy **Current view link**, then reload it | Menu, applied query, page, and filters are restored; draft values and authentication tokens never appear in the URL. |
+
+## Issue #131 progression shortcut and operator-insight release checks
+
+| Case | Required state | Expected result |
+| --- | --- | --- |
+| Direct menu keys | Rebind and use Journey, Skills, and Land controls during gameplay | Each key opens the intended server-owned menu; another open screen keeps its own input, and rapid or invalid requests cannot bypass the existing server checks. |
+| Level-up tiers | Cross an ordinary level, a five-level boundary, and a final activity or career level | Gold level-up, cyan milestone, and purple mastery presentations are distinct; one award emits only the strongest applicable title, sound, and bounded particle burst. |
+| Player progression | Open a player detail with mixed activity XP at desktop and narrow widths | All seven localized tracks retain level, exact XP, and an accessible progress bar; the grid collapses to two and then one column without horizontal clipping. |
+| Challenge overview | Compare a player with in-progress, claimable, and claimed challenges | Total, claimable, and completed counts match server evaluation and retained reward receipts; opening the detail causes no mutation or audit entry. |
+| Missing definitions | Make the activity-level catalog unavailable in a recovery fixture | The console shows an explicit unavailable message and no guessed challenge counts. |
+| Locales and accessibility | Repeat the detail in Korean, English, and Japanese with keyboard and a screen reader | Track names and summary labels are localized; progress bars expose names and numeric values without relying on color. |
 
 ## Issue #101 release-candidate result
 

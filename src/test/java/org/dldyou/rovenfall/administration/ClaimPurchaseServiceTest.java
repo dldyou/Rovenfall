@@ -151,8 +151,48 @@ final class ClaimPurchaseServiceTest {
         assertFalse(readOnly.isWritable());
         assertEquals(ClaimPurchaseService.Status.READ_ONLY_SCHEMA,
                 purchase(readOnly, player, SECOND_POS, id(75), 1, 0, 2, 4_075).status());
+        assertEquals(ClaimPurchaseService.Status.READ_ONLY_SCHEMA,
+                ClaimPurchaseService.evaluatePurchase(
+                        readOnly, player, Level.OVERWORLD, Level.OVERWORLD, SECOND_POS,
+                        ignored -> true, ignored -> false, 1, 0, 2).status());
         assertEquals(1, readOnly.claimCount());
         assertEquals(Long.MAX_VALUE - 1, readOnly.economyBalance(player).orElseThrow());
+    }
+
+    @Test
+    void purchaseEvaluationIsReadOnlyAndMatchesTheMutationPolicy() {
+        UUID player = id(76);
+        PlatformSavedData state = funded(player, 2_500, 760);
+        int auditCount = state.auditCount();
+
+        var allowed = ClaimPurchaseService.evaluatePurchase(
+                state, player, Level.OVERWORLD, Level.OVERWORLD, FIRST_POS,
+                ignored -> true, ignored -> false, 1_000, 250, 4);
+
+        assertTrue(allowed.allowed());
+        assertEquals(ClaimPurchaseService.Status.SUCCESS, allowed.status());
+        assertEquals(1_000, allowed.price());
+        assertEquals(2_500, allowed.balance());
+        assertEquals(0, allowed.ownedClaims());
+        assertEquals(4, allowed.ownershipCap());
+        assertEquals(0, state.claimCount());
+        assertEquals(auditCount, state.auditCount());
+
+        assertEquals(ClaimPurchaseService.Status.SUCCESS,
+                purchase(state, player, FIRST_POS, id(77), 1_000, 250, 4, 761).status());
+        int afterPurchaseAuditCount = state.auditCount();
+        var claimed = ClaimPurchaseService.evaluatePurchase(
+                state, player, Level.OVERWORLD, Level.OVERWORLD, FIRST_POS,
+                ignored -> true, ignored -> false, 1_000, 250, 4);
+
+        assertFalse(claimed.allowed());
+        assertEquals(ClaimPurchaseService.Status.ALREADY_CLAIMED, claimed.status());
+        assertEquals(Optional.of(player), claimed.ownerId());
+        assertEquals(1_250, claimed.price());
+        assertEquals(1, claimed.ownedClaims());
+        assertEquals(afterPurchaseAuditCount, state.auditCount());
+        assertEquals(1_500, state.economyBalance(player).orElseThrow());
+        assertEquals(1, state.claimCount());
     }
 
     @Test

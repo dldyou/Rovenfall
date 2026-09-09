@@ -1,0 +1,14 @@
+{
+  "translation_key": "activity_challenge.rovenfall.master_of_trades",
+  "description_translation_key": "activity_challenge_description.rovenfall.master_of_trades",
+  "activity_levels": {
+    "combat": 3,
+    "cooking": 3,
+    "mining": 3,
+    "exploration": 3,
+    "hunting": 3,
+    "building": 3,
+    "farming": 3
+  },
+  "currency_reward": 750
+}

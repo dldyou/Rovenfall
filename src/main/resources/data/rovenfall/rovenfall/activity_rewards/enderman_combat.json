@@ -1,0 +1,9 @@
+{
+  "track": "combat",
+  "kind": "combat_damage",
+  "target": "minecraft:enderman",
+  "experience": 1,
+  "window_millis": 60000,
+  "target_window_cap": 40,
+  "player_window_cap": 60
+}

@@ -1,0 +1,9 @@
+{
+  "track": "building",
+  "kind": "building_placement",
+  "target": "minecraft:bricks",
+  "experience": 2,
+  "window_millis": 60000,
+  "target_window_cap": 40,
+  "player_window_cap": 40
+}

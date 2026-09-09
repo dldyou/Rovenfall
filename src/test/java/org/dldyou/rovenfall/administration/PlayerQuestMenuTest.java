@@ -6,6 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
+import org.dldyou.rovenfall.activities.ActivityKind;
+import org.dldyou.rovenfall.activities.DailyContractDefinition;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.ChunkPos;
@@ -30,7 +33,7 @@ final class PlayerQuestMenuTest {
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 46));
         assertEquals(PlayerQuestMenu.Action.CONTRACTS,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.CONTRACTS, 46));
-        assertEquals(PlayerQuestMenu.Action.NONE,
+        assertEquals(PlayerQuestMenu.Action.OPEN_PREREQUISITE,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DETAIL, 46));
         assertEquals(PlayerQuestMenu.Action.EXPLORATION,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 47));
@@ -46,10 +49,16 @@ final class PlayerQuestMenuTest {
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 50));
         assertEquals(PlayerQuestMenu.Action.CLEAR_TRACKER,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 51));
+        assertEquals(PlayerQuestMenu.Action.FILTER_STORY,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 0));
+        assertEquals(PlayerQuestMenu.Action.FILTER_STORY,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 7));
+        assertEquals(PlayerQuestMenu.Action.NONE,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DETAIL, 7));
         assertEquals(PlayerQuestMenu.Action.REFRESH,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 53));
         assertEquals(PlayerQuestMenu.Action.NONE,
-                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 0));
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 5));
         assertEquals(PlayerQuestMenu.Action.TRACK_CONTRACT,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.CONTRACTS, 20));
         assertEquals(PlayerQuestMenu.Action.NONE,
@@ -91,6 +100,58 @@ final class PlayerQuestMenuTest {
     }
 
     @Test
+    void dailyTasksHaveTheirOwnClaimFilterAndNavigationSlots() {
+        assertEquals(PlayerQuestMenu.Action.DAILY_TASKS,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 52));
+        assertEquals(PlayerQuestMenu.Action.NONE,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DETAIL, 52));
+        assertEquals(PlayerQuestMenu.Action.CLAIM_DAILY,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DAILY_TASKS, 10));
+        assertEquals(PlayerQuestMenu.Action.FILTER_DAILY,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DAILY_TASKS, 1));
+        assertEquals(PlayerQuestMenu.Action.BACK,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DAILY_TASKS, 45));
+        assertEquals(PlayerQuestMenu.Action.NONE,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DAILY_TASKS, 49));
+        assertEquals(PlayerQuestMenu.Action.PREVIOUS,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DAILY_TASKS, 48));
+        assertEquals(PlayerQuestMenu.Action.NEXT,
+                PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DAILY_TASKS, 50));
+        assertFalse(PlayerQuestMenu.shouldEnsureAssignments(PlayerQuestMenu.Page.DAILY_TASKS));
+        assertTrue(PlayerQuestMenu.dailyPriority(DailyContractService.Status.CLAIMABLE)
+                < PlayerQuestMenu.dailyPriority(DailyContractService.Status.IN_PROGRESS));
+        assertTrue(PlayerQuestMenu.dailyPriority(DailyContractService.Status.IN_PROGRESS)
+                < PlayerQuestMenu.dailyPriority(DailyContractService.Status.ALREADY_CLAIMED));
+    }
+
+    @Test
+    void dailyClaimsRejectChangedDefinitionProgressDayAndWriteStatus() {
+        var id = Identifier.parse("rovenfall:trail_ration_supplies");
+        var definition = new DailyContractDefinition("daily_contract.rovenfall.trail_ration_supplies",
+                "daily_contract_description.rovenfall.trail_ration_supplies", ActivityKind.COOKING_RESULT,
+                Identifier.parse("rovenfall:trail_ration"), 48, 100);
+        var state = new PlatformSavedData();
+        var player = UUID.randomUUID();
+        var initial = DailyContractService.evaluate(state, player, id, definition, 1_000);
+        var row = new PlayerQuestMenu.DailyRow(id, definition, initial);
+        assertTrue(PlayerQuestMenu.dailyCurrent(row, definition,
+                DailyContractService.evaluate(state, player, id, definition, 2_000)));
+        assertFalse(PlayerQuestMenu.dailyCurrent(row, null, initial));
+        var changedReward = new DailyContractDefinition(definition.translationKey(),
+                definition.descriptionTranslationKey(), definition.kind(), definition.targetId(), 48, 200);
+        assertFalse(PlayerQuestMenu.dailyCurrent(row, changedReward, initial));
+        assertFalse(PlayerQuestMenu.dailyCurrent(row, definition,
+                DailyContractService.evaluate(state, player, id, definition, DailyContractService.PERIOD_MILLIS)));
+        for (var status : new DailyContractService.Status[] {
+                DailyContractService.Status.CLAIMABLE, DailyContractService.Status.READ_ONLY_SCHEMA,
+                DailyContractService.Status.ALREADY_CLAIMED}) {
+            assertFalse(PlayerQuestMenu.dailyCurrent(row, definition, new DailyContractService.Evaluation(
+                    status, initial.transactionId(), 48, 48, initial.periodStartEpochMillis(),
+                    initial.nextResetEpochMillis())));
+        }
+    }
+
+    @Test
     void pagingStaysInsideTheBoundedTwentyEightEntryWindow() {
         assertEquals(0, PlayerQuestMenu.boundedPage(-1, 0));
         assertEquals(0, PlayerQuestMenu.boundedPage(99, PlayerQuestMenu.PAGE_SIZE));
@@ -112,6 +173,9 @@ final class PlayerQuestMenuTest {
         assertEquals(1, PlayerQuestMenu.contractOffset(22));
         assertEquals(2, PlayerQuestMenu.contractOffset(24));
         assertEquals(-1, PlayerQuestMenu.contractOffset(21));
+        assertEquals(0, PlayerQuestMenu.storyFilterOffset(0));
+        assertEquals(4, PlayerQuestMenu.storyFilterOffset(7));
+        assertEquals(-1, PlayerQuestMenu.storyFilterOffset(5));
         assertTrue(PlayerQuestMenu.tracksStory(story, storyId));
         assertFalse(PlayerQuestMenu.tracksStory(contract, storyId));
         assertTrue(PlayerQuestMenu.tracksContract(contract, contractKey));

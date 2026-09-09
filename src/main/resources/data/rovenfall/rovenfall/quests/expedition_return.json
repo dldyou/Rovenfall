@@ -1,0 +1,29 @@
+{
+  "translation_key": "quest.rovenfall.expedition_return",
+  "description_translation_key": "quest.rovenfall.expedition_return.description",
+  "version": 1,
+  "prerequisites": [
+    "rovenfall:camp_supplies",
+    "rovenfall:relic_survey"
+  ],
+  "objectives": [
+    {
+      "id": "rovenfall:expedition_return/exploration",
+      "kind": "activity",
+      "target": "rovenfall:exploration",
+      "required_count": 100
+    },
+    {
+      "id": "rovenfall:expedition_return/shop_trade",
+      "kind": "shop_trade",
+      "required_count": 4
+    }
+  ],
+  "rewards": {
+    "currency": 300,
+    "activity_xp": {
+      "amount": 40,
+      "activity": "rovenfall:exploration"
+    }
+  }
+}

@@ -13,10 +13,16 @@ public final class ClaimProtectionHooks {
     }
 
     public static boolean environmentMayModify(ServerLevel level, BlockPos source, BlockPos target) {
-        return environmentMayModify(
-                level,
+        var state = PlatformSavedData.get(level.getServer());
+        var hub = level.getServer().overworld();
+        return ClaimProtectionService.environmentMayModify(
+                state,
+                hub.dimension(),
+                hub.getRespawnData().pos(),
+                ClaimConfig.protectedSpawnRadiusChunks(),
                 ClaimKey.at(level.dimension(), source),
-                ClaimKey.at(level.dimension(), target));
+                ClaimKey.at(level.dimension(), target),
+                state.isAdministratorProtected(level.dimension(), target));
     }
 
     static boolean environmentMayModify(ServerLevel level, ClaimKey source, ClaimKey target) {
@@ -31,7 +37,18 @@ public final class ClaimProtectionHooks {
     }
 
     public static boolean systemMayModify(ServerLevel level, BlockPos target) {
-        return systemMayModify(level, ClaimKey.at(level.dimension(), target));
+        var state = PlatformSavedData.get(level.getServer());
+        var hub = level.getServer().overworld();
+        return ClaimProtectionService.evaluate(
+                state,
+                AdministrationService.SYSTEM_ACTOR,
+                false,
+                hub.dimension(),
+                hub.getRespawnData().pos(),
+                ClaimConfig.protectedSpawnRadiusChunks(),
+                state.isAdministratorProtected(level.dimension(), target),
+                ClaimKey.at(level.dimension(), target),
+                ClaimProtectionService.Action.BUILD).allowed();
     }
 
     static boolean systemMayModify(ServerLevel level, ClaimKey target) {

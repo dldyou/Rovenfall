@@ -1,0 +1,33 @@
+{
+  "parent": "minecraft:recipes/root",
+  "criteria": {
+    "has_cinder_core": {
+      "conditions": {
+        "items": [
+          {
+            "items": "rovenfall:cinder_core"
+          }
+        ]
+      },
+      "trigger": "minecraft:inventory_changed"
+    },
+    "has_the_recipe": {
+      "conditions": {
+        "recipe": "rovenfall:cinderward_tonic"
+      },
+      "trigger": "minecraft:recipe_unlocked"
+    }
+  },
+  "requirements": [
+    [
+      "has_the_recipe",
+      "has_cinder_core"
+    ]
+  ],
+  "rewards": {
+    "recipes": [
+      "rovenfall:cinderward_tonic",
+      "rovenfall:cinderbrand"
+    ]
+  }
+}

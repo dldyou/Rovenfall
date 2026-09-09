@@ -1,0 +1,10 @@
+{
+  "translation_key": "activity_challenge.rovenfall.master_artisan",
+  "description_translation_key": "activity_challenge_description.rovenfall.master_artisan",
+  "activity_levels": {
+    "cooking": 7,
+    "building": 7,
+    "farming": 7
+  },
+  "currency_reward": 900
+}
