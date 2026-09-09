@@ -9,7 +9,7 @@ Read versions from the repository before making a version-sensitive decision:
 | Gradle | `gradle/wrapper/gradle-wrapper.properties` | 9.7.1 |
 | Gradle daemon JVM | `gradle/gradle-daemon-jvm.properties` | 25 |
 | Java toolchain | `build.gradle` | 25 |
-| ModDevGradle | `build.gradle` | 2.0.144 |
+| ModDevGradle | `build.gradle` | 2.0.146 |
 | Foojay resolver | `settings.gradle` | 1.0.0 |
 | NeoForge | `gradle.properties` | 26.2.0.66 |
 | Minecraft | `gradle.properties` and metadata range | 26.2 / `[26.2]` |
@@ -21,6 +21,8 @@ Official baselines:
 - [NeoForge 26.2 ModDevGradle template](https://github.com/NeoForgeMDKs/MDK-26.2-ModDevGradle)
 - [Gradle 9.1 Java 25 support](https://docs.gradle.org/9.1.0/release-notes.html#support-for-java-25)
 - [NeoForge project versions](https://projects.neoforged.net/neoforged/neoforge)
+
+Compatibility verified on 2026-09-09 for ModDevGradle 2.0.146 with Gradle 9.7.1, Java 25, Minecraft 26.2, and NeoForge 26.2.0.66: `clean releaseCheck jacocoTestReport --warning-mode all` passed (683 JUnit tests, 52 standard GameTests, and 1 Wilderness GameTest).
 
 ## Foundation status
 
