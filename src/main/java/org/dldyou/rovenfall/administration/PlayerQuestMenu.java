@@ -97,6 +97,7 @@ public final class PlayerQuestMenu extends ChestMenu {
         NAVIGATE,
         CLEAR_NAVIGATION,
         TRACK_STORY,
+        OPEN_PREREQUISITE,
         TRACK_CONTRACT,
         CLEAR_TRACKER,
         REFRESH
@@ -228,6 +229,7 @@ public final class PlayerQuestMenu extends ChestMenu {
             case NAVIGATE -> navigateToExploration();
             case CLEAR_NAVIGATION -> clearExplorationNavigation();
             case TRACK_STORY -> trackStory();
+            case OPEN_PREREQUISITE -> openPrerequisite();
             case TRACK_CONTRACT -> trackContract(slotIndex);
             case CLEAR_TRACKER -> clearTracker();
             case NONE, BACK, REFRESH, DAILY_TASKS, CLAIM_DAILY, FILTER_DAILY -> {
@@ -246,6 +248,9 @@ public final class PlayerQuestMenu extends ChestMenu {
     }
 
     static Action actionAt(Page page, int slot) {
+        if (page == Page.DETAIL && slot == CONTRACTS_SLOT) {
+            return Action.OPEN_PREREQUISITE;
+        }
         if (slot == BACK_SLOT) {
             return Action.BACK;
         }
@@ -797,6 +802,16 @@ public final class PlayerQuestMenu extends ChestMenu {
         }
     }
 
+    private void openPrerequisite() {
+        if (selected == null || selected.missingPrerequisites().isEmpty()) {
+            return;
+        }
+        selected = QuestJourneyView.row(selected.missingPrerequisites().getFirst().id(),
+                QuestDefinitionReloadListener.snapshot(viewer.level().getServer()), renderedState);
+        detailPage = 0;
+        render();
+    }
+
     private void claimDaily(int slot) {
         int offset = contentOffset(slot);
         if (offset < 0 || offset >= displayedDailyRows.size()) {
@@ -914,6 +929,15 @@ public final class PlayerQuestMenu extends ChestMenu {
             content.setItem(CONTENT_SLOTS[index - from], objectiveIcon(objectives.get(index), rpgDefinitions));
         }
         addNavigation(detailPage, objectives.size());
+        if (!selected.missingPrerequisites().isEmpty()) {
+            var prerequisite = selected.missingPrerequisites().getFirst();
+            content.setItem(CONTRACTS_SLOT, PlayerDashboardMenu.icon(
+                    Items.BOOK,
+                    Component.translatable("gui.rovenfall.quest.prerequisite.open"),
+                    prerequisite.translationKey().<Component>map(Component::translatable)
+                            .orElseGet(() -> Component.translatable("gui.rovenfall.quest.unavailable_content")),
+                    Component.translatable("gui.rovenfall.player.click")));
+        }
         boolean tracked = renderedWritable && tracksStory(renderedState, selected.id());
         boolean eligible = (selected.status() == QuestJourneyView.Status.AVAILABLE
                 || selected.status() == QuestJourneyView.Status.IN_PROGRESS)

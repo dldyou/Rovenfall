@@ -33,7 +33,7 @@ final class PlayerQuestMenuTest {
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 46));
         assertEquals(PlayerQuestMenu.Action.CONTRACTS,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.CONTRACTS, 46));
-        assertEquals(PlayerQuestMenu.Action.NONE,
+        assertEquals(PlayerQuestMenu.Action.OPEN_PREREQUISITE,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.DETAIL, 46));
         assertEquals(PlayerQuestMenu.Action.EXPLORATION,
                 PlayerQuestMenu.actionAt(PlayerQuestMenu.Page.LIST, 47));

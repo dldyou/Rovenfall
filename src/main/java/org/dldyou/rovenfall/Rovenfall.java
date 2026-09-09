@@ -2699,6 +2699,53 @@ public final class Rovenfall {
                 });
             }
         });
+        event.registerTest(id("quest_prerequisite_navigation"), new FunctionGameTestInstance(
+                BuiltinTestFunctions.ALWAYS_PASS,
+                new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 20, 0, true)) {
+            @Override
+            public void run(GameTestHelper helper) {
+                var player = helper.makeMockServerPlayerInLevel();
+                var platform = PlatformSavedData.get(helper.getLevel().getServer());
+                var balance = platform.economyBalance(player.getUUID());
+                PlayerQuestMenu.open(player);
+                Component title = Component.translatable("quest.rovenfall.expedition_return");
+                int slot = java.util.stream.IntStream.range(10, 44)
+                        .filter(index -> title.equals(player.containerMenu.getSlot(index).getItem()
+                                .get(net.minecraft.core.component.DataComponents.CUSTOM_NAME)))
+                        .findFirst().orElseThrow();
+                player.containerMenu.clicked(slot, 0, ContainerInput.PICKUP, player);
+                helper.assertTrue(Component.translatable("gui.rovenfall.quest.prerequisite.open").equals(
+                                player.containerMenu.getSlot(46).getItem()
+                                        .get(net.minecraft.core.component.DataComponents.CUSTOM_NAME)),
+                        "Locked quest did not offer prerequisite navigation");
+                helper.runAfterDelay(1, () -> {
+                    player.containerMenu.clicked(46, 0, ContainerInput.PICKUP, player);
+                    helper.assertTrue(Component.translatable("quest.rovenfall.camp_supplies").equals(
+                                    player.containerMenu.getSlot(4).getItem()
+                                            .get(net.minecraft.core.component.DataComponents.CUSTOM_NAME)),
+                            "Prerequisite button did not open the first missing quest");
+                    helper.runAfterDelay(1, () -> {
+                        player.containerMenu.clicked(46, 0, ContainerInput.PICKUP, player);
+                        helper.assertTrue(Component.translatable("quest.rovenfall.expedition_provisions").equals(
+                                        player.containerMenu.getSlot(4).getItem()
+                                                .get(net.minecraft.core.component.DataComponents.CUSTOM_NAME)),
+                                "Nested prerequisite navigation failed");
+                        helper.runAfterDelay(1, () -> {
+                            player.containerMenu.clicked(46, 0, ContainerInput.PICKUP, player);
+                            helper.assertTrue(Component.translatable("quest.rovenfall.first_steps").equals(
+                                            player.containerMenu.getSlot(4).getItem()
+                                                    .get(net.minecraft.core.component.DataComponents.CUSTOM_NAME))
+                                            && player.containerMenu.getSlot(46).getItem().isEmpty(),
+                                    "Available root quest retained a prerequisite button");
+                            helper.assertTrue(platform.economyBalance(player.getUUID()).equals(balance),
+                                    "Prerequisite navigation changed currency");
+                            player.discard();
+                            helper.succeed();
+                        });
+                    });
+                });
+            }
+        });
         event.registerTest(id("daily_tasks_menu_rewards"), new FunctionGameTestInstance(
                 BuiltinTestFunctions.ALWAYS_PASS,
                 new TestData<>(environment, Identifier.withDefaultNamespace("empty"), 20, 0, true)) {

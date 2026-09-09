@@ -1949,5 +1949,6 @@
   "quest.rovenfall.relic_survey": "유물 조사",
   "quest.rovenfall.relic_survey.description": "해금 후 채광 XP 120과 사냥 XP 140을 획득하세요. 야생 동굴 사냥에서 장비 재료를 구할 수 있습니다. 정상 반영된 모든 채광·사냥 XP가 집계됩니다.",
   "quest.rovenfall.expedition_return": "원정의 귀환",
-  "quest.rovenfall.expedition_return.description": "야영 물자와 유물 조사를 완료한 뒤 탐험 XP 100을 획득하고 상점 거래를 4회 완료하세요. 해금 전 활동은 집계되지 않습니다."
+  "quest.rovenfall.expedition_return.description": "야영 물자와 유물 조사를 완료한 뒤 탐험 XP 100을 획득하고 상점 거래를 4회 완료하세요. 해금 전 활동은 집계되지 않습니다.",
+  "gui.rovenfall.quest.prerequisite.open": "선행 퀘스트 보기"
 }

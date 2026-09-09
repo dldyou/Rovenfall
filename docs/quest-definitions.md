@@ -60,6 +60,9 @@ reward transaction, persistence, recovery, and audit paths described below.
 
 Three permanent journeys extend the provisions and patrol routes. They appear in
 Journey (`J`) automatically and can use the existing tracker and status filters.
+On a locked quest's detail page, **View prerequisite quest** opens its first
+missing prerequisite. Repeat to follow the chain to an available quest; `Esc`
+returns to the story list. The button disappears when no prerequisite is missing.
 They do not add prerequisites to the Rift Warden oath or change existing quest
 versions or saved progress.
 
