@@ -9,6 +9,20 @@ Before opening a pull request, run:
 ./gradlew runGameTestServer
 ```
 
+## Admin web
+
+Use Node 24 and pnpm 9.15.4. After changing the admin UI or its dependencies, run:
+
+```shell
+pnpm --dir admin-web install --frozen-lockfile
+pnpm --dir admin-web lint
+pnpm --dir admin-web typecheck
+pnpm --dir admin-web build
+```
+
+Commit the rebuilt files under `src/main/resources/assets/rovenfall/admin` with the source changes;
+the mod JAR serves those bundled files. The Build workflow also runs these web checks.
+
 ## Code coverage
 
 Generate the JUnit coverage reports before changing tested Java code:
