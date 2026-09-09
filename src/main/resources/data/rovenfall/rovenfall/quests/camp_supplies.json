@@ -1,0 +1,29 @@
+{
+  "translation_key": "quest.rovenfall.camp_supplies",
+  "description_translation_key": "quest.rovenfall.camp_supplies.description",
+  "version": 1,
+  "prerequisites": [
+    "rovenfall:expedition_provisions"
+  ],
+  "objectives": [
+    {
+      "id": "rovenfall:camp_supplies/cooking",
+      "kind": "activity",
+      "target": "rovenfall:cooking",
+      "required_count": 96
+    },
+    {
+      "id": "rovenfall:camp_supplies/farming",
+      "kind": "activity",
+      "target": "rovenfall:farming",
+      "required_count": 80
+    }
+  ],
+  "rewards": {
+    "currency": 180,
+    "activity_xp": {
+      "amount": 25,
+      "activity": "rovenfall:cooking"
+    }
+  }
+}

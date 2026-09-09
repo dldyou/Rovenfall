@@ -1943,5 +1943,11 @@
   "daily_contract.rovenfall.highland_provisions": "고원 보급식",
   "daily_contract_description.rovenfall.highland_provisions": "황야에서 고원 치즈를 제작해 요리 경험치 48을 획득하세요.",
   "advancements.rovenfall.wilderness.highland_provisions.title": "고원 보급식",
-  "advancements.rovenfall.wilderness.highland_provisions.description": "고원 치즈 한 조각을 먹으세요."
+  "advancements.rovenfall.wilderness.highland_provisions.description": "고원 치즈 한 조각을 먹으세요.",
+  "quest.rovenfall.camp_supplies": "야영 물자",
+  "quest.rovenfall.camp_supplies.description": "해금 후 농사 XP 80과 요리 XP 96을 획득하세요. 탐험 건량과 과수원 파이를 준비해 보세요. 정상 반영된 모든 요리 XP가 집계됩니다.",
+  "quest.rovenfall.relic_survey": "유물 조사",
+  "quest.rovenfall.relic_survey.description": "해금 후 채광 XP 120과 사냥 XP 140을 획득하세요. 야생 동굴 사냥에서 장비 재료를 구할 수 있습니다. 정상 반영된 모든 채광·사냥 XP가 집계됩니다.",
+  "quest.rovenfall.expedition_return": "원정의 귀환",
+  "quest.rovenfall.expedition_return.description": "야영 물자와 유물 조사를 완료한 뒤 탐험 XP 100을 획득하고 상점 거래를 4회 완료하세요. 해금 전 활동은 집계되지 않습니다."
 }

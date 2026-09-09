@@ -1943,5 +1943,11 @@
   "daily_contract.rovenfall.highland_provisions": "Highland Provisions",
   "daily_contract_description.rovenfall.highland_provisions": "Craft Highland Cheese in the Wilderness to earn 48 Cooking XP.",
   "advancements.rovenfall.wilderness.highland_provisions.title": "Highland Provisions",
-  "advancements.rovenfall.wilderness.highland_provisions.description": "Eat a piece of Highland Cheese."
+  "advancements.rovenfall.wilderness.highland_provisions.description": "Eat a piece of Highland Cheese.",
+  "quest.rovenfall.camp_supplies": "Camp Supplies",
+  "quest.rovenfall.camp_supplies.description": "After unlocking, earn 80 Farming XP and 96 Cooking XP. Trail Rations and Orchard Pies are useful provisions; any accepted Cooking XP counts.",
+  "quest.rovenfall.relic_survey": "Relic Survey",
+  "quest.rovenfall.relic_survey.description": "After unlocking, earn 120 Mining XP and 140 Hunting XP. Wilderness cave hunts provide equipment materials; any accepted Mining and Hunting XP counts.",
+  "quest.rovenfall.expedition_return": "The Return Expedition",
+  "quest.rovenfall.expedition_return.description": "Complete Camp Supplies and Relic Survey, then earn 100 Exploration XP and complete 4 shop trades. Earlier activity does not count."
 }

@@ -1943,5 +1943,11 @@
   "daily_contract.rovenfall.highland_provisions": "高原の携行食",
   "daily_contract_description.rovenfall.highland_provisions": "荒野で高原チーズを作り、料理経験値を48獲得してください。",
   "advancements.rovenfall.wilderness.highland_provisions.title": "高原の携行食",
-  "advancements.rovenfall.wilderness.highland_provisions.description": "高原チーズをひと切れ食べよう。"
+  "advancements.rovenfall.wilderness.highland_provisions.description": "高原チーズをひと切れ食べよう。",
+  "quest.rovenfall.camp_supplies": "野営の物資",
+  "quest.rovenfall.camp_supplies.description": "解放後に農業XPを80、料理XPを96獲得しましょう。携帯食と果樹園のパイを準備してみましょう。正常に加算されたすべての料理XPが対象です。",
+  "quest.rovenfall.relic_survey": "遺物調査",
+  "quest.rovenfall.relic_survey.description": "解放後に採掘XPを120、狩猟XPを140獲得しましょう。荒野の洞窟では装備の素材が手に入ります。正常に加算されたすべての採掘・狩猟XPが対象です。",
+  "quest.rovenfall.expedition_return": "遠征からの帰還",
+  "quest.rovenfall.expedition_return.description": "野営の物資と遺物調査を完了してから、探索XPを100獲得し、ショップで4回取引しましょう。解放前の活動は対象外です。"
 }

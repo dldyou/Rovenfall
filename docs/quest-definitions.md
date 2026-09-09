@@ -56,6 +56,26 @@ that asks the player to use all seven activity tracks, the server market, and th
 All five follow-up journeys reuse the ordinary server-observed evidence, deterministic
 reward transaction, persistence, recovery, and audit paths described below.
 
+## Optional expedition branch
+
+Three permanent journeys extend the provisions and patrol routes. They appear in
+Journey (`J`) automatically and can use the existing tracker and status filters.
+They do not add prerequisites to the Rift Warden oath or change existing quest
+versions or saved progress.
+
+| Journey | Unlock | New activity after unlocking | Reward |
+| --- | --- | --- | --- |
+| Camp Supplies | Expedition Provisions | 80 Farming XP + 96 Cooking XP | 180 currency + 25 Cooking XP |
+| Relic Survey | Wilderness Patrol | 120 Mining XP + 140 Hunting XP | 220 currency + 30 Mining XP |
+| The Return Expedition | Both journeys above | 100 Exploration XP + 4 shop trades | 300 currency + 40 Exploration XP |
+
+Trail Rations and Orchard Pies can supply Cooking XP; Wilderness cave hunts can
+provide Hunting XP and crafting materials. These are suggested routes: the
+objectives count all accepted XP in their named activity, not particular foods,
+monsters, items, or locations. Shop trades follow the existing durable transaction
+evidence. Rewards are automatic, once per player, with ordinary restart recovery.
+Activity earned before a journey unlocks does not count toward it.
+
 ## Repeatable contracts
 
 Contract templates live below `quests/contracts/`. They use the ordinary quest
