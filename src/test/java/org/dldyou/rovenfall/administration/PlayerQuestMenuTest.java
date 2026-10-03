@@ -122,6 +122,16 @@ final class PlayerQuestMenuTest {
                 < PlayerQuestMenu.dailyPriority(DailyContractService.Status.IN_PROGRESS));
         assertTrue(PlayerQuestMenu.dailyPriority(DailyContractService.Status.IN_PROGRESS)
                 < PlayerQuestMenu.dailyPriority(DailyContractService.Status.ALREADY_CLAIMED));
+        assertEquals(PlayerQuestMenu.DailyFilter.MINING,
+                PlayerQuestMenu.nextDailyFilter(PlayerQuestMenu.DailyFilter.ALL));
+        assertEquals(PlayerQuestMenu.DailyFilter.ALL,
+                PlayerQuestMenu.nextDailyFilter(PlayerQuestMenu.DailyFilter.HUNTING));
+        assertTrue(PlayerQuestMenu.dailyFilterMatches(
+                PlayerQuestMenu.DailyFilter.BUILDING, ActivityKind.BUILDING_PLACEMENT));
+        assertFalse(PlayerQuestMenu.dailyFilterMatches(
+                PlayerQuestMenu.DailyFilter.BUILDING, ActivityKind.COOKING_RESULT));
+        assertTrue(PlayerQuestMenu.dailyFilterMatches(
+                PlayerQuestMenu.DailyFilter.ALL, ActivityKind.COOKING_RESULT));
     }
 
     @Test

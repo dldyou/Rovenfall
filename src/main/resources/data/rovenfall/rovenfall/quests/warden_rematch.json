@@ -1,0 +1,30 @@
+{
+  "translation_key": "quest.rovenfall.warden_rematch",
+  "description_translation_key": "quest.rovenfall.warden_rematch.description",
+  "version": 1,
+  "prerequisites": [
+    "rovenfall:relic_recovery",
+    "rovenfall:frontier_muster"
+  ],
+  "objectives": [
+    {
+      "id": "rovenfall:warden_rematch/combat",
+      "kind": "activity",
+      "required_count": 360,
+      "target": "rovenfall:combat"
+    },
+    {
+      "id": "rovenfall:warden_rematch/rift_warden",
+      "kind": "boss_defeat",
+      "required_count": 1,
+      "target": "rovenfall:rift_warden"
+    }
+  ],
+  "rewards": {
+    "currency": 560,
+    "activity_xp": {
+      "activity": "rovenfall:combat",
+      "amount": 65
+    }
+  }
+}

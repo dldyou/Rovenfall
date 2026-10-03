@@ -1,0 +1,14 @@
+{
+  "placement": {
+    "type": "minecraft:random_spread",
+    "salt": 7319423,
+    "separation": 20,
+    "spacing": 48
+  },
+  "structures": [
+    {
+      "structure": "rovenfall:gravebound_chapel",
+      "weight": 1
+    }
+  ]
+}

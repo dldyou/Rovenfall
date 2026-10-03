@@ -10,7 +10,7 @@ import org.dldyou.rovenfall.Rovenfall;
 
 /** Identifier-free, fixed-shape server projection for the active-journey HUD. */
 public final class ActiveJourneyTrackerPayloads {
-    public static final int PACKET_REVISION = 1;
+    public static final int PACKET_REVISION = 2;
     public static final int MAX_TRANSLATION_KEY_LENGTH = 160;
     public static final int MAX_PACKET_BYTES = 384;
 
@@ -24,7 +24,7 @@ public final class ActiveJourneyTrackerPayloads {
             String titleTranslationKey,
             JourneyStatus status,
             ObjectiveKind objectiveKind,
-            String activityTargetTranslationKey,
+            String targetTranslationKey,
             long progress,
             long requiredCount) implements CustomPacketPayload {
         public static final Type<Snapshot> TYPE = new Type<>(
@@ -54,7 +54,7 @@ public final class ActiveJourneyTrackerPayloads {
                 ByteBufCodecs.VAR_INT.encode(buffer, wireId(payload.status()));
                 ByteBufCodecs.VAR_INT.encode(buffer, wireId(payload.objectiveKind()));
                 ByteBufCodecs.stringUtf8(MAX_TRANSLATION_KEY_LENGTH)
-                        .encode(buffer, payload.activityTargetTranslationKey());
+                        .encode(buffer, payload.targetTranslationKey());
                 ByteBufCodecs.VAR_LONG.encode(buffer, payload.progress());
                 ByteBufCodecs.VAR_LONG.encode(buffer, payload.requiredCount());
             }
@@ -76,21 +76,22 @@ public final class ActiveJourneyTrackerPayloads {
         public boolean isValid() {
             if (packetRevision != PACKET_REVISION || journeyKind == null || status == null
                     || objectiveKind == null || titleTranslationKey == null
-                    || activityTargetTranslationKey == null) {
+                    || targetTranslationKey == null) {
                 return false;
             }
             if (!active) {
                 return journeyKind == JourneyKind.STORY && titleTranslationKey.isEmpty()
                         && status == JourneyStatus.AVAILABLE && objectiveKind == ObjectiveKind.ACTIVITY
-                        && activityTargetTranslationKey.isEmpty() && progress == 0 && requiredCount == 0;
+                        && targetTranslationKey.isEmpty() && progress == 0 && requiredCount == 0;
             }
             return validTranslationKey(titleTranslationKey, false)
-                    && validTranslationKey(activityTargetTranslationKey, true)
+                    && validTranslationKey(targetTranslationKey, true)
                     && progress >= 0 && requiredCount >= 1
                     && requiredCount <= QuestDefinition.MAX_REQUIRED_COUNT
                     && progress < requiredCount
                     && (status != JourneyStatus.AVAILABLE || progress == 0)
-                    && (objectiveKind == ObjectiveKind.ACTIVITY || activityTargetTranslationKey.isEmpty());
+                    && ((objectiveKind == ObjectiveKind.ACTIVITY || objectiveKind == ObjectiveKind.BOSS_DEFEAT)
+                            || targetTranslationKey.isEmpty());
         }
 
         @Override

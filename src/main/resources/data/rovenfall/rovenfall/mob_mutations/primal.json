@@ -1,0 +1,29 @@
+{
+  "eligible_entity_types": [
+    "rovenfall:grove_stalker",
+    "rovenfall:mirefang",
+    "rovenfall:thornback_stalker"
+  ],
+  "spawn_chance": 0.025,
+  "translation_key": "mutation.rovenfall.primal",
+  "glowing": true,
+  "attributes": [
+    {
+      "attribute": "minecraft:max_health",
+      "amount": 0.3,
+      "operation": "add_multiplied_total"
+    },
+    {
+      "attribute": "minecraft:movement_speed",
+      "amount": 0.2,
+      "operation": "add_multiplied_total"
+    },
+    {
+      "attribute": "minecraft:attack_damage",
+      "amount": 0.15,
+      "operation": "add_multiplied_total"
+    }
+  ],
+  "ai_modifier": "leap",
+  "currency_reward": 24
+}

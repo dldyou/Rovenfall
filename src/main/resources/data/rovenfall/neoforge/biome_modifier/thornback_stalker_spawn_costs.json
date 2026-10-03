@@ -1,0 +1,11 @@
+{
+  "type": "neoforge:add_spawn_costs",
+  "biomes": "#rovenfall:thornback_stalker_spawns",
+  "entity_types": [
+    "rovenfall:thornback_stalker"
+  ],
+  "spawn_cost": {
+    "energy_budget": 0.28,
+    "charge": 0.15
+  }
+}

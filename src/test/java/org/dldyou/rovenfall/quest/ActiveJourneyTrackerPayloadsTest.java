@@ -59,10 +59,17 @@ final class ActiveJourneyTrackerPayloadsTest {
                 ActiveJourneyTrackerPayloads.JourneyStatus.AVAILABLE,
                 ActiveJourneyTrackerPayloads.ObjectiveKind.SHOP_TRADE,
                 "activity.rovenfall.mining", 0, 1).isValid());
+        assertTrue(new ActiveJourneyTrackerPayloads.Snapshot(
+                ActiveJourneyTrackerPayloads.PACKET_REVISION, true,
+                ActiveJourneyTrackerPayloads.JourneyKind.STORY, "quest.rovenfall.warden_rematch",
+                ActiveJourneyTrackerPayloads.JourneyStatus.AVAILABLE,
+                ActiveJourneyTrackerPayloads.ObjectiveKind.BOSS_DEFEAT,
+                "boss.rovenfall.rift_warden", 0, 1).isValid());
     }
 
     @Test
     void wireEnumsAreStableAndSnapshotHasNoTechnicalIdentityFields() {
+        assertEquals(2, ActiveJourneyTrackerPayloads.PACKET_REVISION);
         assertEquals(0, ActiveJourneyTrackerPayloads.JourneyKind.STORY.wireId());
         assertEquals(1, ActiveJourneyTrackerPayloads.JourneyKind.DAILY.wireId());
         assertEquals(2, ActiveJourneyTrackerPayloads.JourneyKind.WEEKLY.wireId());
@@ -74,7 +81,7 @@ final class ActiveJourneyTrackerPayloadsTest {
 
         assertEquals(List.of(
                         "packetRevision", "active", "journeyKind", "titleTranslationKey", "status",
-                        "objectiveKind", "activityTargetTranslationKey", "progress", "requiredCount"),
+                        "objectiveKind", "targetTranslationKey", "progress", "requiredCount"),
                 Arrays.stream(ActiveJourneyTrackerPayloads.Snapshot.class.getRecordComponents())
                         .map(java.lang.reflect.RecordComponent::getName)
                         .toList());

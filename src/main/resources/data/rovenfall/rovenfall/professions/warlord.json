@@ -1,0 +1,96 @@
+{
+  "translation_key": "career.rovenfall.warlord",
+  "tier": 4,
+  "parents": [
+    "rovenfall:vanguard"
+  ],
+  "activity_levels": {
+    "combat": 8,
+    "hunting": 6
+  },
+  "experience_tracks": [
+    "combat",
+    "hunting"
+  ],
+  "level_thresholds": [
+    0,
+    1500,
+    4500,
+    9500,
+    17000,
+    27000,
+    40000
+  ],
+  "promotion_cost": 650,
+  "promotion_skill_points": 4,
+  "skill_reset_cost": 250,
+  "skills": {
+    "rovenfall:battle_command": {
+      "translation_key": "career_skill.rovenfall.battle_command",
+      "maximum_rank": 3,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "combat",
+          "magnitude_per_rank_bps": 500
+        }
+      ]
+    },
+    "rovenfall:relentless_advance": {
+      "translation_key": "career_skill.rovenfall.relentless_advance",
+      "prerequisites": [
+        "rovenfall:battle_command"
+      ],
+      "maximum_rank": 2,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "hunting",
+          "magnitude_per_rank_bps": 750
+        }
+      ]
+    },
+    "rovenfall:victory_standard": {
+      "translation_key": "career_skill.rovenfall.victory_standard",
+      "prerequisites": [
+        "rovenfall:battle_command"
+      ],
+      "maximum_rank": 2,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "combat",
+          "magnitude_per_rank_bps": 750
+        }
+      ]
+    },
+    "rovenfall:conquerors_roar": {
+      "translation_key": "career_skill.rovenfall.conquerors_roar",
+      "prerequisites": [
+        "rovenfall:relentless_advance",
+        "rovenfall:victory_standard"
+      ],
+      "maximum_rank": 1,
+      "point_cost": 2,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:strength",
+        "duration_ticks": 300,
+        "amplifier": 1,
+        "cooldown_seconds": 90
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "magnitude_per_rank_bps": 500
+        }
+      ]
+    }
+  }
+}

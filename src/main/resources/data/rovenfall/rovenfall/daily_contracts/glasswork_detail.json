@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.glasswork_detail",
+  "description_translation_key": "daily_contract_description.rovenfall.glasswork_detail",
+  "kind": "building_placement",
+  "target": "minecraft:glass",
+  "required_experience": 32,
+  "currency_reward": 110
+}

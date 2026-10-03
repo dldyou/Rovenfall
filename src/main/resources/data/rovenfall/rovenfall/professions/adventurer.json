@@ -12,7 +12,14 @@
     "building",
     "farming"
   ],
-  "level_thresholds": [0, 500, 1500, 3500, 7000, 12000],
+  "level_thresholds": [
+    0,
+    500,
+    1500,
+    3500,
+    7000,
+    12000
+  ],
   "promotion_cost": 0,
   "promotion_skill_points": 0,
   "skill_reset_cost": 100,
@@ -38,7 +45,9 @@
     },
     "rovenfall:versatile": {
       "translation_key": "career_skill.rovenfall.versatile",
-      "prerequisites": ["rovenfall:well_traveled"],
+      "prerequisites": [
+        "rovenfall:well_traveled"
+      ],
       "maximum_rank": 1,
       "point_cost": 1,
       "scope": "career",
@@ -49,7 +58,47 @@
         "cooldown_seconds": 60
       },
       "effects": [
-        { "type": "activity_experience_bonus", "magnitude_per_rank_bps": 300 }
+        {
+          "type": "activity_experience_bonus",
+          "magnitude_per_rank_bps": 300
+        }
+      ]
+    },
+    "rovenfall:survival_instinct": {
+      "translation_key": "career_skill.rovenfall.survival_instinct",
+      "prerequisites": [
+        "rovenfall:well_traveled"
+      ],
+      "maximum_rank": 3,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "incoming_damage_reduction",
+          "magnitude_per_rank_bps": 200
+        }
+      ]
+    },
+    "rovenfall:frontier_resolve": {
+      "translation_key": "career_skill.rovenfall.frontier_resolve",
+      "prerequisites": [
+        "rovenfall:versatile",
+        "rovenfall:survival_instinct"
+      ],
+      "maximum_rank": 1,
+      "point_cost": 2,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:resistance",
+        "duration_ticks": 300,
+        "amplifier": 1,
+        "cooldown_seconds": 90
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "magnitude_per_rank_bps": 300
+        }
       ]
     }
   }

@@ -1,0 +1,96 @@
+{
+  "translation_key": "career.rovenfall.wayfinder",
+  "tier": 4,
+  "parents": [
+    "rovenfall:pathfinder"
+  ],
+  "activity_levels": {
+    "exploration": 8,
+    "mining": 6
+  },
+  "experience_tracks": [
+    "exploration",
+    "mining"
+  ],
+  "level_thresholds": [
+    0,
+    1500,
+    4500,
+    9500,
+    17000,
+    27000,
+    40000
+  ],
+  "promotion_cost": 650,
+  "promotion_skill_points": 4,
+  "skill_reset_cost": 250,
+  "skills": {
+    "rovenfall:true_bearing": {
+      "translation_key": "career_skill.rovenfall.true_bearing",
+      "maximum_rank": 3,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "exploration",
+          "magnitude_per_rank_bps": 500
+        }
+      ]
+    },
+    "rovenfall:swift_route": {
+      "translation_key": "career_skill.rovenfall.swift_route",
+      "prerequisites": [
+        "rovenfall:true_bearing"
+      ],
+      "maximum_rank": 2,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "mining",
+          "magnitude_per_rank_bps": 750
+        }
+      ]
+    },
+    "rovenfall:hidden_passage": {
+      "translation_key": "career_skill.rovenfall.hidden_passage",
+      "prerequisites": [
+        "rovenfall:true_bearing"
+      ],
+      "maximum_rank": 2,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "exploration",
+          "magnitude_per_rank_bps": 750
+        }
+      ]
+    },
+    "rovenfall:horizon_step": {
+      "translation_key": "career_skill.rovenfall.horizon_step",
+      "prerequisites": [
+        "rovenfall:swift_route",
+        "rovenfall:hidden_passage"
+      ],
+      "maximum_rank": 1,
+      "point_cost": 2,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:speed",
+        "duration_ticks": 300,
+        "amplifier": 1,
+        "cooldown_seconds": 90
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "magnitude_per_rank_bps": 500
+        }
+      ]
+    }
+  }
+}

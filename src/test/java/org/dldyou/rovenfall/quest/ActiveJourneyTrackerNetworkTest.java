@@ -36,7 +36,7 @@ final class ActiveJourneyTrackerNetworkTest {
         assertEquals(ActiveJourneyTrackerPayloads.PACKET_REVISION, snapshot.packetRevision());
         assertEquals(ActiveJourneyTrackerPayloads.JourneyKind.WEEKLY, snapshot.journeyKind());
         assertEquals(ActiveJourneyTrackerPayloads.ObjectiveKind.BOSS_DEFEAT, snapshot.objectiveKind());
-        assertEquals("", snapshot.activityTargetTranslationKey());
+        assertEquals("", snapshot.targetTranslationKey());
         assertEquals(2, snapshot.progress());
         assertEquals(5, snapshot.requiredCount());
         assertEquals(ActiveJourneyTrackerPayloads.Snapshot.inactive(),

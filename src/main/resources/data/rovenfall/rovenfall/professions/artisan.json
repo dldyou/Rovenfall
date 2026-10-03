@@ -1,14 +1,27 @@
 {
   "translation_key": "career.rovenfall.artisan",
   "tier": 2,
-  "parents": ["rovenfall:adventurer"],
+  "parents": [
+    "rovenfall:adventurer"
+  ],
   "activity_levels": {
     "cooking": 1,
     "building": 2,
     "farming": 1
   },
-  "experience_tracks": ["cooking", "building", "farming"],
-  "level_thresholds": [0, 750, 2250, 5000, 9500, 16000],
+  "experience_tracks": [
+    "cooking",
+    "building",
+    "farming"
+  ],
+  "level_thresholds": [
+    0,
+    750,
+    2250,
+    5000,
+    9500,
+    16000
+  ],
   "promotion_cost": 100,
   "promotion_skill_points": 1,
   "skill_reset_cost": 100,
@@ -34,7 +47,9 @@
     },
     "rovenfall:bountiful_harvest": {
       "translation_key": "career_skill.rovenfall.bountiful_harvest",
-      "prerequisites": ["rovenfall:craftsmanship"],
+      "prerequisites": [
+        "rovenfall:craftsmanship"
+      ],
       "maximum_rank": 2,
       "point_cost": 1,
       "scope": "career",
@@ -49,6 +64,44 @@
           "type": "activity_experience_bonus",
           "track": "farming",
           "magnitude_per_rank_bps": 1000
+        }
+      ]
+    },
+    "rovenfall:efficient_hands": {
+      "translation_key": "career_skill.rovenfall.efficient_hands",
+      "prerequisites": [
+        "rovenfall:craftsmanship"
+      ],
+      "maximum_rank": 3,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "magnitude_per_rank_bps": 750,
+          "track": "building"
+        }
+      ]
+    },
+    "rovenfall:makers_rhythm": {
+      "translation_key": "career_skill.rovenfall.makers_rhythm",
+      "prerequisites": [
+        "rovenfall:bountiful_harvest",
+        "rovenfall:efficient_hands"
+      ],
+      "maximum_rank": 1,
+      "point_cost": 2,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:haste",
+        "duration_ticks": 300,
+        "amplifier": 1,
+        "cooldown_seconds": 90
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "magnitude_per_rank_bps": 300
         }
       ]
     }

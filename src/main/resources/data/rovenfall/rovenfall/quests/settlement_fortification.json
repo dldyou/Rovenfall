@@ -1,0 +1,29 @@
+{
+  "translation_key": "quest.rovenfall.settlement_fortification",
+  "description_translation_key": "quest.rovenfall.settlement_fortification.description",
+  "version": 1,
+  "prerequisites": [
+    "rovenfall:quartermaster_route",
+    "rovenfall:wilds_remedy"
+  ],
+  "objectives": [
+    {
+      "id": "rovenfall:settlement_fortification/building",
+      "kind": "activity",
+      "required_count": 260,
+      "target": "rovenfall:building"
+    },
+    {
+      "id": "rovenfall:settlement_fortification/claim_purchase",
+      "kind": "claim_purchase",
+      "required_count": 1
+    }
+  ],
+  "rewards": {
+    "currency": 450,
+    "activity_xp": {
+      "activity": "rovenfall:building",
+      "amount": 55
+    }
+  }
+}

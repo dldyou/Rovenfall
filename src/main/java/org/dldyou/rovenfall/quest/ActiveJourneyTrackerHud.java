@@ -307,14 +307,21 @@ public final class ActiveJourneyTrackerHud {
 
     private static Component objective(ActiveJourneyTrackerPayloads.Snapshot snapshot) {
         String suffix = snapshot.objectiveKind().name().toLowerCase(java.util.Locale.ROOT);
+        if (snapshot.objectiveKind() == ActiveJourneyTrackerPayloads.ObjectiveKind.BOSS_DEFEAT
+                && !snapshot.targetTranslationKey().isEmpty()) {
+            return Component.translatable(
+                    "hud.rovenfall.journey.tracker.objective.boss_defeat_target",
+                    Component.translatable(snapshot.targetTranslationKey()),
+                    snapshot.progress(), snapshot.requiredCount());
+        }
         if (snapshot.objectiveKind() != ActiveJourneyTrackerPayloads.ObjectiveKind.ACTIVITY) {
             return Component.translatable(
                     "hud.rovenfall.journey.tracker.objective." + suffix,
                     snapshot.progress(), snapshot.requiredCount());
         }
-        Component target = snapshot.activityTargetTranslationKey().isEmpty()
+        Component target = snapshot.targetTranslationKey().isEmpty()
                 ? Component.translatable("hud.rovenfall.journey.tracker.objective.activity_unknown")
-                : Component.translatable(snapshot.activityTargetTranslationKey());
+                : Component.translatable(snapshot.targetTranslationKey());
         return Component.translatable(
                 "hud.rovenfall.journey.tracker.objective.activity",
                 target, snapshot.progress(), snapshot.requiredCount());

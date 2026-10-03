@@ -1,0 +1,24 @@
+{
+  "eligible_entity_types": [
+    "rovenfall:rune_sentinel",
+    "rovenfall:runebound_archer",
+    "rovenfall:rift_acolyte"
+  ],
+  "spawn_chance": 0.02,
+  "translation_key": "mutation.rovenfall.runic",
+  "glowing": true,
+  "attributes": [
+    {
+      "attribute": "minecraft:max_health",
+      "amount": 0.4,
+      "operation": "add_multiplied_total"
+    },
+    {
+      "attribute": "minecraft:movement_speed",
+      "amount": 0.15,
+      "operation": "add_multiplied_total"
+    }
+  ],
+  "ai_modifier": "relentless",
+  "currency_reward": 28
+}

@@ -1,0 +1,24 @@
+{
+  "eligible_entity_types": [
+    "rovenfall:orebound_beetle",
+    "rovenfall:deepstone_husk",
+    "rovenfall:gravebound_knight"
+  ],
+  "spawn_chance": 0.02,
+  "translation_key": "mutation.rovenfall.ancient",
+  "glowing": true,
+  "attributes": [
+    {
+      "attribute": "minecraft:max_health",
+      "amount": 0.65,
+      "operation": "add_multiplied_total"
+    },
+    {
+      "attribute": "minecraft:attack_damage",
+      "amount": 0.25,
+      "operation": "add_multiplied_total"
+    }
+  ],
+  "ai_modifier": "relentless",
+  "currency_reward": 30
+}

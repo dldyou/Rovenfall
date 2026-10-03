@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.thornback_cull",
+  "description_translation_key": "daily_contract_description.rovenfall.thornback_cull",
+  "kind": "hunting_contribution",
+  "target": "rovenfall:thornback_stalker",
+  "required_experience": 150,
+  "currency_reward": 180
+}

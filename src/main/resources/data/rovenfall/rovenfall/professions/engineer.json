@@ -1,0 +1,96 @@
+{
+  "translation_key": "career.rovenfall.engineer",
+  "tier": 4,
+  "parents": [
+    "rovenfall:architect"
+  ],
+  "activity_levels": {
+    "building": 8,
+    "exploration": 5
+  },
+  "experience_tracks": [
+    "building",
+    "exploration"
+  ],
+  "level_thresholds": [
+    0,
+    1500,
+    4500,
+    9500,
+    17000,
+    27000,
+    40000
+  ],
+  "promotion_cost": 650,
+  "promotion_skill_points": 4,
+  "skill_reset_cost": 250,
+  "skills": {
+    "rovenfall:field_design": {
+      "translation_key": "career_skill.rovenfall.field_design",
+      "maximum_rank": 3,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "building",
+          "magnitude_per_rank_bps": 500
+        }
+      ]
+    },
+    "rovenfall:rapid_assembly": {
+      "translation_key": "career_skill.rovenfall.rapid_assembly",
+      "prerequisites": [
+        "rovenfall:field_design"
+      ],
+      "maximum_rank": 2,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "exploration",
+          "magnitude_per_rank_bps": 750
+        }
+      ]
+    },
+    "rovenfall:surveyors_logic": {
+      "translation_key": "career_skill.rovenfall.surveyors_logic",
+      "prerequisites": [
+        "rovenfall:field_design"
+      ],
+      "maximum_rank": 2,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "building",
+          "magnitude_per_rank_bps": 750
+        }
+      ]
+    },
+    "rovenfall:masterwork_protocol": {
+      "translation_key": "career_skill.rovenfall.masterwork_protocol",
+      "prerequisites": [
+        "rovenfall:rapid_assembly",
+        "rovenfall:surveyors_logic"
+      ],
+      "maximum_rank": 1,
+      "point_cost": 2,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:haste",
+        "duration_ticks": 300,
+        "amplifier": 1,
+        "cooldown_seconds": 90
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "magnitude_per_rank_bps": 500
+        }
+      ]
+    }
+  }
+}

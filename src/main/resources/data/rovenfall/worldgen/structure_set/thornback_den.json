@@ -1,0 +1,14 @@
+{
+  "placement": {
+    "type": "minecraft:random_spread",
+    "salt": 7319422,
+    "separation": 14,
+    "spacing": 38
+  },
+  "structures": [
+    {
+      "structure": "rovenfall:thornback_den",
+      "weight": 1
+    }
+  ]
+}

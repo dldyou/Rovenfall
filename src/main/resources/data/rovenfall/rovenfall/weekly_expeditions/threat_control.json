@@ -10,7 +10,10 @@
     "rovenfall:cinder_containment": 1,
     "rovenfall:frozen_front": 1,
     "rovenfall:sunken_patrol": 1,
-    "rovenfall:depths_watch": 1
+    "rovenfall:depths_watch": 1,
+    "rovenfall:rift_incursion": 1,
+    "rovenfall:thornback_cull": 1,
+    "rovenfall:gravebound_watch": 1
   },
-  "currency_reward": 1450
+  "currency_reward": 1800
 }

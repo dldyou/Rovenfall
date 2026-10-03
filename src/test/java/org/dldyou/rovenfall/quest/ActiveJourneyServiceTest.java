@@ -167,12 +167,23 @@ final class ActiveJourneyServiceTest {
         assertEquals("quest.rovenfall.mining_story", entry.titleTranslationKey());
         assertEquals(ActiveJourneyView.Status.AVAILABLE, entry.status());
         assertEquals(QuestDefinition.Kind.ACTIVITY, entry.objectiveKind());
-        assertEquals(Optional.of("activity.rovenfall.mining"), entry.activityTargetTranslationKey());
+        assertEquals(Optional.of("activity.rovenfall.mining"), entry.targetTranslationKey());
         assertEquals(0, entry.progress());
         assertEquals(5, entry.requiredCount());
         assertTrue(ActiveJourneyService.view(
                 saved, definitions, RpgDefinitionSnapshot.empty(), PLAYER, 17, NOW)
-                .journey().orElseThrow().activityTargetTranslationKey().isEmpty());
+                .journey().orElseThrow().targetTranslationKey().isEmpty());
+
+        QuestDefinitionSnapshot bossDefinitions = definitions(
+                story("warden_hunt", 1, QuestDefinition.Kind.BOSS_DEFEAT,
+                        Optional.of(id("rift_warden")), 1, List.of()));
+        QuestPlayerSavedData bossSaved = new QuestPlayerSavedData();
+        assertEquals(ActiveJourneyService.MutationStatus.SUCCESS,
+                ActiveJourneyService.selectStory(
+                        bossSaved, bossDefinitions, PLAYER, id("warden_hunt")).status());
+        assertEquals(Optional.of("boss.rovenfall.rift_warden"), ActiveJourneyService.view(
+                bossSaved, bossDefinitions, RpgDefinitionSnapshot.empty(), PLAYER, 18, NOW)
+                .journey().orElseThrow().targetTranslationKey());
 
         QuestDefinitionSnapshot contractDefinitions = definitions(
                 contract("weekly", 1, QuestDefinition.Cadence.WEEKLY, 4));
@@ -188,7 +199,7 @@ final class ActiveJourneyServiceTest {
                 ActiveJourneyService.selectContract(
                         contractSaved, contractDefinitions, PLAYER, key, NOW).status());
         ActiveJourneyView.Entry contractEntry = ActiveJourneyService.view(
-                contractSaved, contractDefinitions, RpgDefinitionSnapshot.empty(), PLAYER, 18, NOW)
+                contractSaved, contractDefinitions, RpgDefinitionSnapshot.empty(), PLAYER, 19, NOW)
                 .journey().orElseThrow();
         assertEquals(ActiveJourneyView.Kind.WEEKLY, contractEntry.kind());
         assertEquals(ActiveJourneyView.Status.IN_PROGRESS, contractEntry.status());

@@ -1,0 +1,11 @@
+{
+  "type": "neoforge:add_spawn_costs",
+  "biomes": "#rovenfall:rift_acolyte_spawns",
+  "entity_types": [
+    "rovenfall:rift_acolyte"
+  ],
+  "spawn_cost": {
+    "energy_budget": 0.3,
+    "charge": 0.16
+  }
+}

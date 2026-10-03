@@ -1,13 +1,25 @@
 {
   "translation_key": "career.rovenfall.vanguard",
   "tier": 3,
-  "parents": ["rovenfall:warrior"],
+  "parents": [
+    "rovenfall:warrior"
+  ],
   "activity_levels": {
     "combat": 5,
     "hunting": 3
   },
-  "experience_tracks": ["combat", "hunting"],
-  "level_thresholds": [0, 1000, 3000, 6500, 12000, 20000],
+  "experience_tracks": [
+    "combat",
+    "hunting"
+  ],
+  "level_thresholds": [
+    0,
+    1000,
+    3000,
+    6500,
+    12000,
+    20000
+  ],
   "promotion_cost": 300,
   "promotion_skill_points": 2,
   "skill_reset_cost": 150,
@@ -33,7 +45,9 @@
     },
     "rovenfall:rallying_cry": {
       "translation_key": "career_skill.rovenfall.rallying_cry",
-      "prerequisites": ["rovenfall:shield_wall"],
+      "prerequisites": [
+        "rovenfall:shield_wall"
+      ],
       "maximum_rank": 2,
       "point_cost": 1,
       "scope": "career",
@@ -48,6 +62,43 @@
           "type": "activity_experience_bonus",
           "track": "hunting",
           "magnitude_per_rank_bps": 1000
+        }
+      ]
+    },
+    "rovenfall:armored_discipline": {
+      "translation_key": "career_skill.rovenfall.armored_discipline",
+      "prerequisites": [
+        "rovenfall:shield_wall"
+      ],
+      "maximum_rank": 3,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "incoming_damage_reduction",
+          "magnitude_per_rank_bps": 300
+        }
+      ]
+    },
+    "rovenfall:hold_the_line": {
+      "translation_key": "career_skill.rovenfall.hold_the_line",
+      "prerequisites": [
+        "rovenfall:rallying_cry",
+        "rovenfall:armored_discipline"
+      ],
+      "maximum_rank": 1,
+      "point_cost": 2,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:resistance",
+        "duration_ticks": 300,
+        "amplifier": 1,
+        "cooldown_seconds": 90
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "magnitude_per_rank_bps": 300
         }
       ]
     }

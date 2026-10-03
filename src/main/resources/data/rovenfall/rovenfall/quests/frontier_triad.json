@@ -1,0 +1,36 @@
+{
+  "translation_key": "quest.rovenfall.frontier_triad",
+  "description_translation_key": "quest.rovenfall.frontier_triad.description",
+  "version": 1,
+  "prerequisites": [
+    "rovenfall:watchtower_signal",
+    "rovenfall:thornback_trail",
+    "rovenfall:gravebound_vigil"
+  ],
+  "objectives": [
+    {
+      "id": "rovenfall:frontier_triad/combat",
+      "kind": "activity",
+      "required_count": 240,
+      "target": "rovenfall:combat"
+    },
+    {
+      "id": "rovenfall:frontier_triad/building",
+      "kind": "activity",
+      "required_count": 120,
+      "target": "rovenfall:building"
+    },
+    {
+      "id": "rovenfall:frontier_triad/shop_trade",
+      "kind": "shop_trade",
+      "required_count": 4
+    }
+  ],
+  "rewards": {
+    "currency": 520,
+    "activity_xp": {
+      "activity": "rovenfall:exploration",
+      "amount": 60
+    }
+  }
+}

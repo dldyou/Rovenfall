@@ -28,9 +28,23 @@ class QuestDefinitionSnapshotTest {
                 shipped("frontier_legacy"),
                 shipped("camp_supplies"),
                 shipped("relic_survey"),
-                shipped("expedition_return")));
+                shipped("expedition_return"),
+                shipped("watchtower_signal"),
+                shipped("thornback_trail"),
+                shipped("gravebound_vigil"),
+                shipped("frontier_triad"),
+                shipped("watchtower_reclamation"),
+                shipped("den_cleansing"),
+                shipped("chapel_reconsecration"),
+                shipped("quartermaster_route"),
+                shipped("wilds_remedy"),
+                shipped("relic_recovery"),
+                shipped("frontier_muster"),
+                shipped("settlement_fortification"),
+                shipped("warden_rematch"),
+                shipped("frontier_concord")));
 
-        assertEquals(9, snapshot.storyQuests().size());
+        assertEquals(23, snapshot.storyQuests().size());
         assertEquals(3, snapshot.quest(id("first_steps")).orElseThrow().objectives().size());
         var finale = snapshot.quest(id("rift_warden_oath")).orElseThrow();
         assertEquals(List.of(
@@ -45,6 +59,18 @@ class QuestDefinitionSnapshotTest {
         assertEquals(List.of(id("rift_warden_oath")), capstone.prerequisites());
         assertEquals(9, capstone.objectives().size());
         assertEquals(800, capstone.rewards().currency());
+        var regionalFinale = snapshot.quest(id("frontier_triad")).orElseThrow();
+        assertEquals(Set.of(id("watchtower_signal"), id("thornback_trail"), id("gravebound_vigil")),
+                Set.copyOf(regionalFinale.prerequisites()));
+        assertEquals(520, regionalFinale.rewards().currency());
+        var concord = snapshot.quest(id("frontier_concord")).orElseThrow();
+        assertEquals(Set.of(id("settlement_fortification"), id("warden_rematch")),
+                Set.copyOf(concord.prerequisites()));
+        assertEquals(8, concord.objectives().size());
+        assertEquals(900, concord.rewards().currency());
+        assertTrue(snapshot.quest(id("warden_rematch")).orElseThrow().objectives().stream()
+                .anyMatch(objective -> objective.kind() == QuestDefinition.Kind.BOSS_DEFEAT
+                        && objective.target().filter(id("rift_warden")::equals).isPresent()));
     }
 
     @Test

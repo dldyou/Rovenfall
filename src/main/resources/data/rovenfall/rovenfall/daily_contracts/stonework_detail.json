@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.stonework_detail",
+  "description_translation_key": "daily_contract_description.rovenfall.stonework_detail",
+  "kind": "building_placement",
+  "target": "minecraft:stone_bricks",
+  "required_experience": 40,
+  "currency_reward": 120
+}

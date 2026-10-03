@@ -1,0 +1,28 @@
+{
+  "translation_key": "quest.rovenfall.quartermaster_route",
+  "description_translation_key": "quest.rovenfall.quartermaster_route.description",
+  "version": 1,
+  "prerequisites": [
+    "rovenfall:watchtower_reclamation"
+  ],
+  "objectives": [
+    {
+      "id": "rovenfall:quartermaster_route/cooking",
+      "kind": "activity",
+      "required_count": 140,
+      "target": "rovenfall:cooking"
+    },
+    {
+      "id": "rovenfall:quartermaster_route/shop_trade",
+      "kind": "shop_trade",
+      "required_count": 5
+    }
+  ],
+  "rewards": {
+    "currency": 260,
+    "activity_xp": {
+      "activity": "rovenfall:cooking",
+      "amount": 35
+    }
+  }
+}

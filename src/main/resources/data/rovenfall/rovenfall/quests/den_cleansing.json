@@ -1,0 +1,29 @@
+{
+  "translation_key": "quest.rovenfall.den_cleansing",
+  "description_translation_key": "quest.rovenfall.den_cleansing.description",
+  "version": 1,
+  "prerequisites": [
+    "rovenfall:frontier_triad"
+  ],
+  "objectives": [
+    {
+      "id": "rovenfall:den_cleansing/hunting",
+      "kind": "activity",
+      "required_count": 220,
+      "target": "rovenfall:hunting"
+    },
+    {
+      "id": "rovenfall:den_cleansing/farming",
+      "kind": "activity",
+      "required_count": 100,
+      "target": "rovenfall:farming"
+    }
+  ],
+  "rewards": {
+    "currency": 300,
+    "activity_xp": {
+      "activity": "rovenfall:hunting",
+      "amount": 35
+    }
+  }
+}

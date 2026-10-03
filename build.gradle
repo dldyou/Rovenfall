@@ -10,6 +10,10 @@ version = mod_version
 group = mod_group_id
 
 repositories {
+    // ModDevGradle supplies the NeoForge repositories, but ordinary test libraries
+    // belong on Maven Central. Keeping this explicit also prevents a transient
+    // NeoForge repository denial from blocking JUnit resolution.
+    mavenCentral()
 }
 
 base {

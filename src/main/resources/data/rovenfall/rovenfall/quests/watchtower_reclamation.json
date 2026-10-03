@@ -1,0 +1,29 @@
+{
+  "translation_key": "quest.rovenfall.watchtower_reclamation",
+  "description_translation_key": "quest.rovenfall.watchtower_reclamation.description",
+  "version": 1,
+  "prerequisites": [
+    "rovenfall:frontier_triad"
+  ],
+  "objectives": [
+    {
+      "id": "rovenfall:watchtower_reclamation/exploration",
+      "kind": "activity",
+      "required_count": 120,
+      "target": "rovenfall:exploration"
+    },
+    {
+      "id": "rovenfall:watchtower_reclamation/building",
+      "kind": "activity",
+      "required_count": 140,
+      "target": "rovenfall:building"
+    }
+  ],
+  "rewards": {
+    "currency": 300,
+    "activity_xp": {
+      "activity": "rovenfall:building",
+      "amount": 35
+    }
+  }
+}

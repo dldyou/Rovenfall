@@ -68,6 +68,15 @@ public final class MobSpawnPolicy {
                 Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
                 MobSpawnPolicy::canNaturallySpawn,
                 RegisterSpawnPlacementsEvent.Operation.REPLACE);
+        event.register(RovenfallEntityTypes.RIFT_ACOLYTE.get(), SpawnPlacementTypes.ON_GROUND,
+                Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, MobSpawnPolicy::canNaturallySpawn,
+                RegisterSpawnPlacementsEvent.Operation.REPLACE);
+        event.register(RovenfallEntityTypes.THORNBACK_STALKER.get(), SpawnPlacementTypes.ON_GROUND,
+                Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, MobSpawnPolicy::canNaturallySpawn,
+                RegisterSpawnPlacementsEvent.Operation.REPLACE);
+        event.register(RovenfallEntityTypes.GRAVEBOUND_KNIGHT.get(), SpawnPlacementTypes.ON_GROUND,
+                Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, MobSpawnPolicy::canNaturallySpawn,
+                RegisterSpawnPlacementsEvent.Operation.REPLACE);
     }
 
     static <T extends Monster> boolean canNaturallySpawn(
@@ -119,7 +128,10 @@ public final class MobSpawnPolicy {
                 || entity.getType() == RovenfallEntityTypes.CINDER_WISP.get()
                 || entity.getType() == RovenfallEntityTypes.FROSTBOUND_REAVER.get()
                 || entity.getType() == RovenfallEntityTypes.TIDEBOUND_RAIDER.get()
-                || entity.getType() == RovenfallEntityTypes.DEEPSTONE_HUSK.get();
+                || entity.getType() == RovenfallEntityTypes.DEEPSTONE_HUSK.get()
+                || entity.getType() == RovenfallEntityTypes.RIFT_ACOLYTE.get()
+                || entity.getType() == RovenfallEntityTypes.THORNBACK_STALKER.get()
+                || entity.getType() == RovenfallEntityTypes.GRAVEBOUND_KNIGHT.get();
     }
 
     public static boolean naturalReason(EntitySpawnReason reason) {
