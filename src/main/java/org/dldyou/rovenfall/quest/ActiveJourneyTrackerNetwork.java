@@ -138,7 +138,7 @@ public final class ActiveJourneyTrackerNetwork {
                     case CLAIM_PURCHASE -> ActiveJourneyTrackerPayloads.ObjectiveKind.CLAIM_PURCHASE;
                     case BOSS_DEFEAT -> ActiveJourneyTrackerPayloads.ObjectiveKind.BOSS_DEFEAT;
                 },
-                entry.activityTargetTranslationKey().orElse(""),
+                entry.targetTranslationKey().orElse(""),
                 entry.progress(),
                 entry.requiredCount());
     }

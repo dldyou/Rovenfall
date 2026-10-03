@@ -1,0 +1,29 @@
+{
+  "translation_key": "quest.rovenfall.chapel_reconsecration",
+  "description_translation_key": "quest.rovenfall.chapel_reconsecration.description",
+  "version": 1,
+  "prerequisites": [
+    "rovenfall:frontier_triad"
+  ],
+  "objectives": [
+    {
+      "id": "rovenfall:chapel_reconsecration/mining",
+      "kind": "activity",
+      "required_count": 160,
+      "target": "rovenfall:mining"
+    },
+    {
+      "id": "rovenfall:chapel_reconsecration/combat",
+      "kind": "activity",
+      "required_count": 220,
+      "target": "rovenfall:combat"
+    }
+  ],
+  "rewards": {
+    "currency": 320,
+    "activity_xp": {
+      "activity": "rovenfall:combat",
+      "amount": 40
+    }
+  }
+}

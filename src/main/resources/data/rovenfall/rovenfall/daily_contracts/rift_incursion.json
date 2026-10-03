@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.rift_incursion",
+  "description_translation_key": "daily_contract_description.rovenfall.rift_incursion",
+  "kind": "hunting_contribution",
+  "target": "rovenfall:rift_acolyte",
+  "required_experience": 160,
+  "currency_reward": 190
+}

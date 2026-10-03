@@ -98,6 +98,48 @@
         ]
       },
       "trigger": "minecraft:player_killed_entity"
+    },
+    "rift_acolyte": {
+      "conditions": {
+        "entity": [
+          {
+            "condition": "minecraft:entity_properties",
+            "entity": "this",
+            "predicate": {
+              "minecraft:entity_type": "rovenfall:rift_acolyte"
+            }
+          }
+        ]
+      },
+      "trigger": "minecraft:player_killed_entity"
+    },
+    "thornback_stalker": {
+      "conditions": {
+        "entity": [
+          {
+            "condition": "minecraft:entity_properties",
+            "entity": "this",
+            "predicate": {
+              "minecraft:entity_type": "rovenfall:thornback_stalker"
+            }
+          }
+        ]
+      },
+      "trigger": "minecraft:player_killed_entity"
+    },
+    "gravebound_knight": {
+      "conditions": {
+        "entity": [
+          {
+            "condition": "minecraft:entity_properties",
+            "entity": "this",
+            "predicate": {
+              "minecraft:entity_type": "rovenfall:gravebound_knight"
+            }
+          }
+        ]
+      },
+      "trigger": "minecraft:player_killed_entity"
     }
   },
   "display": {
@@ -133,6 +175,15 @@
     ],
     [
       "deepstone_husk"
+    ],
+    [
+      "rift_acolyte"
+    ],
+    [
+      "thornback_stalker"
+    ],
+    [
+      "gravebound_knight"
     ]
   ],
   "sends_telemetry_event": false

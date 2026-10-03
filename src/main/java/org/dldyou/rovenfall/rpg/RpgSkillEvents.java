@@ -8,6 +8,9 @@ import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.common.util.FakePlayer;
 import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
+import org.dldyou.rovenfall.administration.PlatformSavedData;
+import org.dldyou.rovenfall.careers.CareerCombatSkillService;
+import org.dldyou.rovenfall.careers.CareerDefinitionReloadListener;
 
 /** NeoForge adapter for authoritative passive effects. */
 public final class RpgSkillEvents {
@@ -35,6 +38,12 @@ public final class RpgSkillEvents {
                 attacker == null ? null : state.state(attacker.getUUID()),
                 target == null ? null : state.state(target.getUUID()),
                 event.getAmount());
+        var professions = PlatformSavedData.get(level.getServer());
+        changed = CareerCombatSkillService.modifyDamage(
+                CareerDefinitionReloadListener.snapshot(level.getServer()).orElse(null),
+                attacker == null ? null : professions.playerCareerState(attacker.getUUID()),
+                target == null ? null : professions.playerCareerState(target.getUUID()),
+                changed);
         changed = RpgActiveSkillRuntime.modifyDamage(
                 attacker,
                 event.getEntity(),

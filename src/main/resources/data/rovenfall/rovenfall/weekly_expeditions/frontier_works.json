@@ -1,0 +1,9 @@
+{
+  "translation_key": "weekly_expedition.rovenfall.frontier_works",
+  "description_translation_key": "weekly_expedition_description.rovenfall.frontier_works",
+  "daily_contracts": {
+    "rovenfall:stonework_detail": 2,
+    "rovenfall:glasswork_detail": 2
+  },
+  "currency_reward": 650
+}

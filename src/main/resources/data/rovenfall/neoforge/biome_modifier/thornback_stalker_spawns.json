@@ -1,0 +1,12 @@
+{
+  "type": "neoforge:add_spawns",
+  "biomes": "#rovenfall:thornback_stalker_spawns",
+  "spawners": [
+    {
+      "type": "rovenfall:thornback_stalker",
+      "weight": 8,
+      "minCount": 1,
+      "maxCount": 2
+    }
+  ]
+}

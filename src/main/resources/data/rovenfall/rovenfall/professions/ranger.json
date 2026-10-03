@@ -1,13 +1,25 @@
 {
   "translation_key": "career.rovenfall.ranger",
   "tier": 3,
-  "parents": ["rovenfall:scout"],
+  "parents": [
+    "rovenfall:scout"
+  ],
   "activity_levels": {
     "exploration": 4,
     "hunting": 5
   },
-  "experience_tracks": ["exploration", "hunting"],
-  "level_thresholds": [0, 1000, 3000, 6500, 12000, 20000],
+  "experience_tracks": [
+    "exploration",
+    "hunting"
+  ],
+  "level_thresholds": [
+    0,
+    1000,
+    3000,
+    6500,
+    12000,
+    20000
+  ],
   "promotion_cost": 300,
   "promotion_skill_points": 2,
   "skill_reset_cost": 150,
@@ -33,7 +45,9 @@
     },
     "rovenfall:marked_prey": {
       "translation_key": "career_skill.rovenfall.marked_prey",
-      "prerequisites": ["rovenfall:farstrider"],
+      "prerequisites": [
+        "rovenfall:farstrider"
+      ],
       "maximum_rank": 2,
       "point_cost": 1,
       "scope": "career",
@@ -48,6 +62,43 @@
           "type": "activity_experience_bonus",
           "track": "hunting",
           "magnitude_per_rank_bps": 1500
+        }
+      ]
+    },
+    "rovenfall:hunters_edge": {
+      "translation_key": "career_skill.rovenfall.hunters_edge",
+      "prerequisites": [
+        "rovenfall:farstrider"
+      ],
+      "maximum_rank": 3,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "outgoing_damage_bonus",
+          "magnitude_per_rank_bps": 300
+        }
+      ]
+    },
+    "rovenfall:predators_focus": {
+      "translation_key": "career_skill.rovenfall.predators_focus",
+      "prerequisites": [
+        "rovenfall:marked_prey",
+        "rovenfall:hunters_edge"
+      ],
+      "maximum_rank": 1,
+      "point_cost": 2,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:strength",
+        "duration_ticks": 300,
+        "amplifier": 1,
+        "cooldown_seconds": 90
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "magnitude_per_rank_bps": 300
         }
       ]
     }

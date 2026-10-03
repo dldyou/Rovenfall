@@ -2960,8 +2960,9 @@ public final class Rovenfall {
                 helper.assertTrue(server.getAdvancements().get(id("wilderness/hunt_the_frontier"))
                                 .value().criteria().keySet().equals(Set.of(
                                         "ashen_stalker", "runebound_archer", "mirefang", "cinder_wisp",
-                                        "frostbound_reaver", "tidebound_raider", "deepstone_husk")),
-                        "Wilderness hunt advancement did not require all seven custom mobs");
+                                        "frostbound_reaver", "tidebound_raider", "deepstone_husk",
+                                        "rift_acolyte", "thornback_stalker", "gravebound_knight")),
+                        "Wilderness hunt advancement did not require all ten custom mobs");
                 helper.assertTrue(server.getAdvancements().get(id("wilderness/frontier_alchemist"))
                                 .value().criteria().keySet().equals(Set.of(
                                         "mireguard_tonic", "cinderward_tonic", "ashveil_tonic", "runeward_tonic",
@@ -2987,9 +2988,20 @@ public final class Rovenfall {
                         helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.COMMAND);
                 var deepstoneHusk = RovenfallEntityTypes.DEEPSTONE_HUSK.get().create(
                         helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                var riftAcolyte = RovenfallEntityTypes.RIFT_ACOLYTE.get().create(
+                        helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                var thornbackStalker = RovenfallEntityTypes.THORNBACK_STALKER.get().create(
+                        helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.COMMAND);
+                var graveboundKnight = RovenfallEntityTypes.GRAVEBOUND_KNIGHT.get().create(
+                        helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.COMMAND);
                 helper.assertTrue(ashenStalker != null && runeboundArcher != null
-                                && frostboundReaver != null && tideboundRaider != null && deepstoneHusk != null,
+                                && frostboundReaver != null && tideboundRaider != null && deepstoneHusk != null
+                                && riftAcolyte != null && thornbackStalker != null && graveboundKnight != null,
                         "Hunting loot test entities could not be created");
+                helper.assertTrue(MobSpawnPolicy.isRovenfallOrdinaryMob(riftAcolyte)
+                                && MobSpawnPolicy.isRovenfallOrdinaryMob(thornbackStalker)
+                                && MobSpawnPolicy.isRovenfallOrdinaryMob(graveboundKnight),
+                        "New regional mobs were not covered by the Wilderness spawn policy");
                 helper.assertTrue(lootTableCanDrop(
                                 helper, "ashen_stalker", ashenStalker, RovenfallItems.ASHEN_RESIDUE.get()),
                         "Ashen Stalker loot table did not produce Ashen Residue");
@@ -3009,6 +3021,18 @@ public final class Rovenfall {
                                 helper, "deepstone_husk", deepstoneHusk,
                                 RovenfallItems.DEEPSTONE_CORE.get()),
                         "Deepstone Husk loot table did not produce a Deepstone Core");
+                helper.assertTrue(lootTableCanDrop(
+                                helper, "rift_acolyte", riftAcolyte,
+                                net.minecraft.world.item.Items.AMETHYST_SHARD),
+                        "Rift Acolyte loot table did not produce an Amethyst Shard");
+                helper.assertTrue(lootTableCanDrop(
+                                helper, "thornback_stalker", thornbackStalker,
+                                net.minecraft.world.item.Items.STRING),
+                        "Thornback Stalker loot table did not produce String");
+                helper.assertTrue(lootTableCanDrop(
+                                helper, "gravebound_knight", graveboundKnight,
+                                net.minecraft.world.item.Items.IRON_NUGGET),
+                        "Gravebound Knight loot table did not produce an Iron Nugget");
 
                 var consumer = net.minecraft.world.entity.EntityTypes.COW.create(
                         helper.getLevel(), net.minecraft.world.entity.EntitySpawnReason.COMMAND);
@@ -3240,7 +3264,15 @@ public final class Rovenfall {
             public void run(GameTestHelper helper) {
                 var server = helper.getLevel().getServer();
                 var catalog = MobMutationReloadListener.snapshot(server).orElseThrow();
-                helper.assertTrue(catalog.size() == 4, "Built-in mob mutation catalog did not load exactly four entries");
+                helper.assertTrue(catalog.size() == 7, "Built-in mob mutation catalog did not load exactly seven entries");
+                helper.assertTrue(catalog.get(id("runic")).orElseThrow().definition().eligibleEntityTypes().contains(
+                                id("rune_sentinel")),
+                        "Runic mutation did not retain its Rune Sentinel eligibility");
+                helper.assertTrue(catalog.get(id("primal")).orElseThrow().definition().eligibleEntityTypes().contains(
+                                id("mirefang")),
+                        "Primal mutation did not retain its Mirefang eligibility");
+                helper.assertTrue(catalog.get(id("ancient")).orElseThrow().definition().currencyReward() == 30,
+                        "Ancient mutation reward was not loaded");
                 helper.assertTrue(MobMutationEvents.eligibleSpawn(
                                 WorldCombatService.WILDERNESS_DIMENSION,
                                 net.minecraft.world.entity.EntitySpawnReason.NATURAL,
@@ -4009,7 +4041,7 @@ public final class Rovenfall {
                         .getListener(ActivityRewardReloadListener.KEY);
                 helper.assertTrue(listener != null,
                         "Rovenfall activity reward listener was not retained");
-                helper.assertTrue(listener.size() == 84,
+                helper.assertTrue(listener.size() == 90,
                         "Built-in Rovenfall activity reward catalog was incomplete");
                 var levelListener = server.getServerResources().managers()
                         .getListener(ActivityLevelReloadListener.KEY);
@@ -4019,11 +4051,11 @@ public final class Rovenfall {
                                 .orElseThrow().progress(300).level() == 2,
                         "Activity level curve did not resolve cumulative experience");
                 var careers = CareerDefinitionReloadListener.snapshot(server).orElseThrow();
-                helper.assertTrue(careers.size() == 10,
+                helper.assertTrue(careers.size() == 22,
                         "Built-in Rovenfall career graph was incomplete");
-                helper.assertTrue(careers.skillIds().size() == 20,
+                helper.assertTrue(careers.skillIds().size() == 88,
                         "Built-in Rovenfall career skill trees were incomplete");
-                helper.assertTrue(careers.activeSkillIds().size() == 20,
+                helper.assertTrue(careers.activeSkillIds().size() == 42,
                         "Built-in Rovenfall active skill definitions were incomplete");
                 helper.assertTrue(careers.definition(id("warrior")).orElseThrow().promotionSkillPoints() == 1,
                         "Career promotion skill-point reward was not loaded");
@@ -4034,6 +4066,13 @@ public final class Rovenfall {
                 helper.assertTrue(careers.ancestors(id("vanguard")).equals(
                                 Set.of(id("adventurer"), id("warrior"))),
                         "Tier-three career specialization graph was not compiled");
+                helper.assertTrue(careers.ancestors(id("bastion")).equals(
+                                Set.of(id("adventurer"), id("warrior"), id("vanguard"))),
+                        "Tier-four career specialization graph was not compiled");
+                helper.assertTrue(careers.skill(id("last_bulwark")).orElseThrow()
+                                .definition().prerequisites().equals(
+                                        List.of(id("unbroken_guard"), id("fortress_mind"))),
+                        "Tier-four converging keystone path was not compiled");
                 helper.assertTrue(careers.conflictingLearnedCareers(
                                 id("slayer"), Set.of(id("adventurer"), id("warrior"), id("vanguard")))
                                 .equals(Set.of(id("vanguard"))),
@@ -4050,7 +4089,7 @@ public final class Rovenfall {
                                 && legend.currencyReward() == 2_500,
                         "Legend of Rovenfall challenge definition was not loaded");
                 var contracts = DailyContractReloadListener.snapshot(server).orElseThrow();
-                helper.assertTrue(contracts.size() == 19,
+                helper.assertTrue(contracts.size() == 24,
                         "Built-in Rovenfall daily contract catalog was incomplete");
                 for (String food : List.of("trail_ration", "orchard_pie")) {
                     var supply = contracts.get(id(food + "_supplies"));
@@ -4113,8 +4152,22 @@ public final class Rovenfall {
                                 && highlandProvisions.requiredExperience() == 48
                                 && highlandProvisions.currencyReward() == 150,
                         "Highland Provisions daily contract definition was not loaded");
+                var stoneworkDetail = contracts.get(id("stonework_detail"));
+                helper.assertTrue(stoneworkDetail != null
+                                && stoneworkDetail.kind() == ActivityKind.BUILDING_PLACEMENT
+                                && stoneworkDetail.targetId().equals(Identifier.withDefaultNamespace("stone_bricks"))
+                                && stoneworkDetail.requiredExperience() == 40
+                                && stoneworkDetail.currencyReward() == 120,
+                        "Stonework Reinforcement daily contract definition was not loaded");
+                var glassworkDetail = contracts.get(id("glasswork_detail"));
+                helper.assertTrue(glassworkDetail != null
+                                && glassworkDetail.kind() == ActivityKind.BUILDING_PLACEMENT
+                                && glassworkDetail.targetId().equals(Identifier.withDefaultNamespace("glass"))
+                                && glassworkDetail.requiredExperience() == 32
+                                && glassworkDetail.currencyReward() == 110,
+                        "Install Windows daily contract definition was not loaded");
                 var expeditions = WeeklyExpeditionReloadListener.snapshot(server).orElseThrow();
-                helper.assertTrue(expeditions.size() == 5,
+                helper.assertTrue(expeditions.size() == 6,
                         "Built-in Rovenfall weekly expedition catalog was incomplete");
                 var supplyLines = expeditions.get(id("supply_lines"));
                 helper.assertTrue(supplyLines != null
@@ -4140,6 +4193,12 @@ public final class Rovenfall {
                                         Map.of(id("warden_trial"), 3))
                                 && wardenOath.currencyReward() == 1_000,
                         "Warden's Oath weekly expedition definition was not loaded");
+                var frontierWorks = expeditions.get(id("frontier_works"));
+                helper.assertTrue(frontierWorks != null
+                                && frontierWorks.dailyContractRequirements().equals(
+                                        Map.of(id("stonework_detail"), 2, id("glasswork_detail"), 2))
+                                && frontierWorks.currencyReward() == 650,
+                        "Frontier Works weekly expedition definition was not loaded");
                 var reward = ActivityRewardReloadListener.get(
                         server, ActivityKind.EXPLORATION_DISCOVERY, plains);
                 helper.assertTrue(reward.isPresent(),

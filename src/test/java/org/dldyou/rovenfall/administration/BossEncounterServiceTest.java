@@ -164,6 +164,11 @@ final class BossEncounterServiceTest {
         assertEquals(1, ArenaWarden.phaseForHealth(400, 400));
         assertEquals(2, ArenaWarden.phaseForHealth(200, 400));
         assertEquals(3, ArenaWarden.phaseForHealth(100, 400));
+        assertTrue(ArenaWarden.shouldStartMarkedStrike(2, 120, false));
+        assertFalse(ArenaWarden.shouldStartMarkedStrike(1, 120, false));
+        assertFalse(ArenaWarden.shouldStartMarkedStrike(2, 120, true));
+        assertTrue(ArenaWarden.shouldCollapseOuterRing(3, 180));
+        assertFalse(ArenaWarden.shouldCollapseOuterRing(2, 180));
 
         CompoundTag future = (CompoundTag) PlatformSavedData.CODEC
                 .encodeStart(NbtOps.INSTANCE, new PlatformSavedData()).getOrThrow();

@@ -1,0 +1,14 @@
+{
+  "placement": {
+    "type": "minecraft:random_spread",
+    "salt": 7319421,
+    "separation": 18,
+    "spacing": 44
+  },
+  "structures": [
+    {
+      "structure": "rovenfall:frontier_watchtower",
+      "weight": 1
+    }
+  ]
+}

@@ -1,13 +1,25 @@
 {
   "translation_key": "career.rovenfall.warrior",
   "tier": 2,
-  "parents": ["rovenfall:adventurer"],
+  "parents": [
+    "rovenfall:adventurer"
+  ],
   "activity_levels": {
     "combat": 2,
     "hunting": 1
   },
-  "experience_tracks": ["combat", "hunting"],
-  "level_thresholds": [0, 750, 2250, 5000, 9500, 16000],
+  "experience_tracks": [
+    "combat",
+    "hunting"
+  ],
+  "level_thresholds": [
+    0,
+    750,
+    2250,
+    5000,
+    9500,
+    16000
+  ],
   "promotion_cost": 100,
   "promotion_skill_points": 1,
   "skill_reset_cost": 100,
@@ -33,7 +45,9 @@
     },
     "rovenfall:predator": {
       "translation_key": "career_skill.rovenfall.predator",
-      "prerequisites": ["rovenfall:battle_focus"],
+      "prerequisites": [
+        "rovenfall:battle_focus"
+      ],
       "maximum_rank": 2,
       "point_cost": 1,
       "scope": "career",
@@ -48,6 +62,43 @@
           "type": "activity_experience_bonus",
           "track": "hunting",
           "magnitude_per_rank_bps": 1000
+        }
+      ]
+    },
+    "rovenfall:weapon_mastery": {
+      "translation_key": "career_skill.rovenfall.weapon_mastery",
+      "prerequisites": [
+        "rovenfall:battle_focus"
+      ],
+      "maximum_rank": 3,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "outgoing_damage_bonus",
+          "magnitude_per_rank_bps": 300
+        }
+      ]
+    },
+    "rovenfall:war_cry": {
+      "translation_key": "career_skill.rovenfall.war_cry",
+      "prerequisites": [
+        "rovenfall:predator",
+        "rovenfall:weapon_mastery"
+      ],
+      "maximum_rank": 1,
+      "point_cost": 2,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:strength",
+        "duration_ticks": 300,
+        "amplifier": 1,
+        "cooldown_seconds": 90
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "magnitude_per_rank_bps": 300
         }
       ]
     }

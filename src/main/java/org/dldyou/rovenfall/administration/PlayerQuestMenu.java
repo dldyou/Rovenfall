@@ -27,6 +27,7 @@ import net.minecraft.world.waypoints.Waypoint;
 import net.minecraft.world.waypoints.WaypointStyleAssets;
 import org.dldyou.rovenfall.exploration.ExplorationDefinitionReloadListener;
 import org.dldyou.rovenfall.activities.ActivityKind;
+import org.dldyou.rovenfall.activities.ActivityTrack;
 import org.dldyou.rovenfall.activities.DailyContractDefinition;
 import org.dldyou.rovenfall.activities.DailyContractReloadListener;
 import org.dldyou.rovenfall.exploration.ExplorationJournalView;
@@ -103,6 +104,15 @@ public final class PlayerQuestMenu extends ChestMenu {
         REFRESH
     }
 
+    enum DailyFilter {
+        ALL,
+        MINING,
+        FARMING,
+        COOKING,
+        BUILDING,
+        HUNTING
+    }
+
     private final ServerPlayer viewer;
     private final UUID viewerId;
     private final SimpleContainer content;
@@ -117,7 +127,7 @@ public final class PlayerQuestMenu extends ChestMenu {
     private List<DailyRow> displayedDailyRows = List.of();
     private int dailyPage;
     private int dailyEntries;
-    private boolean cookingOnly;
+    private DailyFilter dailyFilter = DailyFilter.ALL;
     private ExplorationJournalView renderedExploration;
     private List<ExplorationJournalView.Row> displayedExplorationRows = List.of();
     private ExplorationJournalView.Row selectedExploration;
@@ -189,7 +199,7 @@ public final class PlayerQuestMenu extends ChestMenu {
             switch (action) {
                 case CLAIM_DAILY -> claimDaily(slotIndex);
                 case FILTER_DAILY -> {
-                    cookingOnly = !cookingOnly;
+                    dailyFilter = nextDailyFilter(dailyFilter);
                     dailyPage = 0;
                     render();
                 }
@@ -406,9 +416,13 @@ public final class PlayerQuestMenu extends ChestMenu {
             case CLAIM_PURCHASE -> Component.translatable(
                     "gui.rovenfall.quest.objective.claim_purchase",
                     objective.progress(), objective.requiredCount());
-            case BOSS_DEFEAT -> Component.translatable(
-                    "gui.rovenfall.quest.objective.boss_defeat",
-                    objective.progress(), objective.requiredCount());
+            case BOSS_DEFEAT -> objective.target()
+                    .<Component>map(target -> Component.translatable(
+                            "gui.rovenfall.quest.objective.boss_defeat_target",
+                            bossName(target), objective.progress(), objective.requiredCount()))
+                    .orElseGet(() -> Component.translatable(
+                            "gui.rovenfall.quest.objective.boss_defeat",
+                            objective.progress(), objective.requiredCount()));
         };
     }
 
@@ -424,9 +438,18 @@ public final class PlayerQuestMenu extends ChestMenu {
                     "gui.rovenfall.quest.objective.shop_trade", step.progress(), step.requiredCount());
             case CLAIM_PURCHASE -> Component.translatable(
                     "gui.rovenfall.quest.objective.claim_purchase", step.progress(), step.requiredCount());
-            case BOSS_DEFEAT -> Component.translatable(
-                    "gui.rovenfall.quest.objective.boss_defeat", step.progress(), step.requiredCount());
+            case BOSS_DEFEAT -> step.target()
+                    .<Component>map(target -> Component.translatable(
+                            "gui.rovenfall.quest.objective.boss_defeat_target",
+                            bossName(target), step.progress(), step.requiredCount()))
+                    .orElseGet(() -> Component.translatable(
+                            "gui.rovenfall.quest.objective.boss_defeat",
+                            step.progress(), step.requiredCount()));
         };
+    }
+
+    private static Component bossName(Identifier bossId) {
+        return Component.translatable("boss." + bossId.getNamespace() + "." + bossId.getPath());
     }
 
     private void select(int slot) {
@@ -753,7 +776,7 @@ public final class PlayerQuestMenu extends ChestMenu {
         var platform = PlatformSavedData.get(server);
         var definitions = DailyContractReloadListener.snapshot(server);
         List<DailyRow> rows = definitions.orElse(Map.of()).entrySet().stream()
-                .filter(entry -> !cookingOnly || entry.getValue().kind() == ActivityKind.COOKING_RESULT)
+                .filter(entry -> dailyFilterMatches(dailyFilter, entry.getValue().kind()))
                 .map(entry -> new DailyRow(entry.getKey(), entry.getValue(), DailyContractService.evaluate(
                         platform, viewerId, entry.getKey(), entry.getValue(), now)))
                 .sorted(Comparator.comparingInt((DailyRow row) -> dailyPriority(row.evaluation().status()))
@@ -766,8 +789,7 @@ public final class PlayerQuestMenu extends ChestMenu {
         content.setItem(4, icon(Items.CHEST, "gui.rovenfall.quest.daily_tasks",
                 Component.translatable("gui.rovenfall.quest.daily_tasks.hint"),
                 pageLine(dailyPage, dailyEntries == 0 ? 0 : (dailyEntries - 1) / PAGE_SIZE + 1, dailyEntries)));
-        content.setItem(1, icon(cookingOnly ? Items.BREAD : Items.BOOK,
-                cookingOnly ? "gui.rovenfall.quest.daily_tasks.cooking" : "gui.rovenfall.quest.daily_tasks.all",
+        content.setItem(1, icon(dailyFilterIcon(dailyFilter), dailyFilterKey(dailyFilter),
                 Component.translatable("gui.rovenfall.quest.daily_tasks.filter")));
         for (int index = 0; index < displayedDailyRows.size(); index++) {
             DailyRow row = displayedDailyRows.get(index);
@@ -1168,6 +1190,39 @@ public final class PlayerQuestMenu extends ChestMenu {
 
     private static String explorationFilterKey(ExplorationJournalView.Filter filter) {
         return "gui.rovenfall.quest.exploration.filter." + filter.name().toLowerCase(Locale.ROOT);
+    }
+
+    static DailyFilter nextDailyFilter(DailyFilter filter) {
+        DailyFilter[] filters = DailyFilter.values();
+        return filters[(filter.ordinal() + 1) % filters.length];
+    }
+
+    static boolean dailyFilterMatches(DailyFilter filter, ActivityKind kind) {
+        return filter == DailyFilter.ALL || kind.track() == switch (filter) {
+            case MINING -> ActivityTrack.MINING;
+            case FARMING -> ActivityTrack.FARMING;
+            case COOKING -> ActivityTrack.COOKING;
+            case BUILDING -> ActivityTrack.BUILDING;
+            case HUNTING -> ActivityTrack.HUNTING;
+            case ALL -> throw new IllegalStateException("ALL matches before track selection");
+        };
+    }
+
+    private static String dailyFilterKey(DailyFilter filter) {
+        return filter == DailyFilter.ALL
+                ? "gui.rovenfall.quest.daily_tasks.all"
+                : "activity.rovenfall." + filter.name().toLowerCase(Locale.ROOT);
+    }
+
+    private static Item dailyFilterIcon(DailyFilter filter) {
+        return switch (filter) {
+            case ALL -> Items.BOOK;
+            case MINING -> Items.IRON_PICKAXE;
+            case FARMING -> Items.WHEAT;
+            case COOKING -> Items.BREAD;
+            case BUILDING -> Items.STONE_BRICKS;
+            case HUNTING -> Items.BOW;
+        };
     }
 
     private static String explorationStatusKey(ExplorationJournalView.Status status) {

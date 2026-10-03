@@ -1,0 +1,8 @@
+{
+  "translation_key": "daily_contract.rovenfall.gravebound_watch",
+  "description_translation_key": "daily_contract_description.rovenfall.gravebound_watch",
+  "kind": "hunting_contribution",
+  "target": "rovenfall:gravebound_knight",
+  "required_experience": 200,
+  "currency_reward": 230
+}

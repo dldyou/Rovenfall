@@ -1,0 +1,11 @@
+{
+  "type": "neoforge:add_spawn_costs",
+  "biomes": "#rovenfall:gravebound_knight_spawns",
+  "entity_types": [
+    "rovenfall:gravebound_knight"
+  ],
+  "spawn_cost": {
+    "energy_budget": 0.4,
+    "charge": 0.22
+  }
+}

@@ -34,6 +34,8 @@ public final class ArenaWarden extends Zombie {
     private BlockPos arenaOrigin;
     private int arenaRadius;
     private int patternClock;
+    private BlockPos markedStrikePosition;
+    private int markedStrikeTicks;
     private final ServerBossEvent bossBar = new ServerBossEvent(
             UUID.randomUUID(),
             Component.translatable("entity.rovenfall.arena_warden"),
@@ -144,6 +146,7 @@ public final class ArenaWarden extends Zombie {
     }
 
     private void runPatterns(ServerLevel level, int phase) {
+        tickMarkedStrike(level);
         int sweep = patternClock % 80;
         if (sweep == 60) {
             telegraph(level, SoundEvents.EVOKER_PREPARE_ATTACK, ParticleTypes.ENCHANTED_HIT, 4.0);
@@ -157,6 +160,9 @@ public final class ArenaWarden extends Zombie {
             } else if (shockwave == 0) {
                 hitPlayers(level, 9.0, 6.0F, ParticleTypes.SONIC_BOOM, SoundEvents.WARDEN_SONIC_BOOM);
             }
+            if (shouldStartMarkedStrike(phase, patternClock, markedStrikeTicks > 0)) {
+                markDistantPlayer(level);
+            }
         }
         if (phase >= 3) {
             int summon = patternClock % 200;
@@ -165,7 +171,68 @@ public final class ArenaWarden extends Zombie {
             } else if (summon == 0) {
                 summonMinions(level);
             }
+            int collapse = patternClock % 180;
+            if (collapse == 145) {
+                telegraph(level, SoundEvents.WARDEN_HEARTBEAT, ParticleTypes.SOUL_FIRE_FLAME, arenaRadius);
+                level.getPlayers(player -> player.isAlive() && encounterContains(player.blockPosition()))
+                        .forEach(player -> player.sendOverlayMessage(
+                                Component.translatable("message.rovenfall.boss.collapse_ring")));
+            } else if (shouldCollapseOuterRing(phase, patternClock)) {
+                collapseOuterRing(level);
+            }
         }
+    }
+
+    private void markDistantPlayer(ServerLevel level) {
+        level.getPlayers(player -> player.isAlive() && encounterContains(player.blockPosition())).stream()
+                .max(java.util.Comparator.comparingDouble(this::distanceToSqr))
+                .ifPresent(player -> {
+                    markedStrikePosition = player.blockPosition().immutable();
+                    markedStrikeTicks = 30;
+                    player.sendOverlayMessage(Component.translatable("message.rovenfall.boss.marked_strike"));
+                    level.playSound(null, markedStrikePosition, SoundEvents.EVOKER_PREPARE_ATTACK,
+                            SoundSource.HOSTILE, 1.0F, 1.3F);
+                });
+    }
+
+    private void tickMarkedStrike(ServerLevel level) {
+        if (markedStrikeTicks <= 0 || markedStrikePosition == null) {
+            return;
+        }
+        markedStrikeTicks--;
+        if (markedStrikeTicks > 0) {
+            if (markedStrikeTicks % 5 == 0) {
+                level.sendParticles(ParticleTypes.ENCHANTED_HIT,
+                        markedStrikePosition.getX() + 0.5, markedStrikePosition.getY() + 0.1,
+                        markedStrikePosition.getZ() + 0.5, 12, 1.4, 0.05, 1.4, 0.01);
+            }
+            return;
+        }
+        var source = level.damageSources().mobAttack(this);
+        level.getEntitiesOfClass(ServerPlayer.class,
+                        new net.minecraft.world.phys.AABB(markedStrikePosition).inflate(2.5),
+                        player -> player.isAlive() && encounterContains(player.blockPosition()))
+                .forEach(player -> player.hurtServer(level, source, 10.0F));
+        level.sendParticles(ParticleTypes.EXPLOSION,
+                markedStrikePosition.getX() + 0.5, markedStrikePosition.getY() + 0.5,
+                markedStrikePosition.getZ() + 0.5, 4, 1.0, 0.2, 1.0, 0.01);
+        level.playSound(null, markedStrikePosition, SoundEvents.GENERIC_EXPLODE.value(),
+                SoundSource.HOSTILE, 1.0F, 0.8F);
+        markedStrikePosition = null;
+    }
+
+    private void collapseOuterRing(ServerLevel level) {
+        double safeRadius = Math.max(5.0, arenaRadius * 0.35);
+        double safeRadiusSquared = safeRadius * safeRadius;
+        var source = level.damageSources().mobAttack(this);
+        level.getPlayers(player -> player.isAlive() && encounterContains(player.blockPosition())
+                        && player.blockPosition().distSqr(arenaOrigin) > safeRadiusSquared)
+                .forEach(player -> player.hurtServer(level, source, 8.0F));
+        level.playSound(null, arenaOrigin, SoundEvents.GENERIC_EXPLODE.value(),
+                SoundSource.HOSTILE, 1.0F, 0.6F);
+        level.sendParticles(ParticleTypes.SOUL_FIRE_FLAME,
+                arenaOrigin.getX() + 0.5, arenaOrigin.getY() + 0.5, arenaOrigin.getZ() + 0.5,
+                80, safeRadius, 0.6, safeRadius, 0.02);
     }
 
     private void telegraph(
@@ -259,6 +326,10 @@ public final class ArenaWarden extends Zombie {
         }
         output.putInt("RovenfallArenaRadius", arenaRadius);
         output.putInt("RovenfallPatternClock", patternClock);
+        if (markedStrikePosition != null && markedStrikeTicks > 0) {
+            output.store("RovenfallMarkedStrikePosition", BlockPos.CODEC, markedStrikePosition);
+            output.putInt("RovenfallMarkedStrikeTicks", markedStrikeTicks);
+        }
     }
 
     @Override
@@ -268,6 +339,10 @@ public final class ArenaWarden extends Zombie {
         arenaOrigin = input.read("RovenfallArenaOrigin", BlockPos.CODEC).orElse(null);
         arenaRadius = input.getIntOr("RovenfallArenaRadius", 0);
         patternClock = Math.max(0, input.getIntOr("RovenfallPatternClock", 0));
+        markedStrikePosition = input.read("RovenfallMarkedStrikePosition", BlockPos.CODEC).orElse(null);
+        markedStrikeTicks = markedStrikePosition == null
+                ? 0
+                : Math.max(0, input.getIntOr("RovenfallMarkedStrikeTicks", 0));
     }
 
     @Override
@@ -283,5 +358,13 @@ public final class ArenaWarden extends Zombie {
         }
         float share = health / maximumHealth;
         return share > 0.66F ? 1 : share > 0.33F ? 2 : 3;
+    }
+
+    public static boolean shouldStartMarkedStrike(int phase, int clock, boolean pending) {
+        return phase >= 2 && clock >= 0 && clock % 160 == 120 && !pending;
+    }
+
+    public static boolean shouldCollapseOuterRing(int phase, int clock) {
+        return phase >= 3 && clock > 0 && clock % 180 == 0;
     }
 }

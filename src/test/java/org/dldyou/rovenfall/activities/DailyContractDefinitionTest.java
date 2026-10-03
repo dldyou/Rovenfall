@@ -35,6 +35,11 @@ final class DailyContractDefinitionTest {
                 Map.entry("highland_provisions", 150L),
                 Map.entry("trail_ration_supplies", 100L),
                 Map.entry("orchard_pie_supplies", 120L),
+                Map.entry("stonework_detail", 120L),
+                Map.entry("glasswork_detail", 110L),
+                Map.entry("rift_incursion", 190L),
+                Map.entry("thornback_cull", 180L),
+                Map.entry("gravebound_watch", 230L),
                 Map.entry("warden_trial", 300L));
 
         for (var entry : expectedRewards.entrySet()) {
@@ -75,6 +80,15 @@ final class DailyContractDefinitionTest {
             assertEquals(id(food), contract.targetId());
             assertEquals(48, contract.requiredExperience());
         }
+        assertEquals(ActivityKind.BUILDING_PLACEMENT, bundled("stonework_detail").kind());
+        assertEquals(Identifier.withDefaultNamespace("stone_bricks"), bundled("stonework_detail").targetId());
+        assertEquals(40, bundled("stonework_detail").requiredExperience());
+        assertEquals(ActivityKind.BUILDING_PLACEMENT, bundled("glasswork_detail").kind());
+        assertEquals(Identifier.withDefaultNamespace("glass"), bundled("glasswork_detail").targetId());
+        assertEquals(32, bundled("glasswork_detail").requiredExperience());
+        assertEquals(id("rift_acolyte"), bundled("rift_incursion").targetId());
+        assertEquals(id("thornback_stalker"), bundled("thornback_cull").targetId());
+        assertEquals(id("gravebound_knight"), bundled("gravebound_watch").targetId());
     }
 
     @Test

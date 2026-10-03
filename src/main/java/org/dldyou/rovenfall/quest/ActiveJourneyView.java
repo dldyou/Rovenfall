@@ -19,13 +19,13 @@ public record ActiveJourneyView(
             String titleTranslationKey,
             Status status,
             QuestDefinition.Kind objectiveKind,
-            Optional<String> activityTargetTranslationKey,
+            Optional<String> targetTranslationKey,
             long progress,
             long requiredCount) {
         public Entry {
-            activityTargetTranslationKey = activityTargetTranslationKey == null
+            targetTranslationKey = targetTranslationKey == null
                     ? Optional.empty()
-                    : activityTargetTranslationKey;
+                    : targetTranslationKey;
             if (kind == null || titleTranslationKey == null || titleTranslationKey.isBlank()
                     || status == null || objectiveKind == null
                     || progress < 0 || requiredCount < 1 || progress >= requiredCount

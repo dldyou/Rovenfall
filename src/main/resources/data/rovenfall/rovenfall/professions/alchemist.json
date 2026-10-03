@@ -1,0 +1,96 @@
+{
+  "translation_key": "career.rovenfall.alchemist",
+  "tier": 4,
+  "parents": [
+    "rovenfall:cultivator"
+  ],
+  "activity_levels": {
+    "cooking": 8,
+    "farming": 7
+  },
+  "experience_tracks": [
+    "cooking",
+    "farming"
+  ],
+  "level_thresholds": [
+    0,
+    1500,
+    4500,
+    9500,
+    17000,
+    27000,
+    40000
+  ],
+  "promotion_cost": 650,
+  "promotion_skill_points": 4,
+  "skill_reset_cost": 250,
+  "skills": {
+    "rovenfall:measured_dose": {
+      "translation_key": "career_skill.rovenfall.measured_dose",
+      "maximum_rank": 3,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "cooking",
+          "magnitude_per_rank_bps": 500
+        }
+      ]
+    },
+    "rovenfall:catalytic_heat": {
+      "translation_key": "career_skill.rovenfall.catalytic_heat",
+      "prerequisites": [
+        "rovenfall:measured_dose"
+      ],
+      "maximum_rank": 2,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "farming",
+          "magnitude_per_rank_bps": 750
+        }
+      ]
+    },
+    "rovenfall:verdant_extract": {
+      "translation_key": "career_skill.rovenfall.verdant_extract",
+      "prerequisites": [
+        "rovenfall:measured_dose"
+      ],
+      "maximum_rank": 2,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "cooking",
+          "magnitude_per_rank_bps": 750
+        }
+      ]
+    },
+    "rovenfall:grand_elixir": {
+      "translation_key": "career_skill.rovenfall.grand_elixir",
+      "prerequisites": [
+        "rovenfall:catalytic_heat",
+        "rovenfall:verdant_extract"
+      ],
+      "maximum_rank": 1,
+      "point_cost": 2,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:regeneration",
+        "duration_ticks": 300,
+        "amplifier": 1,
+        "cooldown_seconds": 90
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "magnitude_per_rank_bps": 500
+        }
+      ]
+    }
+  }
+}

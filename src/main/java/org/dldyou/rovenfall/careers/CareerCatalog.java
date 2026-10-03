@@ -212,6 +212,41 @@ public final class CareerCatalog {
         return (int) total;
     }
 
+    public int combatBonusBasisPoints(PlayerCareerState playerState, CareerSkillEffect.Type type) {
+        if (playerState == null || type == null || type == CareerSkillEffect.Type.ACTIVITY_EXPERIENCE_BONUS
+                || playerState.activeCareer().isEmpty()) {
+            return 0;
+        }
+        Identifier activeCareer = playerState.activeCareer().orElseThrow();
+        if (!definitions.containsKey(activeCareer)) {
+            return 0;
+        }
+        Set<Identifier> activeLineage = new HashSet<>(ancestors(activeCareer));
+        activeLineage.add(activeCareer);
+        long total = 0;
+        for (var careerEntry : playerState.progressByCareer().entrySet()) {
+            Identifier learnedCareer = careerEntry.getKey();
+            for (var rankEntry : careerEntry.getValue().skillRanks().entrySet()) {
+                SkillBinding binding = skills.get(rankEntry.getKey());
+                if (binding == null || !binding.careerId.equals(learnedCareer)
+                        || binding.definition.scope() != CareerSkillDefinition.Scope.GLOBAL
+                        && !activeLineage.contains(learnedCareer)) {
+                    continue;
+                }
+                int rank = Math.min(rankEntry.getValue(), binding.definition.maximumRank());
+                for (CareerSkillEffect effect : binding.definition.effects()) {
+                    if (effect.type() == type) {
+                        total += (long) rank * effect.magnitudePerRankBasisPoints();
+                        if (total >= CareerSkillEffect.MAX_TOTAL_COMBAT_BONUS_BASIS_POINTS) {
+                            return CareerSkillEffect.MAX_TOTAL_COMBAT_BONUS_BASIS_POINTS;
+                        }
+                    }
+                }
+            }
+        }
+        return (int) total;
+    }
+
     public Set<Identifier> ancestors(Identifier id) {
         if (!definitions.containsKey(id)) {
             return Set.of();

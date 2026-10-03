@@ -6,6 +6,7 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.monster.Blaze;
 import net.minecraft.world.entity.monster.skeleton.AbstractSkeleton;
 import net.minecraft.world.entity.monster.spider.CaveSpider;
+import net.minecraft.world.entity.monster.spider.Spider;
 import net.minecraft.world.entity.monster.zombie.Drowned;
 import net.minecraft.world.entity.monster.zombie.Husk;
 import net.minecraft.world.entity.monster.zombie.Zombie;
@@ -66,6 +67,21 @@ public final class RovenfallEntityTypes {
                     DeepstoneHusk::new,
                     MobCategory.MONSTER,
                     builder -> builder.sized(0.6F, 1.95F).clientTrackingRange(8));
+
+    public static final DeferredHolder<EntityType<?>, EntityType<RiftAcolyte>> RIFT_ACOLYTE =
+            ENTITIES.registerEntityType(
+                    "rift_acolyte", RiftAcolyte::new, MobCategory.MONSTER,
+                    builder -> builder.sized(0.6F, 1.95F).clientTrackingRange(8));
+
+    public static final DeferredHolder<EntityType<?>, EntityType<ThornbackStalker>> THORNBACK_STALKER =
+            ENTITIES.registerEntityType(
+                    "thornback_stalker", ThornbackStalker::new, MobCategory.MONSTER,
+                    builder -> builder.sized(1.4F, 0.9F).clientTrackingRange(8));
+
+    public static final DeferredHolder<EntityType<?>, EntityType<GraveboundKnight>> GRAVEBOUND_KNIGHT =
+            ENTITIES.registerEntityType(
+                    "gravebound_knight", GraveboundKnight::new, MobCategory.MONSTER,
+                    builder -> builder.sized(0.7F, 2.1F).clientTrackingRange(8));
 
     public static final DeferredHolder<EntityType<?>, EntityType<ArenaWarden>> ARENA_WARDEN =
             ENTITIES.registerEntityType(
@@ -138,6 +154,26 @@ public final class RovenfallEntityTypes {
                 .add(Attributes.KNOCKBACK_RESISTANCE, 0.75)
                 .add(Attributes.FOLLOW_RANGE, 56.0)
                 .add(Attributes.SCALE, 1.45)
+                .build());
+        event.put(RIFT_ACOLYTE.get(), Zombie.createAttributes()
+                .add(Attributes.MAX_HEALTH, 34.0)
+                .add(Attributes.MOVEMENT_SPEED, 0.29)
+                .add(Attributes.ATTACK_DAMAGE, 6.0)
+                .add(Attributes.FOLLOW_RANGE, 44.0)
+                .build());
+        event.put(THORNBACK_STALKER.get(), Spider.createAttributes()
+                .add(Attributes.MAX_HEALTH, 30.0)
+                .add(Attributes.MOVEMENT_SPEED, 0.36)
+                .add(Attributes.ATTACK_DAMAGE, 5.5)
+                .add(Attributes.FOLLOW_RANGE, 40.0)
+                .build());
+        event.put(GRAVEBOUND_KNIGHT.get(), Husk.createAttributes()
+                .add(Attributes.MAX_HEALTH, 44.0)
+                .add(Attributes.MOVEMENT_SPEED, 0.23)
+                .add(Attributes.ATTACK_DAMAGE, 8.0)
+                .add(Attributes.ARMOR, 8.0)
+                .add(Attributes.KNOCKBACK_RESISTANCE, 0.45)
+                .add(Attributes.FOLLOW_RANGE, 42.0)
                 .build());
     }
 }

@@ -174,9 +174,12 @@ public final class ActiveJourneyService {
             return Optional.empty();
         }
         QuestJourneyView.ObjectiveRow next = objective.orElseThrow();
-        Optional<String> activityTargetTranslationKey = next.kind() == QuestDefinition.Kind.ACTIVITY
-                ? next.target().flatMap(rpgDefinitions::activity).map(activity -> activity.translationKey())
-                : Optional.empty();
+        Optional<String> targetTranslationKey = switch (next.kind()) {
+            case ACTIVITY -> next.target().flatMap(rpgDefinitions::activity)
+                    .map(activity -> activity.translationKey());
+            case BOSS_DEFEAT -> next.target().map(ActiveJourneyService::bossTranslationKey);
+            case SHOP_TRADE, CLAIM_PURCHASE -> Optional.empty();
+        };
         return Optional.of(new ActiveJourneyView.Entry(
                 kind,
                 titleTranslationKey.orElseThrow(),
@@ -184,9 +187,13 @@ public final class ActiveJourneyService {
                         ? ActiveJourneyView.Status.IN_PROGRESS
                         : ActiveJourneyView.Status.AVAILABLE,
                 next.kind(),
-                activityTargetTranslationKey,
+                targetTranslationKey,
                 next.progress(),
                 next.requiredCount()));
+    }
+
+    static String bossTranslationKey(Identifier bossId) {
+        return "boss." + bossId.getNamespace() + "." + bossId.getPath();
     }
 
     static MutationResult replace(

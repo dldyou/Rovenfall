@@ -1,0 +1,96 @@
+{
+  "translation_key": "career.rovenfall.steward",
+  "tier": 4,
+  "parents": [
+    "rovenfall:cultivator"
+  ],
+  "activity_levels": {
+    "farming": 8,
+    "building": 5
+  },
+  "experience_tracks": [
+    "farming",
+    "building"
+  ],
+  "level_thresholds": [
+    0,
+    1500,
+    4500,
+    9500,
+    17000,
+    27000,
+    40000
+  ],
+  "promotion_cost": 650,
+  "promotion_skill_points": 4,
+  "skill_reset_cost": 250,
+  "skills": {
+    "rovenfall:seasonal_plan": {
+      "translation_key": "career_skill.rovenfall.seasonal_plan",
+      "maximum_rank": 3,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "farming",
+          "magnitude_per_rank_bps": 500
+        }
+      ]
+    },
+    "rovenfall:abundant_table": {
+      "translation_key": "career_skill.rovenfall.abundant_table",
+      "prerequisites": [
+        "rovenfall:seasonal_plan"
+      ],
+      "maximum_rank": 2,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "building",
+          "magnitude_per_rank_bps": 750
+        }
+      ]
+    },
+    "rovenfall:steadfast_homestead": {
+      "translation_key": "career_skill.rovenfall.steadfast_homestead",
+      "prerequisites": [
+        "rovenfall:seasonal_plan"
+      ],
+      "maximum_rank": 2,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "farming",
+          "magnitude_per_rank_bps": 750
+        }
+      ]
+    },
+    "rovenfall:harvest_festival": {
+      "translation_key": "career_skill.rovenfall.harvest_festival",
+      "prerequisites": [
+        "rovenfall:abundant_table",
+        "rovenfall:steadfast_homestead"
+      ],
+      "maximum_rank": 1,
+      "point_cost": 2,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:regeneration",
+        "duration_ticks": 300,
+        "amplifier": 1,
+        "cooldown_seconds": 90
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "magnitude_per_rank_bps": 500
+        }
+      ]
+    }
+  }
+}

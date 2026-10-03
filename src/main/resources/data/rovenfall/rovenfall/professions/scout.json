@@ -1,13 +1,25 @@
 {
   "translation_key": "career.rovenfall.scout",
   "tier": 2,
-  "parents": ["rovenfall:adventurer"],
+  "parents": [
+    "rovenfall:adventurer"
+  ],
   "activity_levels": {
     "exploration": 2,
     "hunting": 2
   },
-  "experience_tracks": ["exploration", "hunting"],
-  "level_thresholds": [0, 750, 2250, 5000, 9500, 16000],
+  "experience_tracks": [
+    "exploration",
+    "hunting"
+  ],
+  "level_thresholds": [
+    0,
+    750,
+    2250,
+    5000,
+    9500,
+    16000
+  ],
   "promotion_cost": 100,
   "promotion_skill_points": 1,
   "skill_reset_cost": 100,
@@ -33,7 +45,9 @@
     },
     "rovenfall:keen_senses": {
       "translation_key": "career_skill.rovenfall.keen_senses",
-      "prerequisites": ["rovenfall:trailblazer"],
+      "prerequisites": [
+        "rovenfall:trailblazer"
+      ],
       "maximum_rank": 2,
       "point_cost": 1,
       "scope": "career",
@@ -48,6 +62,43 @@
           "type": "activity_experience_bonus",
           "track": "hunting",
           "magnitude_per_rank_bps": 1000
+        }
+      ]
+    },
+    "rovenfall:evasive_steps": {
+      "translation_key": "career_skill.rovenfall.evasive_steps",
+      "prerequisites": [
+        "rovenfall:trailblazer"
+      ],
+      "maximum_rank": 3,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "incoming_damage_reduction",
+          "magnitude_per_rank_bps": 200
+        }
+      ]
+    },
+    "rovenfall:vanishing_step": {
+      "translation_key": "career_skill.rovenfall.vanishing_step",
+      "prerequisites": [
+        "rovenfall:keen_senses",
+        "rovenfall:evasive_steps"
+      ],
+      "maximum_rank": 1,
+      "point_cost": 2,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:invisibility",
+        "duration_ticks": 300,
+        "amplifier": 0,
+        "cooldown_seconds": 90
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "magnitude_per_rank_bps": 300
         }
       ]
     }

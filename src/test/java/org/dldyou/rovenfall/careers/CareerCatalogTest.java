@@ -19,7 +19,9 @@ import org.junit.jupiter.api.Test;
 final class CareerCatalogTest {
     private static final List<String> BUNDLED_CAREERS = List.of(
             "adventurer", "warrior", "artisan", "scout",
-            "vanguard", "slayer", "architect", "cultivator", "pathfinder", "ranger");
+            "vanguard", "slayer", "architect", "cultivator", "pathfinder", "ranger",
+            "bastion", "warlord", "reaper", "beastmaster", "runesmith", "engineer",
+            "alchemist", "steward", "wayfinder", "delver", "falconer", "shadowhunter");
 
     @Test
     void validDagSupportsArbitraryTiersMultipleParentsAndLineageQueries() {
@@ -71,7 +73,7 @@ final class CareerCatalogTest {
     }
 
     @Test
-    void bundledCareerGraphDefinesTierTwoBranchesAndTierThreeSpecializations() throws Exception {
+    void bundledCareerGraphDefinesFourTiersAndBranchedKeystones() throws Exception {
         Map<Identifier, CareerDefinition> definitions = new LinkedHashMap<>();
         for (String name : BUNDLED_CAREERS) {
             String path = "/data/rovenfall/rovenfall/professions/" + name + ".json";
@@ -83,9 +85,9 @@ final class CareerCatalogTest {
             }
         }
         CareerCatalog catalog = CareerCatalog.create(definitions).getOrThrow();
-        assertEquals(10, catalog.size());
-        assertEquals(20, catalog.skillIds().size());
-        assertEquals(20, catalog.activeSkillIds().size());
+        assertEquals(22, catalog.size());
+        assertEquals(88, catalog.skillIds().size());
+        assertEquals(42, catalog.activeSkillIds().size());
         assertEquals(Identifier.withDefaultNamespace("speed"), catalog.skill(id("well_traveled"))
                 .orElseThrow().definition().active().orElseThrow().effectId());
         assertEquals(id("adventurer"), catalog.skill(id("well_traveled")).orElseThrow().careerId());
@@ -94,6 +96,12 @@ final class CareerCatalogTest {
         assertEquals(Set.of(id("adventurer"), id("warrior")), catalog.ancestors(id("vanguard")));
         assertEquals(Set.of(id("adventurer"), id("artisan")), catalog.ancestors(id("architect")));
         assertEquals(Set.of(id("adventurer"), id("scout")), catalog.ancestors(id("ranger")));
+        assertEquals(Set.of(id("adventurer"), id("warrior"), id("vanguard")),
+                catalog.ancestors(id("bastion")));
+        assertEquals(List.of(id("unbroken_guard"), id("fortress_mind")),
+                catalog.skill(id("last_bulwark")).orElseThrow().definition().prerequisites());
+        assertEquals(2, catalog.skill(id("last_bulwark"))
+                .orElseThrow().definition().pointCostPerRank());
         assertEquals(Identifier.withDefaultNamespace("night_vision"), catalog.skill(id("keen_senses"))
                 .orElseThrow().definition().active().orElseThrow().effectId());
         assertEquals(Identifier.withDefaultNamespace("resistance"), catalog.skill(id("shield_wall"))

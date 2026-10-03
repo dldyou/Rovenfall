@@ -1,0 +1,29 @@
+{
+  "translation_key": "quest.rovenfall.relic_recovery",
+  "description_translation_key": "quest.rovenfall.relic_recovery.description",
+  "version": 1,
+  "prerequisites": [
+    "rovenfall:chapel_reconsecration"
+  ],
+  "objectives": [
+    {
+      "id": "rovenfall:relic_recovery/mining",
+      "kind": "activity",
+      "required_count": 220,
+      "target": "rovenfall:mining"
+    },
+    {
+      "id": "rovenfall:relic_recovery/exploration",
+      "kind": "activity",
+      "required_count": 160,
+      "target": "rovenfall:exploration"
+    }
+  ],
+  "rewards": {
+    "currency": 300,
+    "activity_xp": {
+      "activity": "rovenfall:mining",
+      "amount": 40
+    }
+  }
+}

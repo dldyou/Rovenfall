@@ -1,0 +1,96 @@
+{
+  "translation_key": "career.rovenfall.delver",
+  "tier": 4,
+  "parents": [
+    "rovenfall:pathfinder"
+  ],
+  "activity_levels": {
+    "mining": 8,
+    "exploration": 6
+  },
+  "experience_tracks": [
+    "mining",
+    "exploration"
+  ],
+  "level_thresholds": [
+    0,
+    1500,
+    4500,
+    9500,
+    17000,
+    27000,
+    40000
+  ],
+  "promotion_cost": 650,
+  "promotion_skill_points": 4,
+  "skill_reset_cost": 250,
+  "skills": {
+    "rovenfall:deep_reading": {
+      "translation_key": "career_skill.rovenfall.deep_reading",
+      "maximum_rank": 3,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "mining",
+          "magnitude_per_rank_bps": 500
+        }
+      ]
+    },
+    "rovenfall:sure_footing": {
+      "translation_key": "career_skill.rovenfall.sure_footing",
+      "prerequisites": [
+        "rovenfall:deep_reading"
+      ],
+      "maximum_rank": 2,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "exploration",
+          "magnitude_per_rank_bps": 750
+        }
+      ]
+    },
+    "rovenfall:ore_memory": {
+      "translation_key": "career_skill.rovenfall.ore_memory",
+      "prerequisites": [
+        "rovenfall:deep_reading"
+      ],
+      "maximum_rank": 2,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "mining",
+          "magnitude_per_rank_bps": 750
+        }
+      ]
+    },
+    "rovenfall:underworld_focus": {
+      "translation_key": "career_skill.rovenfall.underworld_focus",
+      "prerequisites": [
+        "rovenfall:sure_footing",
+        "rovenfall:ore_memory"
+      ],
+      "maximum_rank": 1,
+      "point_cost": 2,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:night_vision",
+        "duration_ticks": 800,
+        "amplifier": 0,
+        "cooldown_seconds": 90
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "magnitude_per_rank_bps": 500
+        }
+      ]
+    }
+  }
+}

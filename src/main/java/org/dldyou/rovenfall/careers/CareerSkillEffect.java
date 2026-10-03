@@ -13,6 +13,7 @@ public record CareerSkillEffect(
         int magnitudePerRankBasisPoints) {
     public static final int MAX_MAGNITUDE_PER_RANK_BASIS_POINTS = 5_000;
     public static final int MAX_TOTAL_ACTIVITY_BONUS_BASIS_POINTS = 10_000;
+    public static final int MAX_TOTAL_COMBAT_BONUS_BASIS_POINTS = 5_000;
     public static final Codec<CareerSkillEffect> CODEC = RecordCodecBuilder
             .<CareerSkillEffect>create(instance -> instance.group(
                     Type.CODEC.fieldOf("type").forGetter(CareerSkillEffect::type),
@@ -33,6 +34,9 @@ public record CareerSkillEffect(
                 || effect.magnitudePerRankBasisPoints > MAX_MAGNITUDE_PER_RANK_BASIS_POINTS) {
             return DataResult.error(() -> "career skill effect is invalid");
         }
+        if (effect.type != Type.ACTIVITY_EXPERIENCE_BONUS && effect.track.isPresent()) {
+            return DataResult.error(() -> "combat career skill effects cannot select an activity track");
+        }
         return DataResult.success(effect);
     }
 
@@ -43,7 +47,9 @@ public record CareerSkillEffect(
     }
 
     public enum Type implements StringRepresentable {
-        ACTIVITY_EXPERIENCE_BONUS("activity_experience_bonus");
+        ACTIVITY_EXPERIENCE_BONUS("activity_experience_bonus"),
+        OUTGOING_DAMAGE_BONUS("outgoing_damage_bonus"),
+        INCOMING_DAMAGE_REDUCTION("incoming_damage_reduction");
 
         private static final Codec<Type> CODEC = StringRepresentable.fromEnum(Type::values);
         private final String id;

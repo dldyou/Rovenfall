@@ -6,6 +6,7 @@ import net.minecraft.client.renderer.entity.DrownedRenderer;
 import net.minecraft.client.renderer.entity.HuskRenderer;
 import net.minecraft.client.renderer.entity.SkeletonRenderer;
 import net.minecraft.client.renderer.entity.StrayRenderer;
+import net.minecraft.client.renderer.entity.SpiderRenderer;
 import net.minecraft.client.renderer.entity.ZombieRenderer;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent;
@@ -27,6 +28,9 @@ public final class MobClient {
         event.registerEntityRenderer(RovenfallEntityTypes.FROSTBOUND_REAVER.get(), StrayRenderer::new);
         event.registerEntityRenderer(RovenfallEntityTypes.TIDEBOUND_RAIDER.get(), DrownedRenderer::new);
         event.registerEntityRenderer(RovenfallEntityTypes.DEEPSTONE_HUSK.get(), HuskRenderer::new);
+        event.registerEntityRenderer(RovenfallEntityTypes.RIFT_ACOLYTE.get(), ZombieRenderer::new);
+        event.registerEntityRenderer(RovenfallEntityTypes.THORNBACK_STALKER.get(), SpiderRenderer::new);
+        event.registerEntityRenderer(RovenfallEntityTypes.GRAVEBOUND_KNIGHT.get(), HuskRenderer::new);
         event.registerEntityRenderer(RovenfallEntityTypes.ARENA_WARDEN.get(), ZombieRenderer::new);
     }
 }

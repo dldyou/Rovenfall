@@ -301,7 +301,7 @@ public final class PlayerDashboardMenu extends ChestMenu {
         return switch (entry.objectiveKind()) {
             case ACTIVITY -> Component.translatable(
                     "gui.rovenfall.quest.objective.activity",
-                    entry.activityTargetTranslationKey()
+                    entry.targetTranslationKey()
                             .<Component>map(Component::translatable)
                             .orElseGet(() -> Component.translatable("gui.rovenfall.player.unknown_activity")),
                     entry.progress(), entry.requiredCount());
@@ -309,8 +309,13 @@ public final class PlayerDashboardMenu extends ChestMenu {
                     "gui.rovenfall.quest.objective.shop_trade", entry.progress(), entry.requiredCount());
             case CLAIM_PURCHASE -> Component.translatable(
                     "gui.rovenfall.quest.objective.claim_purchase", entry.progress(), entry.requiredCount());
-            case BOSS_DEFEAT -> Component.translatable(
-                    "gui.rovenfall.quest.objective.boss_defeat", entry.progress(), entry.requiredCount());
+            case BOSS_DEFEAT -> entry.targetTranslationKey()
+                    .<Component>map(target -> Component.translatable(
+                            "gui.rovenfall.quest.objective.boss_defeat_target",
+                            Component.translatable(target), entry.progress(), entry.requiredCount()))
+                    .orElseGet(() -> Component.translatable(
+                            "gui.rovenfall.quest.objective.boss_defeat",
+                            entry.progress(), entry.requiredCount()));
         };
     }
 

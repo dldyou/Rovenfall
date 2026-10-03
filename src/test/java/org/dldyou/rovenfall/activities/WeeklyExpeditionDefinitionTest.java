@@ -18,10 +18,11 @@ final class WeeklyExpeditionDefinitionTest {
     void bundledExpeditionsAreValidAndReferenceDailyContracts() throws Exception {
         Map<String, Long> expectedRewards = Map.of(
                 "supply_lines", 1_000L,
-                "threat_control", 1_450L,
+                "threat_control", 1_800L,
                 "wilderness_campaign", 3_900L,
                 "frontier_anomalies", 1_450L,
-                "warden_oath", 1_000L);
+                "warden_oath", 1_000L,
+                "frontier_works", 650L);
 
         for (var entry : expectedRewards.entrySet()) {
             WeeklyExpeditionDefinition definition = bundled(entry.getKey());
@@ -40,14 +41,19 @@ final class WeeklyExpeditionDefinitionTest {
         assertEquals(16, campaign.dailyContractRequirements().size());
         assertTrue(campaign.dailyContractRequirements().values().stream().allMatch(value -> value == 2));
         var threatControl = bundled("threat_control");
-        assertEquals(9, threatControl.dailyContractRequirements().size());
+        assertEquals(12, threatControl.dailyContractRequirements().size());
         assertEquals(1, threatControl.dailyContractRequirements().get(id("rune_breaker")));
         assertEquals(1, threatControl.dailyContractRequirements().get(id("frozen_front")));
         assertEquals(1, threatControl.dailyContractRequirements().get(id("sunken_patrol")));
         assertEquals(1, threatControl.dailyContractRequirements().get(id("depths_watch")));
+        assertEquals(1, threatControl.dailyContractRequirements().get(id("rift_incursion")));
+        assertEquals(1, threatControl.dailyContractRequirements().get(id("thornback_cull")));
+        assertEquals(1, threatControl.dailyContractRequirements().get(id("gravebound_watch")));
         assertEquals(5, bundled("frontier_anomalies").dailyContractRequirements().size());
         assertEquals(Map.of(id("warden_trial"), 3),
                 bundled("warden_oath").dailyContractRequirements());
+        assertEquals(Map.of(id("stonework_detail"), 2, id("glasswork_detail"), 2),
+                bundled("frontier_works").dailyContractRequirements());
     }
 
     @Test

@@ -1,0 +1,65 @@
+{
+  "translation_key": "quest.rovenfall.frontier_concord",
+  "description_translation_key": "quest.rovenfall.frontier_concord.description",
+  "version": 1,
+  "prerequisites": [
+    "rovenfall:settlement_fortification",
+    "rovenfall:warden_rematch"
+  ],
+  "objectives": [
+    {
+      "id": "rovenfall:frontier_concord/mining",
+      "kind": "activity",
+      "required_count": 120,
+      "target": "rovenfall:mining"
+    },
+    {
+      "id": "rovenfall:frontier_concord/farming",
+      "kind": "activity",
+      "required_count": 120,
+      "target": "rovenfall:farming"
+    },
+    {
+      "id": "rovenfall:frontier_concord/cooking",
+      "kind": "activity",
+      "required_count": 120,
+      "target": "rovenfall:cooking"
+    },
+    {
+      "id": "rovenfall:frontier_concord/building",
+      "kind": "activity",
+      "required_count": 120,
+      "target": "rovenfall:building"
+    },
+    {
+      "id": "rovenfall:frontier_concord/hunting",
+      "kind": "activity",
+      "required_count": 160,
+      "target": "rovenfall:hunting"
+    },
+    {
+      "id": "rovenfall:frontier_concord/combat",
+      "kind": "activity",
+      "required_count": 180,
+      "target": "rovenfall:combat"
+    },
+    {
+      "id": "rovenfall:frontier_concord/exploration",
+      "kind": "activity",
+      "required_count": 140,
+      "target": "rovenfall:exploration"
+    },
+    {
+      "id": "rovenfall:frontier_concord/shop_trade",
+      "kind": "shop_trade",
+      "required_count": 6
+    }
+  ],
+  "rewards": {
+    "currency": 900,
+    "activity_xp": {
+      "activity": "rovenfall:exploration",
+      "amount": 90
+    }
+  }
+}

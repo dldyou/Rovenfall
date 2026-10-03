@@ -1,0 +1,96 @@
+{
+  "translation_key": "career.rovenfall.falconer",
+  "tier": 4,
+  "parents": [
+    "rovenfall:ranger"
+  ],
+  "activity_levels": {
+    "hunting": 8,
+    "exploration": 6
+  },
+  "experience_tracks": [
+    "hunting",
+    "exploration"
+  ],
+  "level_thresholds": [
+    0,
+    1500,
+    4500,
+    9500,
+    17000,
+    27000,
+    40000
+  ],
+  "promotion_cost": 650,
+  "promotion_skill_points": 4,
+  "skill_reset_cost": 250,
+  "skills": {
+    "rovenfall:high_perch": {
+      "translation_key": "career_skill.rovenfall.high_perch",
+      "maximum_rank": 3,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "hunting",
+          "magnitude_per_rank_bps": 500
+        }
+      ]
+    },
+    "rovenfall:keen_pursuit": {
+      "translation_key": "career_skill.rovenfall.keen_pursuit",
+      "prerequisites": [
+        "rovenfall:high_perch"
+      ],
+      "maximum_rank": 2,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "exploration",
+          "magnitude_per_rank_bps": 750
+        }
+      ]
+    },
+    "rovenfall:open_sky": {
+      "translation_key": "career_skill.rovenfall.open_sky",
+      "prerequisites": [
+        "rovenfall:high_perch"
+      ],
+      "maximum_rank": 2,
+      "point_cost": 1,
+      "scope": "career",
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "track": "hunting",
+          "magnitude_per_rank_bps": 750
+        }
+      ]
+    },
+    "rovenfall:raptors_focus": {
+      "translation_key": "career_skill.rovenfall.raptors_focus",
+      "prerequisites": [
+        "rovenfall:keen_pursuit",
+        "rovenfall:open_sky"
+      ],
+      "maximum_rank": 1,
+      "point_cost": 2,
+      "scope": "career",
+      "active": {
+        "effect": "minecraft:speed",
+        "duration_ticks": 300,
+        "amplifier": 1,
+        "cooldown_seconds": 90
+      },
+      "effects": [
+        {
+          "type": "activity_experience_bonus",
+          "magnitude_per_rank_bps": 500
+        }
+      ]
+    }
+  }
+}

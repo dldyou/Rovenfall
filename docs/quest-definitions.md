@@ -72,12 +72,57 @@ versions or saved progress.
 | Relic Survey | Wilderness Patrol | 120 Mining XP + 140 Hunting XP | 220 currency + 30 Mining XP |
 | The Return Expedition | Both journeys above | 100 Exploration XP + 4 shop trades | 300 currency + 40 Exploration XP |
 
+## Regional frontier branch
+
+Completing Wilderness Patrol unlocks three parallel regional journeys. Signal at the Watchtower
+guides players toward open-country watchtowers and Rift Acolytes; The Thornback Trail points toward
+forest dens; Gravebound Vigil covers dry-region chapels and Gravebound Knights. Objectives continue
+to consume only accepted server-observed activity evidence, so merely entering a structure or sending
+a client identifier cannot create progress.
+
+Completing all three unlocks Three Frontiers, which combines Combat, Building, and shop-trade evidence
+into a route-restoration capstone. The branch is optional and does not alter the versions or prerequisite
+graph of existing story quests.
+
+| Journey | Unlock | Objectives | Reward |
+| --- | --- | --- | --- |
+| Signal at the Watchtower | Wilderness Patrol | 90 Exploration XP + 160 Hunting XP | 240 currency + 30 Exploration XP |
+| The Thornback Trail | Wilderness Patrol | 100 Exploration XP + 150 Hunting XP | 240 currency + 30 Hunting XP |
+| Gravebound Vigil | Wilderness Patrol | 100 Mining XP + 200 Hunting XP | 280 currency + 35 Combat XP |
+| Three Frontiers | All three regional journeys | 240 Combat XP + 120 Building XP + 4 shop trades | 520 currency + 60 Exploration XP |
+
 Trail Rations and Orchard Pies can supply Cooking XP; Wilderness cave hunts can
 provide Hunting XP and crafting materials. These are suggested routes: the
 objectives count all accepted XP in their named activity, not particular foods,
 monsters, items, or locations. Shop trades follow the existing durable transaction
 evidence. Rewards are automatic, once per player, with ordinary restart recovery.
 Activity earned before a journey unlocks does not count toward it.
+
+## Frontier restoration campaign
+
+The regional capstone now opens a ten-journey restoration campaign. Each journey is a separate
+content slice with its own unlock, gameplay focus, and reward rather than ten renamed copies of one
+XP task. Parallel branches let a group pursue reconstruction, provisioning, field medicine, relic
+recovery, and combat readiness in any useful order. The final two gates reunite those branches for
+a verified Rift Warden rematch and the all-discipline Frontier Concord.
+
+| Slice | Journey | Unlock | Gameplay focus | Reward |
+| ---: | --- | --- | --- | --- |
+| 1 | Watchtower Reclamation | Three Frontiers | Exploration + Building | 300 currency + 35 Building XP |
+| 2 | Den Cleansing | Three Frontiers | Hunting + Farming | 300 currency + 35 Hunting XP |
+| 3 | Chapel Reconsecration | Three Frontiers | Mining + Combat | 320 currency + 40 Combat XP |
+| 4 | Quartermaster's Route | Watchtower Reclamation | Cooking + shop trades | 260 currency + 35 Cooking XP |
+| 5 | Wildskeeper's Remedy | Den Cleansing | Farming + Cooking | 260 currency + 35 Farming XP |
+| 6 | Relic Recovery | Chapel Reconsecration | Mining + Exploration | 300 currency + 40 Mining XP |
+| 7 | Frontier Muster | All three regional restorations | Combat + Hunting | 420 currency + 50 Combat XP |
+| 8 | Settlement Fortification | Quartermaster + Wildskeeper | Building + land claim | 450 currency + 55 Building XP |
+| 9 | Warden Rematch | Relic Recovery + Frontier Muster | Combat + verified boss defeat | 560 currency + 65 Combat XP |
+| 10 | Frontier Concord | Fortification + rematch | All activities + trade | 900 currency + 90 Exploration XP |
+
+The objective wording deliberately uses familiar RPG terms—reclamation, cleansing, muster,
+fortification, rematch, and capstone—while descriptions tie each activity requirement to the
+regional structures and threats already present in the world. Existing server-owned activity,
+economy, land, and boss receipts remain the only progress authority.
 
 ## Repeatable contracts
 
@@ -148,7 +193,9 @@ reload, request rotation, and periodic reconciliation, the server verifies that 
 version, current request window, status, and next incomplete objective still match. Any completed,
 expired, removed, changed, invalid, or future-schema selection is cleared or withheld. The client
 receives only the privacy-safe presentation projection: kind, localized title key, available or
-in-progress state, one objective kind/progress, and an optional localized activity name.
+in-progress state, one objective kind/progress, and an optional localized activity or boss name.
+Targeted boss objectives therefore identify the required encounter consistently in the Journey menu,
+player dashboard, and HUD without exposing the underlying quest or boss identifier to the client.
 
 Gameplay adapters consume only durable server-owned outcomes: RPG-owned activity
 outcomes, shop and land economy receipts, and completed boss reward operations.
